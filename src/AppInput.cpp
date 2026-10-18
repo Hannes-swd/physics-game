@@ -1,0 +1,631 @@
+// Eingabe: Kamera, Bau-Werkzeuge (Auswahl/Bewegen, Säge, Bohrer) und Spielfigur
+#include "App.h"
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#include <imgui.h>
+
+#include <algorithm>
+#include <cmath>
+
+#include "Materials.h"
+
+namespace {
+constexpr double kMaxLiftForce = 420.0;  // so viel Kraft (N) bringt die Figur beim Tragen auf
+}
+
+// ============================================================================ Auswahl
+
+bool App::isSelected(uint32_t id) const { return std::find(selection_.begin(), selection_.end(), id) != selection_.end(); }
+
+void App::toggleSelected(uint32_t id) {
+    auto it = std::find(selection_.begin(), selection_.end(), id);
+    if (it != selection_.end()) selection_.erase(it);
+    else selection_.push_back(id);
+}
+
+glm::dvec3 App::selectionCenter() const {
+    glm::dvec3 mn(1e30), mx(-1e30);
+    for (uint32_t id : selection_)
+        if (Object* o = world_->find(id)) {
+            mn = glm::min(mn, o->wMin);
+            mx = glm::max(mx, o->wMax);
+        }
+    return mn.x > mx.x ? orbitTarget_ : (mn + mx) * 0.5;
+}
+
+void App::rotateSelected(int axis, double deg) {
+    if (selection_.empty()) return;
+    glm::dvec3 ax(0);
+    ax[axis] = 1;
+    glm::dquat q = glm::angleAxis(glm::radians(deg), ax);
+    glm::dvec3 c = selectionCenter();
+    world_->pushUndo();
+    for (uint32_t id : selection_)
+        if (Object* o = world_->find(id)) world_->setTransform(*o, c + q * (o->pos - c), q * o->rot);
+}
+
+void App::deleteSelected() {
+    if (selection_.empty()) return;
+    world_->pushUndo();
+    for (uint32_t id : selection_) world_->remove(id);
+    status_ = std::to_string(selection_.size()) + " part(s) deleted";
+    statusTime_ = time_;
+    selection_.clear();
+}
+
+void App::duplicateSelected() {
+    if (selection_.empty()) return;
+    glm::dvec3 mn(1e30), mx(-1e30);
+    for (uint32_t id : selection_)
+        if (Object* o = world_->find(id)) {
+            mn = glm::min(mn, o->wMin);
+            mx = glm::max(mx, o->wMax);
+        }
+    glm::dvec3 off(mx.x - mn.x + 0.02, 0, 0);
+    world_->pushUndo();
+    std::vector<uint32_t> copies;
+    for (uint32_t id : selection_)
+        if (Object* c = world_->duplicate(id, off)) copies.push_back(c->id);
+    selection_ = copies;
+    status_ = std::to_string(copies.size()) + " part(s) copied";
+    statusTime_ = time_;
+}
+
+void App::focusSelected() {
+    if (selection_.empty()) return;
+    glm::dvec3 mn(1e30), mx(-1e30);
+    for (uint32_t id : selection_)
+        if (Object* o = world_->find(id)) {
+            mn = glm::min(mn, o->wMin);
+            mx = glm::max(mx, o->wMax);
+        }
+    orbitTarget_ = (mn + mx) * 0.5;
+    orbitDist_ = std::max(0.15, glm::length(mx - mn) * 1.8);
+}
+
+// ============================================================================ Eingabe allgemein
+
+void App::handleInput(float dt) {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool typing = io.WantTextInput;
+    if (!typing) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) setMode(!play_);
+        if (ImGui::IsKeyPressed(ImGuiKey_F1, false) || ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false)) {
+            showConsole_ = !showConsole_;
+            focusConsole_ = showConsole_;
+            if (showConsole_ && play_) setCursorCaptured(false);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) showInspector_ = !showInspector_;
+        if (ImGui::IsKeyPressed(ImGuiKey_F4, false)) {
+            if (!selection_.empty()) showDrawing(selection_);
+            else if (play_ && lookAt_) showDrawing({lookAt_});
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F12, false)) {
+            std::string name = "foto_" + std::to_string((long long)(time_ * 1000)) + ".png";
+            log(screenshot(name), 3);
+        }
+    }
+    if (play_) playInput(dt);
+    else buildInput(dt);
+    scrollAccum_ = 0.0;
+
+    // Ziel des Physik-Inspektors
+    uint32_t target = 0;
+    if (play_) target = grabbed_ ? grabbed_ : lookAt_;
+    else target = selectedId() ? selectedId() : hovered_;
+    if (target && target != inspectTarget_ && (play_ || selectedId())) inspectTarget_ = target;
+    if (inspectTarget_ && !world_->find(inspectTarget_)) inspectTarget_ = 0;
+    world_->setInspect(showInspector_ ? inspectTarget_ : 0);
+}
+
+// ============================================================================ Bau-Modus
+
+void App::buildInput(float) {
+    ImGuiIO& io = ImGui::GetIO();
+    const double mx = io.MousePos.x * io.DisplayFramebufferScale.x, my = io.MousePos.y * io.DisplayFramebufferScale.y;
+    const double dx = mx - lastMx_, dy = my - lastMy_;
+    lastMx_ = mx;
+    lastMy_ = my;
+    const bool overUI = io.WantCaptureMouse;
+    if (views_.empty()) return;
+    if (!rmbDown_ && !mmbDown_ && !dragging_) activeView_ = viewAt(mx, my);
+    const View& v = views_[std::clamp(activeView_, 0, (int)views_.size() - 1)];
+
+    // --- Kamera
+    if (!overUI && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) rmbDown_ = true;
+    if (!overUI && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) mmbDown_ = true;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) rmbDown_ = false;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Middle)) mmbDown_ = false;
+    auto pan = [&](double px, double py) {
+        double wpp = (v.ortho ? 2.0 * v.halfHeight : 2.0 * orbitDist_ * std::tan(fov_ / 2)) / v.h;
+        glm::dvec3 fwd = glm::normalize(v.target - v.eye);
+        glm::dvec3 right = glm::normalize(glm::cross(fwd, v.up));
+        glm::dvec3 up = glm::normalize(glm::cross(right, fwd));
+        orbitTarget_ += (-right * px + up * py) * wpp;
+    };
+    if (rmbDown_) {
+        if (v.ortho || io.KeyShift) {
+            pan(dx, dy);
+        } else {
+            orbitYaw_ -= dx * 0.006;
+            orbitPitch_ = std::clamp(orbitPitch_ + dy * 0.006, -1.55, 1.55);
+        }
+    }
+    if (mmbDown_) pan(dx, dy);
+    if (!overUI && io.MouseWheel != 0.0f) orbitDist_ = std::clamp(orbitDist_ * std::pow(0.87, (double)io.MouseWheel), 0.03, 20000.0);
+
+    // --- Tasten
+    if (!io.WantTextInput) {
+        const bool ctrl = io.KeyCtrl, shift = io.KeyShift;
+        if (ImGui::IsKeyPressed(ImGuiKey_1, false)) viewMode_ = ViewMode::Perspective;
+        if (ImGui::IsKeyPressed(ImGuiKey_2, false)) viewMode_ = ViewMode::Top;
+        if (ImGui::IsKeyPressed(ImGuiKey_3, false)) viewMode_ = ViewMode::Front;
+        if (ImGui::IsKeyPressed(ImGuiKey_4, false)) viewMode_ = ViewMode::Side;
+        if (ImGui::IsKeyPressed(ImGuiKey_5, false)) viewMode_ = ViewMode::Quad;
+        if (ctrl) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) log(world_->undo() ? "Undone" : "Nothing to undo", 3);
+            if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) log(world_->redo() ? "Redone" : "Nothing to redo", 3);
+            if (ImGui::IsKeyPressed(ImGuiKey_D, false)) duplicateSelected();
+            if (ImGui::IsKeyPressed(ImGuiKey_A, false)) {
+                selection_.clear();
+                for (auto& o : world_->objects()) selection_.push_back(o->id);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_S, false)) saveDialog(true);
+            if (ImGui::IsKeyPressed(ImGuiKey_O, false)) saveDialog(false);
+        } else {
+            if (ImGui::IsKeyPressed(ImGuiKey_V, false) || ImGui::IsKeyPressed(ImGuiKey_Q, false)) tool_ = Tool::Select;
+            if (ImGui::IsKeyPressed(ImGuiKey_S, false)) tool_ = Tool::Saw;
+            if (ImGui::IsKeyPressed(ImGuiKey_B, false)) tool_ = Tool::Drill;
+            if (ImGui::IsKeyPressed(ImGuiKey_E, false)) tool_ = Tool::Round;
+            if (ImGui::IsKeyPressed(ImGuiKey_M, false)) tool_ = Tool::Mill;
+            if (ImGui::IsKeyPressed(ImGuiKey_P, false)) tool_ = Tool::Plane;
+            if (tool_ == Tool::Saw) {
+                if (ImGui::IsKeyPressed(ImGuiKey_X, false)) sawAxis_ = 0;
+                if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) sawAxis_ = 1;
+                if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) sawAxis_ = 2;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) deleteSelected();
+            if (ImGui::IsKeyPressed(ImGuiKey_F, false)) focusSelected();
+            if (ImGui::IsKeyPressed(ImGuiKey_G, false) && !selection_.empty()) {
+                world_->pushUndo();
+                for (uint32_t id : selection_)
+                    if (Object* o = world_->find(id)) world_->dropToSurface(*o);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_R, false)) {
+                int axis = 1;
+                if (v.mode == ViewMode::Front) axis = 2;
+                if (v.mode == ViewMode::Side) axis = 0;
+                if (shift) axis = axis == 0 ? 2 : 0;  // Y/Z -> X, X -> Z
+                rotateSelected(axis, 90.0);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+                if (tool_ != Tool::Select) tool_ = Tool::Select;
+                else selection_.clear();
+            }
+        }
+    }
+
+    // --- Was liegt unter der Maus?
+    hoverValid_ = false;
+    hovered_ = 0;
+    glm::dvec3 ro, rd;
+    if (!overUI && !rmbDown_ && !mmbDown_ && mouseRay(v, mx, my, ro, rd)) {
+        hoverValid_ = world_->raycast(ro, rd, hoverHit_);
+        if (hoverValid_ && hoverHit_.obj) hovered_ = hoverHit_.obj->id;
+    }
+
+    // --- Linke Maustaste
+    if (!overUI && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (tool_ == Tool::Select) {
+            const bool additive = io.KeyShift || io.KeyCtrl;
+            if (hovered_) {
+                if (additive) toggleSelected(hovered_);
+                else if (!isSelected(hovered_)) select(hovered_);
+                else {  // nach vorne holen (Hauptauswahl)
+                    toggleSelected(hovered_);
+                    selection_.push_back(hovered_);
+                }
+                if (isSelected(hovered_)) {
+                    dragCandidate_ = true;
+                    dragView_ = activeView_;
+                    dragStartMx_ = mx;
+                    dragStartMy_ = my;
+                    dragStartHit_ = hoverHit_.point;
+                    dragPlaneP_ = hoverHit_.point;
+                    dragPlaneN_ = v.ortho ? glm::normalize(v.eye - v.target) : glm::dvec3(0, 1, 0);
+                    dragVertical_ = false;
+                    dragStarts_.clear();
+                    for (uint32_t id : selection_)
+                        if (Object* o = world_->find(id)) dragStarts_.emplace_back(id, o->pos);
+                }
+            } else if (!additive) {
+                selection_.clear();
+            }
+        } else {
+            applyTool();
+        }
+    }
+    if (dragCandidate_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) && dragView_ >= 0 && dragView_ < (int)views_.size()) {
+        const View& dv = views_[dragView_];
+        if (!dragging_ && std::hypot(mx - dragStartMx_, my - dragStartMy_) > 4.0) {
+            dragging_ = true;
+            world_->pushUndo();
+        }
+        if (dragging_ && mouseRay(dv, mx, my, ro, rd)) {
+            const bool vertical = !dv.ortho && io.KeyShift;
+            auto intersect = [&](const glm::dvec3& p0, const glm::dvec3& n, glm::dvec3& hit) {
+                double den = glm::dot(rd, n);
+                if (std::abs(den) < 1e-9) return false;
+                double t = glm::dot(p0 - ro, n) / den;
+                if (t < 0) return false;
+                hit = ro + rd * t;
+                return true;
+            };
+            glm::dvec3 n = dragPlaneN_;
+            if (vertical) {
+                glm::dvec3 h = dv.eye - dragPlaneP_;
+                h.y = 0;
+                n = glm::length(h) > 1e-9 ? glm::normalize(h) : glm::dvec3(0, 0, 1);
+            }
+            if (vertical != dragVertical_) {  // Umschalten: neu ansetzen
+                dragVertical_ = vertical;
+                glm::dvec3 hit;
+                if (intersect(dragPlaneP_, n, hit)) dragStartHit_ = hit;
+                dragStarts_.clear();
+                for (uint32_t id : selection_)
+                    if (Object* o = world_->find(id)) dragStarts_.emplace_back(id, o->pos);
+            }
+            glm::dvec3 hit;
+            if (intersect(dragPlaneP_, n, hit)) {
+                glm::dvec3 delta = hit - dragStartHit_;
+                if (vertical) delta = glm::dvec3(0, delta.y, 0);
+                if (snap_ && !io.KeyAlt) {
+                    double s = snapStep();
+                    delta = glm::round(delta / s) * s;
+                }
+                if (world_->buildCollision() && !io.KeyCtrl && !dragStarts_.empty()) {
+                    // Teile halten an anderen an und gleiten daran entlang (Strg = durch alles hindurch)
+                    Object* first = world_->find(dragStarts_[0].first);
+                    if (first) {
+                        glm::dvec3 move = dragStarts_[0].second + delta - first->pos;
+                        std::vector<uint32_t> ids;
+                        for (auto& [id, p0] : dragStarts_) ids.push_back(id);
+                        uint32_t blocker = 0;
+                        bool blocked = false;
+                        world_->sweepMove(ids, move, &blocker, &blocked);
+                        if (blocked) {
+                            Object* b = world_->find(blocker);
+                            status_ = "touching " + (b ? b->name : std::string("the floor")) + " (hold Ctrl to move through)";
+                            statusTime_ = time_;
+                        }
+                    }
+                } else {
+                    for (auto& [id, p0] : dragStarts_)
+                        if (Object* o = world_->find(id)) world_->setTransform(*o, p0 + delta, o->rot);
+                }
+            }
+        }
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) dragCandidate_ = dragging_ = false;
+}
+
+// ============================================================================ Werkzeuge
+
+void App::updatePreview() {
+    preview_.valid = false;
+    if (play_ || tool_ == Tool::Select || !hoverValid_ || !hoverHit_.obj) return;
+    Object* o = hoverHit_.obj;
+    if (o->kind != ObjKind::Solid) return;
+    preview_.objId = o->id;
+    const glm::dvec3 lp = hoverHit_.localPoint;
+    const glm::dvec3 c = (o->bbMin + o->bbMax) * 0.5, size = o->bbMax - o->bbMin;
+    const double step = snapStep();
+    if (tool_ == Tool::Saw) {
+        const int ax = sawAxis_;
+        double s = lp[ax] - o->bbMin[ax];
+        if (snap_) s = std::round(s / step) * step;
+        s = std::clamp(s, 0.0, size[ax]);
+        glm::dvec3 q = c;
+        q[ax] = o->bbMin[ax] + s;
+        glm::dvec3 n(0);
+        n[ax] = 1;
+        if (std::abs(sawAngle_) > 1e-3)
+            n = glm::angleAxis(glm::radians((double)sawAngle_), ax == 1 ? glm::dvec3(1, 0, 0) : glm::dvec3(0, 1, 0)) * n;
+        preview_.plane.n = glm::normalize(n);
+        preview_.plane.d = glm::dot(preview_.plane.n, q);
+        preview_.distFromEnd = s;
+        preview_.valid = true;
+    } else if (tool_ == Tool::Drill) {
+        glm::dvec3 n = hoverHit_.localNormal, p = lp;
+        if (snap_)
+            for (int k = 0; k < 3; ++k)
+                if (std::abs(n[k]) < 0.9) p[k] = c[k] + std::round((p[k] - c[k]) / step) * step;
+        preview_.from = p + n * 0.001;
+        preview_.dir = -n;
+        preview_.length = drillDepthMm_ > 0 ? drillDepthMm_ / 1000.0 + 0.001 : glm::length(size) * 1.05;
+        preview_.valid = true;
+    } else if (tool_ == Tool::Round) {
+        // nächste Kante zum Mauspunkt, bevorzugt an der Fläche unter der Maus
+        const auto& edges = world_->edgesOf(*o);
+        const double minExt = std::min({size.x, size.y, size.z});
+        const double reach = std::clamp(0.3 * minExt, 0.004, 0.03);
+        double best = 1e30;
+        preview_.edge = -1;
+        for (size_t i = 0; i < edges.size(); ++i) {
+            const solid::Edge& e = edges[i];
+            glm::dvec3 ab = e.b - e.a;
+            double t = std::clamp(glm::dot(lp - e.a, ab) / std::max(1e-18, glm::dot(ab, ab)), 0.0, 1.0);
+            double d = glm::length(lp - (e.a + ab * t));
+            const glm::dvec3& n = hoverHit_.localNormal;
+            if (glm::dot(e.n1, n) < 0.9 && glm::dot(e.n2, n) < 0.9) d *= 1.5;  // Kante gehört nicht zur Fläche unter der Maus
+            if (d < best) {
+                best = d;
+                preview_.edge = (int)i;
+            }
+        }
+        preview_.valid = preview_.edge >= 0 && best < reach;
+    } else if (tool_ == Tool::Mill || tool_ == Tool::Plane) {
+        const glm::dvec3& n = hoverHit_.localNormal;
+        int k = 0;
+        for (int i = 1; i < 3; ++i)
+            if (std::abs(n[i]) > std::abs(n[k])) k = i;
+        if (std::abs(n[k]) < 0.99) return;  // nur ebene, achsparallele Flächen
+        preview_.faceAxis = k;
+        preview_.faceSign = n[k] > 0 ? 1 : -1;
+        const int u = k == 0 ? 1 : 0, v = k == 2 ? 1 : 2;
+        double a = lp[u] - c[u], b = lp[v] - c[v];
+        if (snap_) {
+            a = std::round(a / step) * step;
+            b = std::round(b / step) * step;
+        }
+        preview_.a = a;
+        preview_.b = b;
+        preview_.valid = true;
+    }
+}
+
+void App::applyTool() {
+    if (!preview_.valid) return;
+    static const char* faces[3][2] = {{"-x", "+x"}, {"-y", "+y"}, {"-z", "+z"}};
+    const std::string id = std::to_string(preview_.objId);
+    // Die neuen Werkzeuge laufen als Befehl: Er steht in der Konsole und lässt sich so auch abschreiben.
+    if (tool_ == Tool::Round) {
+        runLine(std::string(roundChamfer_ ? "chamfer " : "round ") + id + " e" + std::to_string(preview_.edge) + " " + fmtNum(roundMm_, 2), "tool");
+        return;
+    }
+    if (tool_ == Tool::Mill || tool_ == Tool::Plane) {
+        const char* f = faces[preview_.faceAxis][preview_.faceSign > 0 ? 1 : 0];
+        if (tool_ == Tool::Plane) runLine("plane " + id + " " + f + " " + fmtNum(planeMm_, 2), "tool");
+        else
+            runLine("pocket " + id + " " + f + " " + fmtNum(preview_.a * 100, 2) + " " + fmtNum(preview_.b * 100, 2) + " " + fmtNum(millDims_[0], 1) +
+                        " " + fmtNum(millDims_[1], 1) + " " + fmtNum(millDims_[2], 1) + (millCornerMm_ > 0 ? " " + fmtNum(millCornerMm_, 1) : ""),
+                    "tool");
+        return;
+    }
+    std::vector<uint32_t> ids;
+    std::string err;
+    world_->pushUndo();
+    bool ok;
+    if (tool_ == Tool::Saw) {
+        ok = world_->cut(preview_.objId, preview_.plane, sawKerfMm_ / 1000.0, &ids, &err);
+        if (ok) status_ = "Cut at " + fmtNum(preview_.distFromEnd * 100, 1) + " cm -> " + std::to_string(ids.size()) + " parts";
+    } else {
+        double removed = 0;
+        ok = world_->drill(preview_.objId, preview_.from, preview_.dir, drillDiaMm_ / 1000.0,
+                           drillDepthMm_ > 0 ? drillDepthMm_ / 1000.0 + 0.001 : 0.0, &ids, &removed, &err);
+        if (ok) status_ = "Drilled: D " + fmtNum(drillDiaMm_, 1) + " mm, " + fmtNum(removed * 1e6, 2) + " cm³ of chips";
+    }
+    if (!ok) {
+        world_->discardUndo();
+        status_ = "Not possible: " + err;
+    } else if (!ids.empty()) {
+        select(ids[0]);
+    }
+    statusTime_ = time_;
+    log(status_, ok ? 3 : 2);
+}
+
+// ============================================================================ Spiel-Modus
+
+void App::setCursorCaptured(bool on) {
+    cursorCaptured_ = on;
+    glfwSetInputMode(window_, GLFW_CURSOR, on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (on && glfwRawMouseMotionSupported()) glfwSetInputMode(window_, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+    glfwGetCursorPos(window_, &cursorX_, &cursorY_);
+    ImGuiIO& io = ImGui::GetIO();
+    if (on) io.ConfigFlags |= ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange;
+    else io.ConfigFlags &= ~(ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange);
+}
+
+void App::enterPlay() {
+    if (play_) return;
+    // Figur dort absetzen, wo die Baukamera hinschaut
+    glm::dvec3 eye = orbitTarget_ + orbitDist_ * glm::dvec3(std::cos(orbitPitch_) * std::sin(orbitYaw_), std::sin(orbitPitch_),
+                                                            std::cos(orbitPitch_) * std::cos(orbitYaw_));
+    glm::dvec3 fwd = orbitTarget_ - eye;
+    fwd.y = 0;
+    fwd = glm::length(fwd) > 1e-6 ? glm::normalize(fwd) : glm::dvec3(0, 0, -1);
+    glm::dvec3 feet = orbitTarget_ - fwd * 2.5;
+    RayHit h;
+    double groundY = 0;
+    if (world_->raycast(glm::dvec3(feet.x, orbitTarget_.y + 20.0, feet.z), glm::dvec3(0, -1, 0), h)) groundY = h.point.y;
+    feet.y = groundY + 0.05;
+    if (!physics_.hasCharacter()) physics_.createCharacter(feet);
+    else physics_.setCharacterPosition(feet);
+    playYaw_ = std::atan2(-fwd.x, -fwd.z);
+    {  // direkt auf das Ziel schauen
+        glm::dvec3 eyeP = feet + glm::dvec3(0, 1.65, 0);
+        glm::dvec3 to = orbitTarget_ - eyeP;
+        playPitch_ = std::clamp(std::atan2(to.y, glm::length(glm::dvec2(to.x, to.z))), -1.2, 1.2);
+    }
+    play_ = true;
+    dragCandidate_ = dragging_ = false;
+    preview_.valid = false;
+    world_->setSimulating(true);
+    setCursorCaptured(true);
+    log("Play mode: WASD walk, left mouse grab, right mouse throw, Tab back", 3);
+}
+
+void App::leavePlay() {
+    if (!play_) return;
+    glm::dvec3 eye = playerEye(), fwd = playerForward();
+    play_ = false;
+    grabbed_ = 0;
+    world_->setSimulating(false);
+    setCursorCaptured(false);
+    orbitDist_ = 2.5;
+    orbitTarget_ = eye + fwd * orbitDist_;
+    orbitYaw_ = playYaw_;
+    orbitPitch_ = -playPitch_;
+}
+
+void App::playInput(float) {
+    ImGuiIO& io = ImGui::GetIO();
+    double cx, cy;
+    glfwGetCursorPos(window_, &cx, &cy);
+    if (cursorCaptured_) {
+        playYaw_ -= (cx - cursorX_) * 0.0024;
+        playPitch_ = std::clamp(playPitch_ - (cy - cursorY_) * 0.0024, -1.52, 1.52);
+    }
+    cursorX_ = cx;
+    cursorY_ = cy;
+
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false) && cursorCaptured_) {
+        setCursorCaptured(false);
+        return;
+    }
+    if (!cursorCaptured_) {
+        if (glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !io.WantCaptureMouse) setCursorCaptured(true);
+        return;
+    }
+
+    // Wohin schaue ich?
+    const glm::dvec3 eye = playerEye(), fwd = playerForward();
+    RayHit h;
+    lookAt_ = 0;
+    if (world_->raycast(eye, fwd, h, grabbed_) && h.obj && h.t < 4.0) {
+        lookAt_ = h.obj->id;
+        lookDist_ = h.t;
+    }
+
+    // Maustasten direkt von GLFW (ImGui ignoriert die Maus, solange sie gefangen ist)
+    const bool lmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    const bool rmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool lmbPressed = lmbDown && !prevLmb_, rmbPressed = rmbDown && !prevRmb_;
+    prevLmb_ = lmbDown;
+    prevRmb_ = rmbDown;
+    const bool ePressed = !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false);
+
+    auto tryGrab = [&]() {
+        if (!lookAt_ || h.t > 3.5) return;
+        Object* o = world_->find(lookAt_);
+        if (!o || o->fixed || o->body == kNoBody) return;
+        grabbed_ = o->id;
+        grabLocal_ = h.localPoint;
+        holdDist_ = std::max(0.5, h.t);
+        // Lage merken (relativ zur Blickrichtung): das Teil bleibt so in der Hand, statt am Griffpunkt zu pendeln
+        holdRel_ = glm::conjugate(glm::angleAxis(playYaw_, glm::dvec3(0, 1, 0))) * o->rot;
+        physics_.activate(o->body);
+    };
+    // Maus links halten = tragen, E = aufnehmen/ablegen ohne Halten
+    if (ePressed) {
+        if (grabbed_) {
+            grabbed_ = 0;
+        } else {
+            tryGrab();
+            heldByMouse_ = false;
+        }
+    } else if (lmbPressed && !grabbed_) {
+        tryGrab();
+        heldByMouse_ = true;
+    }
+    if (grabbed_ && heldByMouse_ && !lmbDown) grabbed_ = 0;
+    if (rmbPressed && grabbed_) {  // werfen
+        if (Object* o = world_->find(grabbed_)) {
+            double m = std::max(0.01, (double)physics_.mass(o->body));
+            double j = std::min(m * 9.0, 45.0);
+            physics_.addImpulseAt(o->body, glm::vec3(fwd * j), o->pos + o->rot * grabLocal_);
+        }
+        grabbed_ = 0;
+    }
+    if (grabbed_ && scrollAccum_ != 0.0) holdDist_ = std::clamp(holdDist_ + scrollAccum_ * 0.15, 0.4, 3.5);
+    // R: getragenes Teil um 15° drehen (um die Hochachse), Shift+R: nach vorne kippen (um die Querachse)
+    if (grabbed_ && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_R, false)) {
+        const glm::dvec3 axis = io.KeyShift ? glm::dvec3(1, 0, 0) : glm::dvec3(0, 1, 0);
+        holdRel_ = glm::normalize(glm::angleAxis(glm::radians(15.0), axis) * holdRel_);
+    }
+}
+
+void App::grabForces(float) {
+    tooHeavy_ = false;
+    if (!grabbed_) return;
+    Object* o = world_->find(grabbed_);
+    if (!o || o->body == kNoBody || o->fixed) {
+        grabbed_ = 0;
+        return;
+    }
+    glm::dvec3 pos;
+    glm::dquat rot;
+    physics_.getTransform(o->body, pos, rot);
+    const glm::dvec3 p = pos + rot * grabLocal_;
+    const glm::dvec3 target = playerEye() + playerForward() * holdDist_;
+    if (glm::length(target - p) > 2.0) {  // hängt fest -> loslassen
+        grabbed_ = 0;
+        return;
+    }
+    const double m = std::max(0.01, (double)physics_.mass(o->body));
+    const glm::dvec3 v = glm::dvec3(physics_.pointVelocity(o->body, p));
+    const double w = 12.0;  // Federsteifigkeit (rad/s) des "Arms"
+    glm::dvec3 f = m * (w * w * (target - p) - 2.0 * w * v) + glm::dvec3(0, m * 9.81, 0);
+    if (glm::length(f) > kMaxLiftForce) {
+        f = glm::normalize(f) * kMaxLiftForce;
+        tooHeavy_ = m * 9.81 > kMaxLiftForce * 0.95;
+    }
+    physics_.addForceAt(o->body, glm::vec3(f), p);
+    world_->addExternalForce(o->id, f);
+    // Lage halten: Drehfeder zur gemerkten Lage (dreht mit der Blickrichtung), begrenzt auf das Moment, das man mit
+    // zwei Händen aufbringt. Lange, schwere Teile (Tür, Balken) lassen sich so nur langsam drehen und kippen.
+    BodyState s;
+    if (physics_.bodyState(o->body, s) && s.dynamic && std::abs(glm::determinant(s.invInertiaWorld)) > 1e-30) {
+        const glm::dquat target = glm::angleAxis(playYaw_, glm::dvec3(0, 1, 0)) * holdRel_;
+        glm::dquat err = target * glm::conjugate(rot);
+        if (err.w < 0) err = -err;
+        const double sinHalf = glm::length(glm::dvec3(err.x, err.y, err.z));
+        const glm::dvec3 axis = sinHalf > 1e-9 ? glm::dvec3(err.x, err.y, err.z) / sinHalf : glm::dvec3(0);
+        const double angle = 2.0 * std::atan2(sinHalf, err.w);
+        const double wr = 8.0;  // Drehfeder (rad/s)
+        glm::dvec3 torque = glm::inverse(s.invInertiaWorld) * (axis * (wr * wr * angle) - s.angVel * (2.0 * wr));
+        const double maxTorque = 60.0;  // N·m
+        if (glm::length(torque) > maxTorque) torque *= maxTorque / glm::length(torque);
+        physics_.addTorque(o->body, glm::vec3(torque));
+    }
+}
+
+void App::updatePlay(float dt) {
+    ImGuiIO& io = ImGui::GetIO();
+    glm::vec3 wish(0);
+    bool jump = jumpRequest_;
+    jumpRequest_ = false;
+    const glm::vec3 fwd(-std::sin(playYaw_), 0, -std::cos(playYaw_));
+    const glm::vec3 right(std::cos(playYaw_), 0, -std::sin(playYaw_));
+    bool run = false;
+    if (cursorCaptured_ && !io.WantTextInput) {
+        if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) wish += fwd;
+        if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) wish -= fwd;
+        if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) wish += right;
+        if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) wish -= right;
+        run = glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+        jump = jump || ImGui::IsKeyPressed(ImGuiKey_Space, false);
+    }
+    if (autoMoveTime_ > 0) {  // per Befehl "spieler laufe"
+        wish += fwd * (float)autoMove_.x + right * (float)autoMove_.y;
+        run = run || autoRun_;
+        autoMoveTime_ = std::max(0.0, autoMoveTime_ - dt);
+    }
+    if (glm::length(wish) > 0) wish = glm::normalize(wish) * (run ? 7.0f : 4.0f);
+    world_->step(dt, [&](float h) { grabForces(h); });
+    BodyHandle ignore = kNoBody;
+    if (Object* g = world_->find(grabbed_)) ignore = g->body;
+    physics_.updateCharacter(dt, wish, jump, ignore);
+}

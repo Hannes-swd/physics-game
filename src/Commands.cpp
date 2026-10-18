@@ -1,0 +1,1414 @@
+#include "Commands.h"
+
+#include <glm/gtc/quaternion.hpp>
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
+
+#include "Drawing.h"
+#include "Materials.h"
+#include "Script.h"
+#include "World.h"
+
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kMargin = 0.001;  // Werkzeuge ragen 1 mm über die Oberfläche hinaus
+
+std::vector<std::string> tokenize(const std::string& line) {
+    std::vector<std::string> t;
+    std::string cur;
+    char quote = 0;  // " oder '
+    bool has = false;
+    for (char c : line) {
+        if ((c == '"' || c == '\x27') && (quote == 0 || quote == c)) {
+            quote = quote ? 0 : c;
+            has = true;
+            continue;
+        }
+        if (!quote && (c == ' ' || c == '\t' || c == '\r' || c == '\n')) {
+            if (has || !cur.empty()) t.push_back(cur);
+            cur.clear();
+            has = false;
+            continue;
+        }
+        cur += c;
+    }
+    if (has || !cur.empty()) t.push_back(cur);
+    return t;
+}
+
+bool toNum(const std::string& s, double& v) {
+    std::string t = s;
+    std::replace(t.begin(), t.end(), ',', '.');
+    if (t.empty()) return false;
+    char* end = nullptr;
+    v = std::strtod(t.c_str(), &end);
+    return end && *end == 0;
+}
+
+int findMaterial(const std::string& tok) {
+    const auto& m = materials();
+    std::string n = normalizeWord(tok);
+    int i = findMaterialIndex(n.c_str());
+    if (i >= 0) return i;
+    if (n.size() >= 3)
+        for (size_t k = 0; k < m.size(); ++k)
+            if (std::string(m[k].name).rfind(n, 0) == 0) return (int)k;
+    return -1;
+}
+
+std::string materialNames() {
+    std::string s;
+    for (auto& m : materials()) s += std::string(s.empty() ? "" : ", ") + m.name;
+    return s;
+}
+
+std::string v3(const glm::dvec3& v, double scale = 100.0, int dec = 1) {
+    return fmtNum(v.x * scale, dec) + " " + fmtNum(v.y * scale, dec) + " " + fmtNum(v.z * scale, dec);
+}
+
+glm::dvec3 eulerDeg(const glm::dquat& q) { return glm::degrees(glm::eulerAngles(q)); }
+
+int axisIndex(const std::string& s) {
+    std::string n = normalizeWord(s);
+    if (n == "x") return 0;
+    if (n == "y") return 1;
+    if (n == "z") return 2;
+    return -1;
+}
+
+// Fläche: +x -x +y -y +z -z oder top bottom right left front back. k = Achse, s = Richtung
+bool parseFace(const std::string& tok, int& k, int& s) {
+    std::string n = normalizeWord(tok);
+    if (n == "top") n = "+y";
+    else if (n == "bottom") n = "-y";
+    else if (n == "right") n = "+x";
+    else if (n == "left") n = "-x";
+    else if (n == "front") n = "+z";
+    else if (n == "back") n = "-z";
+    if (n.size() == 1) n = "+" + n;
+    if (n.size() != 2 || (n[0] != '+' && n[0] != '-')) return false;
+    k = axisIndex(n.substr(1));
+    s = n[0] == '+' ? 1 : -1;
+    return k >= 0;
+}
+
+const char* faceName(int k, int s) {
+    static const char* names[3][2] = {{"-x", "+x"}, {"-y", "+y"}, {"-z", "+z"}};
+    return names[k][s > 0 ? 1 : 0];
+}
+
+// Richtung als Name (+x ...), sonst als Vektor
+std::string dirName(const glm::dvec3& n) {
+    for (int k = 0; k < 3; ++k)
+        for (int s : {1, -1})
+            if (n[k] * s > 0.999) return faceName(k, s);
+    return "(" + fmtNum(n.x, 2) + " " + fmtNum(n.y, 2) + " " + fmtNum(n.z, 2) + ")";
+}
+
+// Achsen auf einer Fläche: u = erste, v = zweite andere Achse (wie beim Bohren)
+void faceAxes(int k, int& u, int& v) {
+    u = k == 0 ? 1 : 0;
+    v = k == 2 ? 1 : 2;
+}
+
+bool yes(const std::string& s) {
+    std::string n = normalizeWord(s);
+    return n == "on" || n == "yes" || n == "true" || n == "1";
+}
+
+std::string supportText(const Object& o) {
+    if (o.fixed) return "fixed";
+    if (o.hingeAxis >= 0) {
+        std::string s = std::string("axle ") + "xyz"[o.hingeAxis];
+        if (std::abs(o.motorRpm) > 1e-3f) s += " motor " + fmtNum(o.motorRpm, 1) + " rpm, max " + fmtNum(o.motorTorque, 1) + " Nm";
+        return s;
+    }
+    return "free";
+}
+
+std::string brief(const Object& o) {
+    glm::dvec3 s = (o.bbMax - o.bbMin) * 100.0;
+    return "#" + std::to_string(o.id) + "  " + o.name + "  [" + materials()[o.material].name + "]  " + fmtNum(s.x) + " x " +
+           fmtNum(s.y) + " x " + fmtNum(s.z) + " cm  " + fmtNum(o.mass, 3) + " kg  pos " + v3(o.pos) + " cm  " + supportText(o);
+}
+
+std::string details(World& w, Object& o) {
+    const Material& m = materials()[o.material];
+    glm::dvec3 s = (o.bbMax - o.bbMin) * 100.0;
+    std::ostringstream ss;
+    ss << "object        #" << o.id << " \"" << o.name << "\"\n";
+    ss << "shape         " << o.shape << (o.edits ? " (edited " + std::to_string(o.edits) + "x)" : "") << "\n";
+    ss << "material      " << m.name << "  density=" << m.density << " kg/m3  friction static=" << fmtNum(m.frictionStatic, 2)
+       << " sliding=" << fmtNum(m.frictionKinetic, 2) << "  rolling=" << fmtNum(m.rolling, 4) << "  restitution=" << fmtNum(m.restitution, 2)
+       << "\n";
+    ss << "strength      tension=" << fmtNum(m.tensileMPa, 1) << " MPa  compression=" << fmtNum(m.compressiveMPa, 1)
+       << " MPa  E=" << fmtNum(m.youngGPa, 2) << " GPa\n";
+    ss << "size_cm       " << fmtNum(s.x, 2) << " x " << fmtNum(s.y, 2) << " x " << fmtNum(s.z, 2) << "  (local x/y/z)\n";
+    ss << "volume        " << fmtNum(o.volume * 1e6, 2) << " cm3\n";
+    ss << "mass          " << fmtNum(o.mass, 4) << " kg   weight " << fmtNum(o.mass * 9.81, 3) << " N\n";
+    ss << "position_cm   " << v3(o.pos, 100.0, 2) << "  (center of mass)\n";
+    ss << "rotation_deg  " << v3(eulerDeg(o.rot), 1.0, 2) << "\n";
+    ss << "world_bounds  " << v3(o.wMin) << "  to  " << v3(o.wMax) << " cm\n";
+    ChunkKey k;
+    if (w.grid().keyOfObject(o.id, k)) ss << "chunk         " << k.x << " " << k.y << " " << k.z << "\n";
+    ss << "support       " << supportText(o) << "\n";
+    if (o.body != kNoBody && !o.fixed) {
+        glm::vec3 v = w.physics().linearVelocity(o.body), a = w.physics().angularVelocity(o.body);
+        ss << "velocity_m/s  " << fmtNum(v.x, 3) << " " << fmtNum(v.y, 3) << " " << fmtNum(v.z, 3) << "  (|v|=" << fmtNum(glm::length(v), 3)
+           << ")\n";
+        ss << "spin          " << fmtNum(glm::length(a) * 60.0 / (2 * kPi), 2) << " rpm\n";
+    }
+    if (o.kind == ObjKind::Solid) {
+        ss << "geometry      " << o.solid.pieces.size() << " convex pieces, " << solid::faceCount(o.solid) << " faces, "
+           << w.edgesOf(o).size() << " edges\n";
+        ss << "collision     "
+           << (o.prim && !o.edits ? std::string("exact primitive") : std::to_string(o.coll.hulls.size()) + " convex hull(s)")
+           << (o.collision == 1 ? " (exact)" : o.collision == 2 ? " (single hull)" : " (auto: holes and grooves are kept)") << "\n";
+    } else {
+        ss << "geometry      imported mesh, " << (o.imported ? o.imported->vertices.size() / 3 : 0) << " triangles\n";
+    }
+    if (o.body == kNoBody) ss << "warning       no collision shape\n";
+    return ss.str();
+}
+
+// Optionale Position (cm) ab Index i, sonst freie Stelle
+glm::dvec3 placeAt(CommandHost& h, const std::vector<std::string>& t, size_t i, const glm::dvec3& half) {
+    double x, y, z;
+    if (t.size() >= i + 3 && toNum(t[i], x) && toNum(t[i + 1], y) && toNum(t[i + 2], z)) return glm::dvec3(x, y, z) / 100.0;
+    return h.world().findFreeSpot(half, h.spawnReference());
+}
+
+// Kanten auswählen: all | rims | convex | concave | +y | top | +y+x | top+front | x | y | z | e3 | 3 | e1,e4
+bool selectEdges(const std::vector<solid::Edge>& edges, const std::string& tokIn, std::vector<int>& out, std::string& err) {
+    std::string tok = normalizeWord(tokIn);
+    out.clear();
+    auto add = [&](int i) {
+        if (std::find(out.begin(), out.end(), i) == out.end()) out.push_back(i);
+    };
+    if (tok == "all" || tok == "rims" || tok == "convex" || tok == "concave") {
+        for (size_t i = 0; i < edges.size(); ++i) {
+            const auto& e = edges[i];
+            if (tok == "all" && !e.curved) add((int)i);
+            if (tok == "rims" && e.curved) add((int)i);
+            if (tok == "convex" && e.convex && !e.curved) add((int)i);
+            if (tok == "concave" && !e.convex && !e.curved) add((int)i);
+        }
+        if (out.empty()) err = "no such edges";
+        return !out.empty();
+    }
+    int ax = axisIndex(tok);
+    if (ax >= 0) {  // gerade Kanten entlang einer Achse
+        for (size_t i = 0; i < edges.size(); ++i) {
+            glm::dvec3 d = glm::normalize(edges[i].b - edges[i].a);
+            if (std::abs(d[ax]) > 0.999 && !edges[i].curved) add((int)i);
+        }
+        if (out.empty()) err = std::string("no edges along ") + "xyz"[ax];
+        return !out.empty();
+    }
+    // Nummern: e3, 3, e1,e4
+    {
+        std::vector<int> nums;
+        std::stringstream ss(tok);
+        std::string part;
+        bool ok = true;
+        while (std::getline(ss, part, ',')) {
+            if (!part.empty() && part[0] == 'e') part = part.substr(1);
+            double v;
+            if (!toNum(part, v)) {
+                ok = false;
+                break;
+            }
+            nums.push_back((int)v);
+        }
+        if (ok && !nums.empty()) {
+            for (int n : nums) {
+                if (n < 0 || n >= (int)edges.size()) {
+                    err = "there is no edge e" + std::to_string(n) + " (" + std::to_string(edges.size()) + " edges, see 'edges')";
+                    return false;
+                }
+                add(n);
+            }
+            return true;
+        }
+    }
+    // Flächen: +y, top, +y+x, top+front, top,front
+    std::vector<glm::dvec3> faces;
+    {
+        std::string cur;
+        auto flush = [&]() {
+            if (cur.empty()) return true;
+            int k, s;
+            if (!parseFace(cur, k, s)) return false;
+            glm::dvec3 n(0);
+            n[k] = s;
+            faces.push_back(n);
+            cur.clear();
+            return true;
+        };
+        for (size_t i = 0; i < tok.size(); ++i) {
+            char c = tok[i];
+            bool sep = c == ',' || ((c == '+' || c == '-') && !cur.empty() && cur != "+" && cur != "-");
+            if (sep) {
+                if (!flush()) {
+                    err = "unknown edge selection '" + tokIn + "'";
+                    return false;
+                }
+                if (c == ',') continue;
+            }
+            cur += c;
+        }
+        if (!flush() || faces.empty() || faces.size() > 2) {
+            err = "unknown edge selection '" + tokIn + "' (all, rims, x, +y, top+front, e3, ...)";
+            return false;
+        }
+    }
+    for (size_t i = 0; i < edges.size(); ++i) {
+        const auto& e = edges[i];
+        if (e.curved) continue;  // Lochränder gehören nicht dazu (dafür: rims)
+        auto has = [&](const glm::dvec3& n) { return glm::dot(e.n1, n) > 0.999 || glm::dot(e.n2, n) > 0.999; };
+        if (faces.size() == 1 ? has(faces[0]) : (has(faces[0]) && has(faces[1]))) add((int)i);
+    }
+    if (out.empty()) err = "no edges on " + tokIn;
+    return !out.empty();
+}
+
+std::string edgeLine(size_t i, const solid::Edge& e) {
+    glm::dvec3 d = glm::normalize(e.b - e.a);
+    std::string along = dirName(d);
+    if (along[0] == '-' || along[0] == '+') along = along.substr(1);
+    return "e" + std::to_string(i) + "  " + (e.convex ? "convex " : "concave") + "  " + fmtNum(glm::length(e.b - e.a) * 100, 2) + " cm along " +
+           along + "  from " + v3(e.a, 100, 2) + " to " + v3(e.b, 100, 2) + " cm  faces " + dirName(e.n1) + " / " + dirName(e.n2) + "  " +
+           fmtNum(180.0 - glm::degrees(e.angle), 0) + "°" + (e.curved ? "  (curved face)" : "");
+}
+
+} // namespace
+
+std::string normalizeWord(const std::string& s) {
+    std::string r;
+    for (size_t i = 0; i < s.size(); ++i) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == 0xC3 && i + 1 < s.size()) {
+            unsigned char d = (unsigned char)s[i + 1];
+            ++i;
+            if (d == 0xA4 || d == 0x84) r += "ae";
+            else if (d == 0xB6 || d == 0x96) r += "oe";
+            else if (d == 0xBC || d == 0x9C) r += "ue";
+            else if (d == 0x9F) r += "ss";
+            continue;
+        }
+        r += (char)std::tolower(c);
+    }
+    return r;
+}
+
+std::string CommandHost::wait(double seconds) {
+    world().simulateSeconds(seconds);
+    return fmtNum(seconds, 2) + " s passed (physics simulated)";
+}
+
+std::string CommandHost::setMode(bool play) {
+    world().setSimulating(play);
+    return play ? "physics running (play mode)" : "physics paused (build mode)";
+}
+
+std::string commandHelp() {
+    return
+        "Sizes in cm, small tool sizes in mm, angles in degrees. <id> = part number, 'selected' or 'last'.\n"
+        "Faces: +x -x +y -y +z -z or right left top bottom front back. a b = position on the face from its center (cm).\n"
+        "CREATE\n"
+        "  new box <mat> <L> <W> <H> [x y z]       box (L = x, H = y, W = z)\n"
+        "  new cylinder <mat> <D> <H> [x y z] | new tube <mat> <D_out> <D_in> <L> [x y z] | new sphere <mat> <D> [x y z]\n"
+        "  new gear <mat> <teeth> <module_mm> <width> [bore_mm] [x y z]\n"
+        "  new propeller <mat> <D> [blades] [angle] [blade_width] [thickness_mm]   axis y, +rotation = thrust to +y\n"
+        "  import <file.obj> [mat] [scale] | copy <id> [dx dy dz] | delete <id|all>\n"
+        "  list | info <id> | inspect <id> | materials | chunks | overlaps <id>\n"
+        "PLACE\n"
+        "  position <id> x y z                       teleport (warns when it overlaps something)\n"
+        "  move <id> dx dy dz [through]              stops at the first part in the way (through = ignore)\n"
+        "  rotation <id> rx ry rz | rotate <id> <x|y|z> <deg> | drop <id>\n"
+        "  material <id> <mat> | name <id> <text> | fix <id> [on|off] | axle <id> <x|y|z|off> [rpm] [Nm]\n"
+        "  collision <id> auto|exact|hull | unbreakable <id> [on|off] | buildcollision [on|off]\n"
+        "SAW, DRILL, MILL\n"
+        "  cut <id> <x|y|z> <distance> [angle] [kerf_mm]     distance from the end along the local axis\n"
+        "  drill <id> <face> <a> <b> <D_mm> [depth_mm] | drillat <id> x y z dx dy dz <D_mm> [depth_mm]\n"
+        "  countersink <id> <face> <a> <b> <D_mm> [angle]    cone for screw heads (default 90°)\n"
+        "  pocket <id> <face> <a> <b> <length_mm> <width_mm> <depth_mm> [corner_mm]   also a mortise\n"
+        "  groove <id> <face> <x|y|z> <offset> <width_mm> <depth_mm>     along an axis across the whole face\n"
+        "  rebate <id> <face> <side_face> <width_mm> <depth_mm>          step along an edge\n"
+        "  slot <id> <face> <a1> <b1> <a2> <b2> <width_mm> [depth_mm]    long hole (0 = through)\n"
+        "  tenon <id> <end_face> <length> <thickness_mm> <width_mm> | halflap <id> <end_face> <length> [side_face]\n"
+        "SHAPE\n"
+        "  edges <id> [selection]                    list edges (e0, e1 ...)\n"
+        "  round <id> <edges> <radius_mm> [segments] | chamfer <id> <edges> <size_mm> | sand <id> [radius_mm]\n"
+        "      edges: all | rims | convex | concave | x|y|z | +y | top+front | e3 | e1,e4\n"
+        "  plane <id> <face> <mm>                    plane off a layer\n"
+        "  turn <id> <x|y|z> <from> <to> <D_mm> [D2_mm]   lathe: turn down to a diameter (D2 = taper)\n"
+        "  bend <id> <x|y|z> <at> <angle> [radius_mm]     bend across the axis (sheet metal, rods)\n"
+        "  mirror <id> <x|y|z> [copy] | scale <id> <factor> | scale <id> <fx> <fy> <fz>\n"
+        "  merge <a> <b> [c ...] | subtract <a> <tool> [keep] | intersect <a> <tool> [keep]\n"
+        "JOIN (a holds, b is held)\n"
+        "  glue <a> <b> [glue] [strength_MPa] [gap_mm]   woodglue epoxy superglue pu hotglue construction\n"
+        "  nail <a> <b> [count] [length_mm] [d_mm] | screw <a> <b> [count] [length_mm] [d_mm]\n"
+        "  weld <a> <b> [seam_mm] | hinge <a> <b> <x|y|z> [rpm] [Nm]\n"
+        "  spring <a> <b> [N/m] [N·s/m] [max_N] | rope <a> <b> [length] [max_N]\n"
+        "  joints [id] | joint <nr> [setting value] | detach <nr|all>\n"
+        "  bores <id>                                round holes: size, pin and play, load, pressure, wear\n"
+        "  lubricate <id> [oil|grease|wax|soap|off]  lower friction and wear (pin hinges, axles, drawers)\n"
+        "  breakage [on|off]                         on: joints and parts break when overloaded (default)\n"
+        "PHYSICS & WORLD\n"
+        "  air [density <kg/m3> | vacuum | normal | wind x y z] | wind x y z\n"
+        "  impulse <id> jx jy jz                     impulse in N·s | sim <seconds>\n"
+        "  mode build|play | view perspective|top|front|side|quad\n"
+        "  camera x y z [distance] | select <id ...|all> | screenshot <file.png>\n"
+        "  drawing [id ...] [file.svg]               three-view drawing (no id: selection)\n"
+        "  undo | redo | scene empty|demo|showcase | save <file> | load <file> | quit\n"
+        "  status | wait <seconds>\n"
+        "ONLY IN THE GAME WINDOW\n"
+        "  player                                    position, view, what is carried\n"
+        "  player position x y z | player look <id | x y z> | player turn <deg> [pitch]\n"
+        "  player walk <forward|back|left|right> <seconds> [run] | player jump | player stop\n"
+        "  player grab [id] | player release | player throw [N·s] | player rotate <deg> [tilt]   (carried part, like R)\n"
+        "  tool select|saw [x|y|z] [angle] [kerf_mm]|drill [D_mm] [depth_mm]|round [r_mm] [chamfer]|mill [L W depth]|plane [mm]\n"
+        "  window inspector|drawing|console|help [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n";
+}
+
+CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
+    CommandResult res;
+    std::string line = lineIn;
+    if (line.rfind("\xEF\xBB\xBF", 0) == 0) line.erase(0, 3);  // UTF-8-BOM (z.B. aus dem Windows-Editor)
+    std::vector<std::string> t = tokenize(line);
+    if (t.empty() || t[0][0] == '#') return res;
+    World& w = host.world();
+    const std::string cmd = normalizeWord(t[0]);
+    auto fail = [&](const std::string& msg) {
+        res.ok = false;
+        res.text = "Error: " + msg;
+        return res;
+    };
+    auto num = [&](size_t i, double& v) { return i < t.size() && toNum(t[i], v); };
+    auto word = [&](size_t i) { return i < t.size() ? normalizeWord(t[i]) : std::string(); };
+    auto obj = [&](size_t i) -> Object* {
+        if (i >= t.size()) return nullptr;
+        std::string n = normalizeWord(t[i]);
+        double id = 0;
+        if (n == "selected" || n == "sel") return w.find(host.selectedId());
+        if (n == "last") return w.find(w.lastCreatedId());
+        if (!n.empty() && n[0] == '#') n = n.substr(1);
+        if (!toNum(n, id)) return nullptr;
+        return w.find((uint32_t)id);
+    };
+    auto jointNr = [&](size_t i, double& v) {
+        if (i >= t.size()) return false;
+        std::string s = normalizeWord(t[i]);
+        if (!s.empty() && s[0] == 'j') s = s.substr(1);
+        return toNum(s, v);
+    };
+    std::ostringstream out;
+    // Ergebnis einer Bearbeitung: alle entstandenen Teile auflisten
+    auto partsText = [&](const std::string& head, const std::vector<uint32_t>& ids, uint32_t fallback) {
+        out << head << "\n";
+        std::vector<uint32_t> list = ids;
+        if (list.empty()) list.push_back(fallback);
+        for (uint32_t i : list)
+            if (Object* p = w.find(i)) out << "  " << brief(*p) << "\n";
+        res.text = out.str();
+        return res;
+    };
+
+    {
+        std::string appOut;
+        if (host.appCommand(cmd, t, appOut)) {
+            res.ok = appOut.rfind("Error", 0) != 0;
+            res.text = appOut;
+            return res;
+        }
+    }
+
+    if (cmd == "help" || cmd == "?") {
+        res.text = commandHelp() + "\n" + scriptHelp();
+    } else if (cmd == "status") {
+        size_t moving = 0;
+        for (auto& o : w.objects())
+            if (o->body != kNoBody && !o->fixed && w.physics().isActive(o->body)) ++moving;
+        out << "physics       " << (w.simulating() ? "running (play mode)" : "paused (build mode)") << "\n";
+        out << "parts         " << w.objects().size() << " in " << w.grid().chunkCount() << " chunks, " << moving << " active\n";
+        auto sel = host.selectedIds();
+        out << "selected      ";
+        if (sel.empty()) out << "none";
+        for (uint32_t id : sel)
+            if (Object* o = w.find(id)) out << "#" << id << " " << o->name << "  ";
+        out << "\n";
+        out << "undo          " << w.undoCount() << " steps\n";
+        out << "rescued       " << w.rescueCount() << " times a part was put back to its last free spot\n";
+        out << host.statusText();
+        res.text = out.str();
+    } else if (cmd == "wait") {
+        double s = 1.0;
+        num(1, s);
+        res.text = host.wait(std::clamp(s, 0.0, 600.0));
+    } else if (cmd == "materials") {
+        for (size_t i = 0; i < materials().size(); ++i) {
+            const Material& m = materials()[i];
+            out << m.name << ": " << m.density << " kg/m3, friction static " << fmtNum(m.frictionStatic, 2) << " sliding "
+                << fmtNum(m.frictionKinetic, 2) << ", rolling " << fmtNum(m.rolling, 4) << ", restitution " << fmtNum(m.restitution, 2)
+                << ", tension " << m.tensileMPa << " MPa, E " << m.youngGPa << " GPa, "
+                << (m.minBendRatio < 0 ? std::string("not bendable") : "bend radius >= " + fmtNum(m.minBendRatio, 2) + " x thickness") << "\n";
+        }
+        res.text = out.str();
+    } else if (cmd == "new") {
+        if (t.size() < 3) return fail("new <shape> <material> ...");
+        std::string form = normalizeWord(t[1]);
+        int mat = findMaterial(t[2]);
+        if (mat < 0) return fail("unknown material '" + t[2] + "'. Available: " + materialNames());
+        Object* o = nullptr;
+        double a, b, c, d;
+        if (form == "box" || form == "board" || form == "block") {
+            if (!num(3, a) || !num(4, b) || !num(5, c) || a <= 0 || b <= 0 || c <= 0) return fail("new box <mat> <L> <W> <H>");
+            glm::dvec3 size(a / 100, c / 100, b / 100);
+            w.pushUndo();
+            o = w.addBox(mat, size, placeAt(host, t, 6, size * 0.5));
+        } else if (form == "cylinder" || form == "rod") {
+            if (!num(3, a) || !num(4, b) || a <= 0 || b <= 0) return fail("new cylinder <mat> <D> <H>");
+            w.pushUndo();
+            o = w.addCylinder(mat, a / 100, b / 100, placeAt(host, t, 5, glm::dvec3(a, b, a) / 200.0));
+        } else if (form == "tube" || form == "pipe") {
+            if (!num(3, a) || !num(4, b) || !num(5, c) || a <= 0 || b <= 0 || b >= a || c <= 0)
+                return fail("new tube <mat> <D_out> <D_in> <L>  (inner < outer)");
+            w.pushUndo();
+            o = w.addTube(mat, a / 100, b / 100, c / 100, placeAt(host, t, 6, glm::dvec3(a, c, a) / 200.0));
+        } else if (form == "sphere" || form == "ball") {
+            if (!num(3, a) || a <= 0) return fail("new sphere <mat> <D>");
+            w.pushUndo();
+            o = w.addSphere(mat, a / 100, placeAt(host, t, 4, glm::dvec3(a) / 200.0));
+        } else if (form == "gear") {
+            if (!num(3, a) || !num(4, b) || !num(5, c) || a < 6 || b <= 0 || c <= 0)
+                return fail("new gear <mat> <teeth(>=6)> <module_mm> <width_cm> [bore_mm]");
+            size_t posIdx = 6;
+            d = 0;
+            if (t.size() == 7 || t.size() == 10) {
+                num(6, d);
+                posIdx = 7;
+            }
+            double ra = b / 1000 * (a / 2 + 1);
+            w.pushUndo();
+            o = w.addGear(mat, (int)a, b / 1000, c / 100, d / 1000, placeAt(host, t, posIdx, glm::dvec3(ra, c / 200, ra)));
+        } else if (form == "propeller" || form == "fan") {
+            if (!num(3, a) || a <= 0) return fail("new propeller <mat> <D_cm> [blades] [angle_deg] [blade_width_cm] [thickness_mm]");
+            double blades = 2, pitch = 20, chord = a / 8, thick = 3;
+            num(4, blades);
+            num(5, pitch);
+            num(6, chord);
+            num(7, thick);
+            w.pushUndo();
+            o = w.addPropeller(mat, a / 100, (int)blades, pitch, chord / 100, thick / 1000,
+                               w.findFreeSpot(glm::dvec3(a / 200, chord / 100, a / 200), host.spawnReference()));
+        } else {
+            return fail("unknown shape '" + t[1] + "' (box, cylinder, tube, sphere, gear, propeller)");
+        }
+        if (!o) return fail("the part could not be created");
+        host.select(o->id);
+        res.text = "Created: " + brief(*o);
+    } else if (cmd == "import") {
+        if (t.size() < 2) return fail("import <file.obj> [material] [scale]");
+        int mat = t.size() > 2 ? findMaterial(t[2]) : materialIndex("spruce");
+        if (mat < 0) return fail("unknown material");
+        double scale = 1.0;
+        if (t.size() > 3 && !num(3, scale)) return fail("scale is not a number");
+        std::string err;
+        w.pushUndo();
+        Object* o = w.addImported(std::filesystem::u8path(t[1]), mat, scale, glm::dvec3(0, -1e9, 0), &err);
+        if (!o) return fail(err);
+        host.select(o->id);
+        res.text = "Imported: " + brief(*o);
+    } else if (cmd == "list" || cmd == "ls") {
+        for (auto& o : w.objects()) out << brief(*o) << "\n";
+        out << w.objects().size() << " parts in " << w.grid().chunkCount() << " chunks";
+        res.text = out.str();
+    } else if (cmd == "chunks") {
+        out << "chunk size " << kChunkSize << " m, " << w.grid().chunkCount() << " chunks in use\n";
+        for (auto& [k, c] : w.grid().chunks()) out << "  (" << k.x << ", " << k.y << ", " << k.z << "): " << c.objects.size() << " parts\n";
+        res.text = out.str();
+    } else if (cmd == "info") {
+        Object* o = obj(1);
+        if (!o) return fail("info <id>");
+        res.text = details(w, *o);
+    } else if (cmd == "inspect" || cmd == "physics") {
+        Object* o = obj(1);
+        if (!o) return fail("inspect <id>   (live: forces, energy, tipping; run 'sim' or play mode first)");
+        w.setInspect(o->id);
+        host.showInspector(o->id);
+        res.text = w.inspectText(o->id);
+    } else if (cmd == "overlaps") {
+        Object* o = obj(1);
+        if (!o) return fail("overlaps <id>");
+        auto ov = w.overlapsOf(*o, 0.0001);
+        if (ov.empty()) out << brief(*o) << "\n  touches nothing deeper than 0.1 mm";
+        else out << brief(*o) << "\n";
+        for (auto& [id, depth] : ov) {
+            Object* p = w.find(id);
+            out << "  sticks " << fmtNum(depth * 1000, 2) << " mm into " << (p ? "#" + std::to_string(id) + " " + p->name : std::string("the floor")) << "\n";
+        }
+        res.text = out.str();
+    // ---------------------------------------------------------------- Sägen, Bohren
+    } else if (cmd == "cut" || cmd == "saw") {
+        Object* o = obj(1);
+        int ax = t.size() > 2 ? axisIndex(t[2]) : -1;
+        double dist, ang = 0, kerf = 0;
+        if (!o || ax < 0 || !num(3, dist)) return fail("cut <id> <x|y|z> <distance_cm> [angle] [kerf_mm]");
+        num(4, ang);
+        num(5, kerf);
+        glm::dvec3 q = (o->bbMin + o->bbMax) * 0.5;
+        q[ax] = o->bbMin[ax] + dist / 100.0;
+        glm::dvec3 n(0);
+        n[ax] = 1;
+        if (std::abs(ang) > 1e-9) n = glm::angleAxis(glm::radians(ang), ax == 1 ? glm::dvec3(1, 0, 0) : glm::dvec3(0, 1, 0)) * n;
+        solid::Plane pl;
+        pl.n = glm::normalize(n);
+        pl.d = glm::dot(pl.n, q);
+        std::vector<uint32_t> ids;
+        std::string err;
+        uint32_t id = o->id;
+        w.pushUndo();
+        if (!w.cut(id, pl, kerf / 1000.0, &ids, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        return partsText("Cut -> " + std::to_string(ids.size()) + " parts:", ids, id);
+    } else if (cmd == "drill" || cmd == "drillat") {
+        Object* o = obj(1);
+        if (!o) return fail("part missing");
+        glm::dvec3 from, dir;
+        double dmm = 0, depth = 0;
+        if (cmd == "drillat") {
+            double v[6];
+            for (int i = 0; i < 6; ++i)
+                if (!num(2 + i, v[i])) return fail("drillat <id> <x y z> <dx dy dz> <D_mm> [depth_mm]");
+            if (!num(8, dmm)) return fail("diameter missing");
+            num(9, depth);
+            from = glm::dvec3(v[0], v[1], v[2]) / 100.0;
+            dir = glm::dvec3(v[3], v[4], v[5]);
+            if (glm::length(dir) < 1e-9) return fail("direction is zero");
+            dir = glm::normalize(dir);
+            depth = depth > 0 ? depth / 1000.0 : 0.0;
+        } else {
+            int k, s;
+            double a, b;
+            if (t.size() < 3 || !parseFace(t[2], k, s) || !num(3, a) || !num(4, b) || !num(5, dmm))
+                return fail("drill <id> <face> <a_cm> <b_cm> <D_mm> [depth_mm]");
+            num(6, depth);
+            int u, v;
+            faceAxes(k, u, v);
+            from = (o->bbMin + o->bbMax) * 0.5;
+            from[k] = (s > 0 ? o->bbMax[k] : o->bbMin[k]) + s * 0.001;
+            from[u] += a / 100.0;
+            from[v] += b / 100.0;
+            dir = glm::dvec3(0);
+            dir[k] = -s;
+            depth = depth > 0 ? depth / 1000.0 + 0.001 : 0.0;
+        }
+        if (dmm <= 0) return fail("diameter must be > 0");
+        std::vector<uint32_t> ids;
+        std::string err;
+        double removed = 0, massBefore = o->mass;
+        uint32_t id = o->id;
+        w.pushUndo();
+        if (!w.drill(id, from, dir, dmm / 1000.0, depth, &ids, &removed, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        double after = 0;
+        for (uint32_t i : ids)
+            if (Object* p = w.find(i)) after += p->mass;
+        return partsText("Drilled: D " + fmtNum(dmm, 1) + " mm, removed " + fmtNum(removed * 1e6, 3) + " cm3 (" + fmtNum(massBefore - after, 4) +
+                             " kg of chips)",
+                         ids, id);
+    } else if (cmd == "countersink" || cmd == "pocket" || cmd == "groove" || cmd == "rebate" || cmd == "slot" || cmd == "tenon" ||
+               cmd == "halflap") {
+        Object* o = obj(1);
+        if (!o) return fail(cmd + " <id> ...   ('help' shows the parameters)");
+        if (o->kind != ObjKind::Solid) return fail("imported models cannot be milled (yet)");
+        const glm::dvec3 mn = o->bbMin, mx = o->bbMax, c = (mn + mx) * 0.5, ext = mx - mn;
+        std::vector<std::vector<solid::Plane>> tools;
+        std::string what;
+        int k = 1, s = 1;
+        if (t.size() < 3 || !parseFace(t[2], k, s)) return fail(cmd + ": face missing (+x -x +y -y +z -z / top bottom ...)");
+        int u, v;
+        faceAxes(k, u, v);
+        const double face = s > 0 ? mx[k] : mn[k];
+        // Bereich entlang der Flächennormalen: von der Oberfläche "depth" tief ins Teil (plus etwas Luft außen)
+        auto depthRange = [&](double depth, double& lo, double& hi) {
+            if (s > 0) {
+                lo = face - depth;
+                hi = face + kMargin;
+            } else {
+                lo = face - kMargin;
+                hi = face + depth;
+            }
+        };
+        if (cmd == "countersink") {
+            double a, b, dmm, angle = 90;
+            if (!num(3, a) || !num(4, b) || !num(5, dmm) || dmm <= 0) return fail("countersink <id> <face> <a> <b> <D_mm> [angle_deg]");
+            num(6, angle);
+            angle = std::clamp(angle, 30.0, 150.0);
+            const double r = dmm / 2000.0, tanHalf = std::tan(glm::radians(angle / 2));
+            glm::dvec3 from = c;
+            from[k] = face + s * kMargin;
+            from[u] += a / 100;
+            from[v] += b / 100;
+            glm::dvec3 dir(0);
+            dir[k] = -s;
+            const double r0 = r + kMargin * tanHalf, length = kMargin + r / tanHalf;
+            tools.push_back(solid::coneTool(from, dir, r0, 0.0002, length - 0.0002 / tanHalf, 48));
+            what = "countersink D " + fmtNum(dmm, 1) + " mm, " + fmtNum(angle, 0) + "°";
+        } else if (cmd == "pocket") {
+            double a, b, L, W, D, R = 0;
+            if (!num(3, a) || !num(4, b) || !num(5, L) || !num(6, W) || !num(7, D) || L <= 0 || W <= 0 || D <= 0)
+                return fail("pocket <id> <face> <a> <b> <length_mm> <width_mm> <depth_mm> [corner_radius_mm]");
+            num(8, R);
+            L /= 1000;
+            W /= 1000;
+            D /= 1000;
+            R = std::clamp(R / 1000, 0.0, std::min(L, W) / 2);
+            const double cu = c[u] + a / 100, cv = c[v] + b / 100;
+            double lo, hi;
+            depthRange(D, lo, hi);
+            auto box = [&](double u0, double u1, double v0, double v1) {
+                glm::dvec3 bmn, bmx;
+                bmn[k] = lo;
+                bmx[k] = hi;
+                bmn[u] = u0;
+                bmx[u] = u1;
+                bmn[v] = v0;
+                bmx[v] = v1;
+                tools.push_back(solid::boxTool(bmn, bmx));
+            };
+            if (R < 1e-5) {
+                box(cu - L / 2, cu + L / 2, cv - W / 2, cv + W / 2);
+            } else {
+                box(cu - L / 2 + R, cu + L / 2 - R, cv - W / 2, cv + W / 2);
+                box(cu - L / 2, cu + L / 2, cv - W / 2 + R, cv + W / 2 - R);
+                for (int i = 0; i < 4; ++i) {
+                    glm::dvec3 from(0);
+                    from[k] = face + s * kMargin;
+                    from[u] = cu + ((i & 1) ? 1 : -1) * (L / 2 - R);
+                    from[v] = cv + ((i & 2) ? 1 : -1) * (W / 2 - R);
+                    glm::dvec3 dir(0);
+                    dir[k] = -s;
+                    tools.push_back(solid::drillTool(from, dir, R, D + kMargin, 32));
+                }
+            }
+            what = "pocket " + fmtNum(L * 1000, 1) + " x " + fmtNum(W * 1000, 1) + " mm, " + fmtNum(D * 1000, 1) + " mm deep";
+        } else if (cmd == "groove") {
+            int j = t.size() > 3 ? axisIndex(t[3]) : -1;
+            double off, W, D;
+            if (j < 0 || j == k || !num(4, off) || !num(5, W) || !num(6, D) || W <= 0 || D <= 0)
+                return fail("groove <id> <face> <along x|y|z (not the face axis)> <offset_cm> <width_mm> <depth_mm>");
+            const int m = 3 - k - j;
+            double lo, hi;
+            depthRange(D / 1000, lo, hi);
+            glm::dvec3 bmn, bmx;
+            bmn[k] = lo;
+            bmx[k] = hi;
+            bmn[j] = mn[j] - 0.01;
+            bmx[j] = mx[j] + 0.01;
+            bmn[m] = c[m] + off / 100 - W / 2000;
+            bmx[m] = c[m] + off / 100 + W / 2000;
+            tools.push_back(solid::boxTool(bmn, bmx));
+            what = "groove " + fmtNum(W, 1) + " x " + fmtNum(D, 1) + " mm along " + "xyz"[j];
+        } else if (cmd == "rebate") {
+            int k2, s2;
+            double W, D;
+            if (t.size() < 4 || !parseFace(t[3], k2, s2) || k2 == k || !num(4, W) || !num(5, D) || W <= 0 || D <= 0)
+                return fail("rebate <id> <face> <side_face> <width_mm> <depth_mm>   e.g. rebate 5 top front 10 5");
+            const int m = 3 - k - k2;
+            double lo, hi;
+            depthRange(D / 1000, lo, hi);
+            glm::dvec3 bmn, bmx;
+            bmn[k] = lo;
+            bmx[k] = hi;
+            bmn[k2] = s2 > 0 ? mx[k2] - W / 1000 : mn[k2] - kMargin;
+            bmx[k2] = s2 > 0 ? mx[k2] + kMargin : mn[k2] + W / 1000;
+            bmn[m] = mn[m] - 0.01;
+            bmx[m] = mx[m] + 0.01;
+            tools.push_back(solid::boxTool(bmn, bmx));
+            what = "rebate " + fmtNum(W, 1) + " x " + fmtNum(D, 1) + " mm";
+        } else if (cmd == "slot") {
+            double a1, b1, a2, b2, W, D = 0;
+            if (!num(3, a1) || !num(4, b1) || !num(5, a2) || !num(6, b2) || !num(7, W) || W <= 0)
+                return fail("slot <id> <face> <a1> <b1> <a2> <b2> <width_mm> [depth_mm, 0 = through]");
+            num(8, D);
+            const double depth = D > 0 ? D / 1000 : ext[k] + 0.01;
+            glm::dvec3 p1 = c, p2 = c;
+            p1[k] = p2[k] = face + s * kMargin;
+            p1[u] += a1 / 100;
+            p1[v] += b1 / 100;
+            p2[u] += a2 / 100;
+            p2[v] += b2 / 100;
+            glm::dvec3 dir(0);
+            dir[k] = -s;
+            const double r = W / 2000;
+            tools.push_back(solid::drillTool(p1, dir, r, depth + kMargin, 32));
+            if (glm::length(p2 - p1) > 1e-6) {
+                tools.push_back(solid::drillTool(p2, dir, r, depth + kMargin, 32));
+                const glm::dvec3 along = glm::normalize(p2 - p1), side = glm::cross(dir, along);
+                std::vector<solid::Plane> bx;
+                auto plane = [&](const glm::dvec3& n, const glm::dvec3& p) {
+                    solid::Plane pl;
+                    pl.n = n;
+                    pl.d = glm::dot(n, p);
+                    bx.push_back(pl);
+                };
+                plane(along, p2);
+                plane(-along, p1);
+                plane(side, p1 + side * r);
+                plane(-side, p1 - side * r);
+                plane(-dir, p1);
+                plane(dir, p1 + dir * (depth + kMargin));
+                tools.push_back(bx);
+            }
+            what = "slot " + fmtNum(glm::length(p2 - p1) * 1000 + W, 1) + " x " + fmtNum(W, 1) + " mm" + (D > 0 ? ", " + fmtNum(D, 1) + " mm deep" : ", through");
+        } else if (cmd == "tenon") {
+            double len, th, wd;
+            if (!num(3, len) || !num(4, th) || !num(5, wd) || len <= 0 || th <= 0 || wd <= 0)
+                return fail("tenon <id> <end_face> <length_cm> <thickness_mm> <width_mm>");
+            int ta = u, wa = v;
+            if (ext[wa] < ext[ta]) std::swap(ta, wa);  // Dicke entlang der dünneren Richtung
+            th /= 1000;
+            wd /= 1000;
+            len /= 100;
+            if (th >= ext[ta] - 1e-6 && wd >= ext[wa] - 1e-6) return fail("the tenon is as big as the part - nothing to remove");
+            if (th > ext[ta] + 1e-6 || wd > ext[wa] + 1e-6 || len >= ext[k]) return fail("the tenon is larger than the part");
+            double lo = s > 0 ? face - len : face - kMargin, hi = s > 0 ? face + kMargin : face + len;
+            auto box = [&](double t0, double t1, double w0, double w1) {
+                if (t1 - t0 < 1e-7 || w1 - w0 < 1e-7) return;
+                glm::dvec3 bmn, bmx;
+                bmn[k] = lo;
+                bmx[k] = hi;
+                bmn[ta] = t0;
+                bmx[ta] = t1;
+                bmn[wa] = w0;
+                bmx[wa] = w1;
+                tools.push_back(solid::boxTool(bmn, bmx));
+            };
+            const double e = 0.005;
+            box(mn[ta] - e, c[ta] - th / 2, mn[wa] - e, mx[wa] + e);
+            box(c[ta] + th / 2, mx[ta] + e, mn[wa] - e, mx[wa] + e);
+            box(c[ta] - th / 2, c[ta] + th / 2, mn[wa] - e, c[wa] - wd / 2);
+            box(c[ta] - th / 2, c[ta] + th / 2, c[wa] + wd / 2, mx[wa] + e);
+            what = "tenon " + fmtNum(len * 100, 1) + " cm long, " + fmtNum(th * 1000, 1) + " x " + fmtNum(wd * 1000, 1) + " mm";
+        } else {  // halflap
+            double len;
+            if (!num(3, len) || len <= 0) return fail("halflap <id> <end_face> <length_cm> [side_face]");
+            len /= 100;
+            if (len >= ext[k]) return fail("the half lap is longer than the part");
+            int k2 = ext[u] < ext[v] ? u : v, s2 = 1;
+            if (t.size() > 4 && (!parseFace(t[4], k2, s2) || k2 == k)) return fail("side face must lie across the end face");
+            const int m = 3 - k - k2;
+            glm::dvec3 bmn, bmx;
+            bmn[k] = s > 0 ? face - len : face - kMargin;
+            bmx[k] = s > 0 ? face + kMargin : face + len;
+            bmn[k2] = s2 > 0 ? c[k2] : mn[k2] - kMargin;
+            bmx[k2] = s2 > 0 ? mx[k2] + kMargin : c[k2];
+            bmn[m] = mn[m] - 0.01;
+            bmx[m] = mx[m] + 0.01;
+            tools.push_back(solid::boxTool(bmn, bmx));
+            what = "half lap " + fmtNum(len * 100, 1) + " cm, half the thickness from " + faceName(k2, s2);
+        }
+        std::vector<uint32_t> ids;
+        std::string err;
+        double removed = 0;
+        uint32_t id = o->id;
+        w.pushUndo();
+        if (!w.removeMaterial(id, tools, &removed, &ids, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        return partsText("Milled " + what + " on " + faceName(k, s) + ", removed " + fmtNum(removed * 1e6, 3) + " cm3", ids, id);
+    // ---------------------------------------------------------------- Kanten, Form
+    } else if (cmd == "edges") {
+        Object* o = obj(1);
+        if (!o) return fail("edges <id> [selection]");
+        const auto& edges = w.edgesOf(*o);
+        std::vector<int> sel;
+        std::string err;
+        if (t.size() > 2) {
+            if (!selectEdges(edges, t[2], sel, err)) return fail(err);
+        } else {
+            for (size_t i = 0; i < edges.size(); ++i) sel.push_back((int)i);
+        }
+        out << brief(*o) << "\n";
+        for (int i : sel) out << "  " << edgeLine(i, edges[i]) << "\n";
+        out << sel.size() << " of " << edges.size() << " edges";
+        res.text = out.str();
+    } else if (cmd == "round" || cmd == "chamfer" || cmd == "sand") {
+        Object* o = obj(1);
+        if (!o) return fail(cmd == "sand" ? "sand <id> [radius_mm]" : cmd + " <id> <edges> <size_mm>" + (cmd == "round" ? " [segments]" : ""));
+        double size = 1, segs = 0;
+        std::string selTok = "all";
+        if (cmd == "sand") {
+            num(2, size);
+            segs = 3;
+        } else {
+            if (t.size() < 4 || !num(3, size)) return fail(cmd + " <id> <edges> <size_mm>   edges: all | x | +y | top+front | e3 ... (see 'edges')");
+            selTok = t[2];
+            num(4, segs);
+        }
+        if (size <= 0) return fail("size must be > 0");
+        std::vector<int> sel;
+        std::string err;
+        if (!selectEdges(w.edgesOf(*o), selTok, sel, err)) return fail(err);
+        int n = cmd == "chamfer" ? 1 : (segs >= 2 ? (int)segs : 8);
+        uint32_t id = o->id;
+        const double v0 = o->volume, m0 = o->mass;
+        w.pushUndo();
+        if (!w.blendEdges(id, sel, size / 1000.0, n, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        Object* p = w.find(id);
+        out << (cmd == "chamfer" ? "Chamfered " : cmd == "sand" ? "Sanded " : "Rounded ") << sel.size() << " edge(s) with " << fmtNum(size, 1)
+            << " mm" << (cmd == "round" ? " radius" : "") << ", volume " << fmtNum((p ? p->volume - v0 : 0) * 1e6, 3) << " cm3 ("
+            << fmtNum(p ? p->mass - m0 : 0, 4) << " kg)\n";
+        if (p) out << "  " << brief(*p) << "\n";
+        res.text = out.str();
+    } else if (cmd == "plane") {
+        Object* o = obj(1);
+        int k, s;
+        double mm;
+        if (!o || t.size() < 4 || !parseFace(t[2], k, s) || !num(3, mm)) return fail("plane <id> <face> <mm>");
+        std::string err;
+        uint32_t id = o->id;
+        const double before = (o->bbMax[k] - o->bbMin[k]) * 1000;
+        w.pushUndo();
+        if (!w.planeOff(id, k, s, mm / 1000.0, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        Object* p = w.find(id);
+        res.text = "Planed " + fmtNum(mm, 2) + " mm off " + faceName(k, s) + ": " + fmtNum(before, 1) + " -> " +
+                   fmtNum(p ? (p->bbMax[k] - p->bbMin[k]) * 1000 : 0, 1) + " mm\n  " + (p ? brief(*p) : std::string());
+    } else if (cmd == "turn") {
+        Object* o = obj(1);
+        int ax = t.size() > 2 ? axisIndex(t[2]) : -1;
+        double from, to, d0, d1;
+        if (!o || ax < 0 || !num(3, from) || !num(4, to) || !num(5, d0)) return fail("turn <id> <x|y|z> <from_cm> <to_cm> <D_mm> [D2_mm]");
+        d1 = d0;
+        num(6, d1);
+        std::string err;
+        double removed = 0;
+        uint32_t id = o->id;
+        w.pushUndo();
+        if (!w.turnPart(id, ax, from / 100, to / 100, d0 / 1000, d1 / 1000, &removed, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        Object* p = w.find(id);
+        res.text = "Turned " + fmtNum(from, 1) + "-" + fmtNum(to, 1) + " cm along " + "xyz"[ax] + " to D " + fmtNum(d0, 1) +
+                   (std::abs(d1 - d0) > 1e-9 ? "-" + fmtNum(d1, 1) : std::string("")) + " mm, removed " + fmtNum(removed * 1e6, 3) + " cm3\n  " +
+                   (p ? brief(*p) : std::string());
+    } else if (cmd == "bend") {
+        Object* o = obj(1);
+        int ax = t.size() > 2 ? axisIndex(t[2]) : -1;
+        double at, ang, rad = 0;
+        if (!o || ax < 0 || !num(3, at) || !num(4, ang)) return fail("bend <id> <x|y|z> <at_cm> <angle_deg> [inner_radius_mm]");
+        num(5, rad);
+        std::string err, info;
+        uint32_t id = o->id;
+        w.pushUndo();
+        if (!w.bendPart(id, ax, at / 100, ang, rad / 1000, &err, &info)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        Object* p = w.find(id);
+        res.text = "Bent " + info + "\n  " + (p ? brief(*p) : std::string());
+    } else if (cmd == "mirror") {
+        Object* o = obj(1);
+        int ax = t.size() > 2 ? axisIndex(t[2]) : -1;
+        if (!o || ax < 0) return fail("mirror <id> <x|y|z> [copy]");
+        std::string err;
+        w.pushUndo();
+        uint32_t id = o->id;
+        if (word(3) == "copy") {  // gespiegelte Kopie daneben (z.B. linkes und rechtes Teil)
+            Object* c = w.duplicate(id, glm::dvec3(o->wMax.x - o->wMin.x + 0.02, 0, 0));
+            if (!c) return fail("copy failed");
+            id = c->id;
+            host.select(id);
+        }
+        if (!w.mirrorPart(id, ax, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        res.text = std::string("Mirrored across local ") + "xyz"[ax] + ": " + brief(*w.find(id));
+    } else if (cmd == "scale") {
+        Object* o = obj(1);
+        double fx, fy, fz;
+        if (!o || !num(2, fx)) return fail("scale <id> <factor> | scale <id> <fx> <fy> <fz>");
+        fy = fz = fx;
+        if (t.size() >= 5 && (!num(3, fy) || !num(4, fz))) return fail("scale <id> <fx> <fy> <fz>");
+        std::string err;
+        const double m0 = o->mass;
+        w.pushUndo();
+        if (!w.scalePart(o->id, glm::dvec3(fx, fy, fz), &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        res.text = "Scaled (mass " + fmtNum(m0, 4) + " -> " + fmtNum(o->mass, 4) + " kg): " + brief(*o);
+    } else if (cmd == "merge") {
+        Object* a = obj(1);
+        if (!a || t.size() < 3) return fail("merge <a> <b> [c ...]   (same material, touching)");
+        uint32_t id = a->id;
+        w.pushUndo();
+        for (size_t i = 2; i < t.size(); ++i) {
+            Object* b = obj(i);
+            if (!b) {
+                w.undo();
+                return fail("part " + t[i] + " not found");
+            }
+            std::string err;
+            if (!w.mergeParts(id, b->id, &err)) {
+                w.undo();
+                return fail(err);
+            }
+        }
+        res.text = "Merged into one part: " + brief(*w.find(id));
+    } else if (cmd == "subtract" || cmd == "intersect") {
+        Object* a = obj(1);
+        Object* b = obj(2);
+        if (!a || !b) return fail(cmd + " <part> <tool_part> [keep]");
+        bool keep = word(3) == "keep";
+        std::vector<uint32_t> ids;
+        std::string err;
+        double removed = 0;
+        uint32_t id = a->id;
+        w.pushUndo();
+        if (!w.booleanCut(id, b->id, cmd == "intersect", keep, &ids, &removed, &err)) {
+            w.discardUndo();
+            return fail(err);
+        }
+        return partsText(std::string(cmd == "intersect" ? "Kept the common volume" : "Cut the tool shape out") + ", removed " +
+                             fmtNum(removed * 1e6, 3) + " cm3" + (keep ? " (tool kept)" : " (tool part removed)") + ":",
+                         ids, id);
+    // ---------------------------------------------------------------- Lage
+    } else if (cmd == "position" || cmd == "pos") {
+        Object* o = obj(1);
+        double x, y, z;
+        if (!o || !num(2, x) || !num(3, y) || !num(4, z)) return fail("position <id> x y z (cm)");
+        w.pushUndo();
+        w.setTransform(*o, glm::dvec3(x, y, z) / 100.0, o->rot);
+        res.text = brief(*o);
+        for (auto& [id, depth] : w.overlapsOf(*o, 0.0005)) {
+            Object* p = w.find(id);
+            res.text += "\n  warning: sticks " + fmtNum(depth * 1000, 1) + " mm into " + (p ? "#" + std::to_string(id) + " " + p->name : std::string("the floor"));
+        }
+    } else if (cmd == "move") {
+        Object* o = obj(1);
+        double x, y, z;
+        if (!o || !num(2, x) || !num(3, y) || !num(4, z)) return fail("move <id> dx dy dz [through]   (cm, relative)");
+        const glm::dvec3 d = glm::dvec3(x, y, z) / 100.0;
+        w.pushUndo();
+        if (word(5) == "through" || !w.buildCollision()) {
+            w.setTransform(*o, o->pos + d, o->rot);
+            res.text = brief(*o);
+        } else {
+            uint32_t blocker = 0;
+            bool blocked = false;
+            glm::dvec3 moved = w.sweepMove({o->id}, d, &blocker, &blocked);
+            res.text = brief(*o);
+            if (blocked) {
+                Object* b = w.find(blocker);
+                res.text += "\n  stopped after " + fmtNum(glm::length(moved) * 100, 2) + " of " + fmtNum(glm::length(d) * 100, 2) + " cm at " +
+                            (b ? "#" + std::to_string(blocker) + " " + b->name : std::string("the floor")) + " (add 'through' to ignore)";
+            }
+        }
+    } else if (cmd == "rotation") {
+        Object* o = obj(1);
+        double x, y, z;
+        if (!o || !num(2, x) || !num(3, y) || !num(4, z)) return fail("rotation <id> rx ry rz (degrees)");
+        w.pushUndo();
+        w.setTransform(*o, o->pos, glm::dquat(glm::radians(glm::dvec3(x, y, z))));
+        res.text = brief(*o) + "  rotation " + v3(eulerDeg(o->rot), 1.0, 1);
+    } else if (cmd == "rotate") {
+        Object* o = obj(1);
+        int ax = t.size() > 2 ? axisIndex(t[2]) : -1;
+        double deg;
+        if (!o || ax < 0 || !num(3, deg)) return fail("rotate <id> <x|y|z> <degrees>");
+        glm::dvec3 axis(0);
+        axis[ax] = 1;
+        w.pushUndo();
+        w.setTransform(*o, o->pos, glm::angleAxis(glm::radians(deg), axis) * o->rot);
+        res.text = brief(*o) + "  rotation " + v3(eulerDeg(o->rot), 1.0, 1);
+    } else if (cmd == "drop") {
+        Object* o = obj(1);
+        if (!o) return fail("drop <id>");
+        w.pushUndo();
+        w.dropToSurface(*o);
+        res.text = brief(*o);
+    } else if (cmd == "material") {
+        Object* o = obj(1);
+        int mat = t.size() > 2 ? findMaterial(t[2]) : -1;
+        if (!o || mat < 0) return fail("material <id> <" + materialNames() + ">");
+        w.pushUndo();
+        w.setMaterial(*o, mat);
+        res.text = brief(*o);
+    } else if (cmd == "name") {
+        Object* o = obj(1);
+        if (!o || t.size() < 3) return fail("name <id> <text>");
+        std::string n;
+        for (size_t i = 2; i < t.size(); ++i) n += (i > 2 ? " " : "") + t[i];
+        w.pushUndo();
+        o->name = n;
+        res.text = brief(*o);
+    } else if (cmd == "fix") {
+        Object* o = obj(1);
+        if (!o) return fail("fix <id> [on|off]");
+        bool on = t.size() < 3 || yes(t[2]);
+        w.pushUndo();
+        w.setFixed(*o, on);
+        res.text = brief(*o);
+    } else if (cmd == "buildcollision") {
+        if (t.size() > 1) w.setBuildCollision(yes(t[1]));
+        res.text = std::string("build collision ") + (w.buildCollision() ? "on: parts stop at other parts when moved" : "off: parts move through everything");
+    // ---------------------------------------------------------------- Verbindungen
+    } else if (cmd == "glue" || cmd == "nail" || cmd == "screw" || cmd == "weld" || cmd == "hinge" || cmd == "spring" || cmd == "rope") {
+        Object* a = obj(1);
+        Object* b = obj(2);
+        if (!a || !b) return fail(cmd + " <part_a> <part_b> ...   ('help' shows the parameters)");
+        std::string err;
+        Joint* j = nullptr;
+        w.pushUndo();
+        if (cmd == "glue") {
+            std::string preset = t.size() > 3 ? t[3] : "";
+            double ft = 0, gap = 0;
+            num(4, ft);
+            num(5, gap);
+            j = w.glue(a->id, b->id, preset, ft, gap, &err);
+        } else if (cmd == "nail" || cmd == "screw") {
+            double n = 0, len = 0, d = 0;
+            num(3, n);
+            num(4, len);
+            num(5, d);
+            j = w.nail(a->id, b->id, cmd == "screw", (int)n, len, d, &err);
+        } else if (cmd == "weld") {
+            double seam = 0;
+            num(3, seam);
+            j = w.weld(a->id, b->id, seam, &err);
+        } else if (cmd == "hinge") {
+            int ax = t.size() > 3 ? axisIndex(t[3]) : -1;
+            double rpm = 0, tq = 0;
+            num(4, rpm);
+            num(5, tq);
+            j = w.hinge(a->id, b->id, ax, (float)rpm, (float)tq, &err);
+        } else if (cmd == "spring") {
+            double k = 0, c = 0, mx = 0;
+            num(3, k);
+            num(4, c);
+            num(5, mx);
+            j = w.spring(a->id, b->id, k, c, mx, &err);
+        } else {
+            double len = 0, mx = 0;
+            num(3, len);
+            num(4, mx);
+            j = w.rope(a->id, b->id, len / 100.0, mx, &err);
+        }
+        if (!j) {
+            w.discardUndo();
+            return fail(err);
+        }
+        res.text = "Joined: " + w.jointText(*j, true);
+    } else if (cmd == "joints") {
+        Object* o = t.size() > 1 ? obj(1) : nullptr;
+        int n = 0;
+        for (auto& j : w.joints())
+            if (!o || j->a == o->id || j->b == o->id) {
+                out << w.jointText(*j, false) << "\n";
+                ++n;
+            }
+        out << n << " joint(s), breakage " << (w.breakage() ? "on" : "off") << ", broken so far: " << w.brokenCount();
+        res.text = out.str();
+    } else if (cmd == "joint") {
+        double idv;
+        if (!jointNr(1, idv))
+            return fail("joint <nr> [strength|shear|gap|count|length|diameter|seam|force|stiffness|damping|motor|unbreakable] [value]");
+        Joint* j = w.findJoint((uint32_t)idv);
+        if (!j) return fail("there is no joint J" + fmtNum(idv, 0));
+        if (t.size() >= 3) {
+            std::string p = normalizeWord(t[2]);
+            double v = 0, v2 = 0;
+            bool has = num(3, v);
+            num(4, v2);
+            w.pushUndo();
+            if (p == "unbreakable") j->unbreakable = t.size() < 4 || yes(t[3]);
+            else if (!has) return fail("value missing");
+            else if (p == "strength") {
+                double ratio = j->ft > 0 ? j->fs / j->ft : 1.0;
+                j->ft = v;
+                j->fs = v * ratio;
+            } else if (p == "shear") j->fs = v;
+            else if (p == "gap") j->gapMm = v;
+            else if (p == "count") j->count = std::max(1, (int)v);
+            else if (p == "length") {
+                if (j->type == JointType::Spring || j->type == JointType::Rope) j->restLength = v / 100.0;
+                else j->lengthMm = v;
+            } else if (p == "diameter") j->diameterMm = v;
+            else if (p == "seam") j->seamMm = v;
+            else if (p == "force") j->maxForce = v;
+            else if (p == "stiffness") j->stiffness = v;
+            else if (p == "damping") j->damping = v;
+            else if (p == "motor") {
+                j->motorRpm = (float)v;
+                if (v2 > 0) j->motorTorque = (float)v2;
+            } else return fail("unknown setting '" + t[2] + "'");
+            w.updateJoint(*j);
+        }
+        res.text = w.jointText(*j, true);
+    } else if (cmd == "detach") {
+        if (word(1) == "all") {
+            w.pushUndo();
+            size_t n = w.joints().size();
+            while (!w.joints().empty()) w.removeJoint(w.joints().back()->id);
+            res.text = std::to_string(n) + " joints removed";
+        } else {
+            double idv;
+            if (!jointNr(1, idv)) return fail("detach <nr|all>");
+            if (!w.findJoint((uint32_t)idv)) return fail("there is no such joint");
+            w.pushUndo();
+            w.removeJoint((uint32_t)idv);
+            res.text = "Joint J" + fmtNum(idv, 0) + " removed";
+        }
+    } else if (cmd == "unbreakable") {
+        Object* o = obj(1);
+        if (!o) return fail("unbreakable <id> [on|off]");
+        bool on = t.size() < 3 || yes(t[2]);
+        w.pushUndo();
+        o->unbreakable = on;
+        res.text = o->name + (on ? " never breaks" : " can break (when 'breakage on')");
+    } else if (cmd == "bores" || cmd == "holes") {
+        Object* o = obj(1);
+        if (!o) return fail("bores <id>");
+        res.text = w.boresText(*o);
+    } else if (cmd == "lubricate" || cmd == "lube") {
+        Object* o = obj(1);
+        const int lub = t.size() > 2 ? findLubricant(t[2].c_str()) : 1;
+        if (!o || lub < 0) {
+            std::string names;
+            for (const auto& l : lubricants()) names += std::string(names.empty() ? "" : " ") + l.name;
+            return fail("lubricate <id> [oil|grease|wax|soap|off]   (" + names + ")");
+        }
+        w.pushUndo();
+        w.setLubricant(*o, lub);
+        const Lubricant& l = lubricants()[lub];
+        res.text = lub == 0 ? o->name + " is dry again (friction of the materials)"
+                            : o->name + " lubricated with " + l.name + ": friction at most " + fmtNum(l.muS, 2) + " static / " +
+                                  fmtNum(l.muK, 2) + " sliding, wear x" + fmtNum(l.wear, 2);
+    } else if (cmd == "breakage") {
+        if (t.size() > 1) w.setBreakage(yes(t[1]));
+        res.text = std::string("breakage ") + (w.breakage() ? "on: joints and parts break when overloaded (realistic)"
+                                                            : "off: everything holds (engine/editor mode)");
+    // ---------------------------------------------------------------- Physik, Welt
+    } else if (cmd == "air" || cmd == "wind") {
+        std::string sub = word(1);
+        double rho = w.airDensity();
+        glm::dvec3 wind = w.wind();
+        double x, y, z;
+        if (cmd == "wind") {
+            if (!num(1, x) || !num(2, y) || !num(3, z)) return fail("wind x y z (m/s)");
+            wind = glm::dvec3(x, y, z);
+        } else if (sub == "density") {
+            if (!num(2, rho) || rho < 0) return fail("air density <kg/m3>  (air 1.204, vacuum 0)");
+        } else if (sub == "vacuum") {
+            rho = 0;
+        } else if (sub == "normal") {
+            rho = 1.204;
+            wind = glm::dvec3(0);
+        } else if (sub == "wind") {
+            if (!num(2, x) || !num(3, y) || !num(4, z)) return fail("air wind x y z (m/s)");
+            wind = glm::dvec3(x, y, z);
+        } else if (!sub.empty()) {
+            return fail("air [density <kg/m3> | vacuum | normal | wind x y z]");
+        }
+        w.setAir(rho, wind);
+        res.text = "air: density " + fmtNum(w.airDensity(), 3) + " kg/m3" + (w.airDensity() == 0 ? " (vacuum)" : "") + ", wind " +
+                   fmtNum(w.wind().x, 2) + " " + fmtNum(w.wind().y, 2) + " " + fmtNum(w.wind().z, 2) + " m/s (" +
+                   fmtNum(glm::length(w.wind()), 2) + " m/s = " + fmtNum(glm::length(w.wind()) * 3.6, 1) + " km/h)";
+    } else if (cmd == "collision") {
+        Object* o = obj(1);
+        std::string m = word(2);
+        int mode = m == "auto" ? 0 : m == "exact" ? 1 : m == "hull" ? 2 : -1;
+        if (!o || mode < 0) return fail("collision <id> auto|exact|hull");
+        w.pushUndo();
+        w.setCollisionMode(*o, mode);
+        res.text = brief(*o) + "\ncollision: " +
+                   (o->prim && !o->edits ? std::string("exact primitive") : std::to_string(o->coll.hulls.size()) + " hull(s)");
+    } else if (cmd == "axle") {
+        Object* o = obj(1);
+        if (!o || t.size() < 3) return fail("axle <id> <x|y|z|off> [rpm] [Nm]");
+        int ax = axisIndex(t[2]);
+        double rpm = 0, torque = 5;
+        num(3, rpm);
+        num(4, torque);
+        w.pushUndo();
+        if (o->fixed && ax >= 0) w.setFixed(*o, false);
+        w.setHinge(*o, ax, (float)rpm, (float)torque);
+        res.text = brief(*o);
+    } else if (cmd == "copy") {
+        Object* o = obj(1);
+        if (!o) return fail("copy <id> [dx dy dz]");
+        double x, y, z;
+        glm::dvec3 off(o->wMax.x - o->wMin.x + 0.02, 0, 0);
+        if (num(2, x) && num(3, y) && num(4, z)) off = glm::dvec3(x, y, z) / 100.0;
+        w.pushUndo();
+        Object* c = w.duplicate(o->id, off);
+        if (!c) return fail("copy failed");
+        host.select(c->id);
+        res.text = "Copy: " + brief(*c);
+    } else if (cmd == "delete" || cmd == "remove" || cmd == "del") {
+        if (word(1) == "all") {
+            w.pushUndo();
+            size_t n = w.objects().size();
+            w.clear();
+            res.text = std::to_string(n) + " parts deleted";
+        } else {
+            Object* o = obj(1);
+            if (!o) return fail("delete <id|all>");
+            std::string b = brief(*o);
+            w.pushUndo();
+            w.remove(o->id);
+            res.text = "Deleted: " + b;
+        }
+    } else if (cmd == "impulse" || cmd == "push") {
+        Object* o = obj(1);
+        double x, y, z;
+        if (!o || !num(2, x) || !num(3, y) || !num(4, z)) return fail("impulse <id> jx jy jz (N·s)");
+        w.applyImpulse(*o, glm::vec3((float)x, (float)y, (float)z));
+        glm::vec3 v = w.physics().linearVelocity(o->body);
+        res.text = "Impulse on #" + std::to_string(o->id) + ": speed now " + fmtNum(glm::length(v), 3) + " m/s";
+    } else if (cmd == "sim" || cmd == "simulate") {
+        double s = 1.0;
+        num(1, s);
+        s = std::clamp(s, 0.0, 600.0);
+        std::vector<std::pair<uint32_t, glm::dvec3>> before;
+        for (auto& o : w.objects()) before.emplace_back(o->id, o->pos);
+        w.simulateSeconds(s);
+        out << "simulated " << fmtNum(s, 2) << " s. Moved parts:\n";
+        int moved = 0;
+        for (auto& [id, p0] : before) {
+            Object* o = w.find(id);
+            if (!o) continue;
+            double d = glm::length(o->pos - p0);
+            if (d < 0.0005) continue;
+            ++moved;
+            glm::vec3 v = o->body != kNoBody ? w.physics().linearVelocity(o->body) : glm::vec3(0);
+            out << "  #" << id << " " << o->name << ": moved " << fmtNum(d * 100, 2) << " cm, now " << v3(o->pos) << " cm, v="
+                << fmtNum(glm::length(v), 3) << " m/s" << (glm::length(v) < 0.01f ? " (at rest)" : "") << "\n";
+        }
+        if (!moved) out << "  (none)\n";
+        for (const std::string& e : w.takeEvents()) out << "!! " << e << "\n";
+        res.text = out.str();
+    } else if (cmd == "mode") {
+        if (t.size() < 2) return fail("mode build|play");
+        std::string m = word(1);
+        if (m != "play" && m != "build") return fail("mode build|play");
+        res.text = host.setMode(m == "play");
+        for (const std::string& e : w.takeEvents()) res.text += "\n!! " + e;
+    } else if (cmd == "view") {
+        if (t.size() < 2) return fail("view perspective|top|front|side|quad");
+        res.text = host.setView(word(1));
+    } else if (cmd == "camera") {
+        double x, y, z, d = 3;
+        if (!num(1, x) || !num(2, y) || !num(3, z)) return fail("camera x y z [distance] (cm)");
+        num(4, d);
+        res.text = host.cameraLook(glm::dvec3(x, y, z) / 100.0, d > 10 ? d / 100.0 : d);
+    } else if (cmd == "screenshot" || cmd == "photo") {
+        if (t.size() < 2) return fail("screenshot <file.png>");
+        res.text = host.screenshot(t[1]);
+    } else if (cmd == "select") {
+        std::vector<uint32_t> ids;
+        for (size_t i = 1; i < t.size(); ++i) {
+            if (word(i) == "all") {
+                for (auto& o : w.objects()) ids.push_back(o->id);
+                continue;
+            }
+            Object* o = obj(i);
+            if (!o) return fail("select <id> [id ...] | select all");
+            ids.push_back(o->id);
+        }
+        if (ids.empty()) {
+            auto cur = host.selectedIds();
+            out << cur.size() << " selected:\n";
+            for (uint32_t id : cur)
+                if (Object* o = w.find(id)) out << "  " << brief(*o) << "\n";
+            res.text = out.str();
+            return res;
+        }
+        host.selectMany(ids);
+        out << ids.size() << " selected";
+        if (ids.size() == 1) out << ": " << brief(*w.find(ids[0]));
+        res.text = out.str();
+    } else if (cmd == "drawing" || cmd == "threeview") {
+        std::vector<uint32_t> ids;
+        std::string file;
+        for (size_t i = 1; i < t.size(); ++i) {
+            std::string n = word(i);
+            if (n.size() > 4 && n.substr(n.size() - 4) == ".svg") {
+                file = t[i];
+            } else if (n == "selected" || n == "sel") {
+                for (uint32_t id : host.selectedIds()) ids.push_back(id);
+            } else {
+                Object* o = obj(i);
+                if (!o) return fail("drawing [id ...] [file.svg]");
+                ids.push_back(o->id);
+            }
+        }
+        if (ids.empty()) ids = host.selectedIds();
+        TechDrawing d;
+        std::string err;
+        if (!makeThreeView(w, ids, d, &err)) return fail(err + " (drawing <id ...> [file.svg])");
+        Sheet s = layoutSheet(d);
+        out << drawingSummary(d, s);
+        if (!file.empty()) {
+            std::ofstream f(std::filesystem::u8path(file), std::ios::binary);
+            if (!f) return fail("cannot write the SVG: " + file);
+            f << sheetToSvg(s);
+            out << "SVG saved: " << file << "\n";
+        }
+        host.showDrawing(ids);
+        res.text = out.str();
+    } else if (cmd == "undo") {
+        res.text = w.undo() ? "Undone" : "Nothing to undo";
+    } else if (cmd == "redo") {
+        res.text = w.redo() ? "Redone" : "Nothing to redo";
+    } else if (cmd == "scene") {
+        std::string m = word(1);
+        w.pushUndo();
+        if (m == "empty") w.clear();
+        else if (m == "demo") w.demoScene();
+        else if (m == "showcase") w.showcaseScene();
+        else return fail("scene empty|demo|showcase");
+        res.text = "Scene: " + std::to_string(w.objects().size()) + " parts, " + std::to_string(w.joints().size()) + " joints";
+    } else if (cmd == "save") {
+        if (t.size() < 2) return fail("save <file>");
+        std::string err;
+        if (!w.save(std::filesystem::u8path(t[1]), &err)) return fail(err);
+        res.text = "Saved: " + t[1];
+    } else if (cmd == "load") {
+        if (t.size() < 2) return fail("load <file>");
+        std::string err;
+        w.pushUndo();
+        if (!w.load(std::filesystem::u8path(t[1]), &err)) return fail(err);
+        res.text = "Loaded: " + std::to_string(w.objects().size()) + " parts";
+    } else if (cmd == "quit" || cmd == "exit") {
+        host.requestQuit();
+        res.text = "Bye";
+    } else if (cmd == "player" || cmd == "tool" || cmd == "window" || cmd == "display") {
+        return fail("'" + t[0] + "' only works in the game window");
+    } else {
+        return fail("unknown command '" + t[0] + "'. 'help' shows all commands.");
+    }
+    return res;
+}
