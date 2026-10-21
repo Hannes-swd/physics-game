@@ -162,6 +162,7 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
         f.objects = createBuffer(sizeof(ObjectGpuData) * kMaxObjects, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
         f.ubo = createBuffer(sizeof(FrameUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
         f.vertices = createBuffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+        f.meshVertices = createBuffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
 
         VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         dai.descriptorPool = descPool_;
@@ -737,6 +738,24 @@ void Renderer::render(const FrameDesc& fd) {
     if (nOverlay) std::memcpy(lv + nLines, fd.overlayLines.data(), nOverlay * sizeof(LineVertex));
     if (nTrans) std::memcpy(lv + nLines + nOverlay, fd.translucent.data(), nTrans * sizeof(LineVertex));
 
+    const size_t mvBytes = fd.frameVertices.size() * sizeof(solid::Vertex);
+    if (mvBytes > fr.meshVertices.size) {
+        destroyBuffer(fr.meshVertices);
+        fr.meshVertices = createBuffer(std::max<VkDeviceSize>(mvBytes * 2, 256 * 1024), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+    }
+    if (mvBytes) std::memcpy(fr.meshVertices.mapped, fd.frameVertices.data(), mvBytes);
+    // ein Netz zeichnen: eigenes Netz oder ein Stück der Dreiecke dieses Bilds
+    auto drawItem = [&](VkCommandBuffer c, const DrawItem& it, uint32_t index) {
+        VkDeviceSize off = 0;
+        if (it.mesh && it.mesh->valid()) {
+            vkCmdBindVertexBuffers(c, 0, 1, &it.mesh->buffer, &off);
+            vkCmdDraw(c, it.mesh->vertexCount, 1, 0, index);
+        } else if (!it.mesh && it.frameCount && it.frameFirst + it.frameCount <= fd.frameVertices.size()) {
+            vkCmdBindVertexBuffers(c, 0, 1, &fr.meshVertices.buffer, &off);
+            vkCmdDraw(c, it.frameCount, 1, it.frameFirst, index);
+        }
+    };
+
     VkCommandBuffer cmd = fr.cmd;
     vkResetCommandBuffer(cmd, 0);
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -771,13 +790,8 @@ void Renderer::render(const FrameDesc& fd) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipe_);
             Push p{fd.lightViewProj, glm::vec4(0), glm::vec4(0)};
             vkCmdPushConstants(cmd, pipeLayout_, pcStages, 0, sizeof(Push), &p);
-            for (uint32_t i = 0; i < objCount; ++i) {
-                const DrawItem& it = fd.items[i];
-                if (!it.castShadow || !it.mesh || !it.mesh->valid()) continue;
-                VkDeviceSize off = 0;
-                vkCmdBindVertexBuffers(cmd, 0, 1, &it.mesh->buffer, &off);
-                vkCmdDraw(cmd, it.mesh->vertexCount, 1, 0, i);
-            }
+            for (uint32_t i = 0; i < objCount; ++i)
+                if (fd.items[i].castShadow) drawItem(cmd, fd.items[i], i);
         }
         vkCmdEndRendering(cmd);
     }
@@ -846,13 +860,7 @@ void Renderer::render(const FrameDesc& fd) {
             vkCmdDraw(cmd, 3, 1, 0, 0);
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipe_);
-            for (uint32_t i = 0; i < objCount; ++i) {
-                const DrawItem& it = fd.items[i];
-                if (!it.mesh || !it.mesh->valid()) continue;
-                VkDeviceSize off = 0;
-                vkCmdBindVertexBuffers(cmd, 0, 1, &it.mesh->buffer, &off);
-                vkCmdDraw(cmd, it.mesh->vertexCount, 1, 0, i);
-            }
+            for (uint32_t i = 0; i < objCount; ++i) drawItem(cmd, fd.items[i], i);
 
             VkDeviceSize off = 0;
             if (nLines + nOverlay + nTrans > 0) vkCmdBindVertexBuffers(cmd, 0, 1, &fr.vertices.buffer, &off);
@@ -982,6 +990,7 @@ void Renderer::shutdown() {
         destroyBuffer(f.objects);
         destroyBuffer(f.ubo);
         destroyBuffer(f.vertices);
+        destroyBuffer(f.meshVertices);
         vkDestroySemaphore(device_, f.imageAvailable, nullptr);
         vkDestroyFence(device_, f.fence, nullptr);
     }

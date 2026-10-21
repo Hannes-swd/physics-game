@@ -77,7 +77,16 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **E** | Teil aufnehmen / ablegen, ohne die Taste zu halten |
 | Rechte Maustaste | getragenes Teil werfen |
 | Mausrad | Abstand des getragenen Teils ändern |
+| **F5** | Ansicht wechseln: durch die Augen der Figur / von hinten über die Schulter |
 | **Esc** | Maus freigeben (Pause). Klick ins Bild: weiterspielen |
+
+Die Spielfigur ist ein Bauarbeiter (Modell von Quaternius, CC0, siehe `assets/characters`). Sie steht, geht und rennt
+je nach Tempo, macht seitwärts und rückwärts eigene Schritte (auch schräg gemischt) und neigt den Kopf mit dem Blick.
+Beim Springen zieht sie die Knie an und balanciert mit den Armen, beim Fallen streckt sie die Beine, und nach der
+Landung federt sie in die Knie – umso tiefer, je höher der Fall war. Mitspieler im LAN
+tragen Helm und Warnstreifen in ihrer Spielerfarbe. Steigt die Figur auf eine Stufe oder ein Teil (bis 35 cm),
+gleitet die Kamera weich nach. Steht sie auf einem beweglichen Teil, fährt sie mit; Stöße und Zittern eines leichten
+Teils federn ihre Beine ab, statt sie in die Luft zu werfen.
 
 Die Figur kann höchstens ca. **420 N** aufbringen. Teile über ca. 43 kg lassen sich nicht heben, nur schieben oder schleifen.
 Die Figur schiebt beim Laufen auch lose Teile weg (mit bis zu 350 N).

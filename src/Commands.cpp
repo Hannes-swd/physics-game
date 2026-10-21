@@ -372,7 +372,7 @@ std::string commandHelp() {
         "ONLY IN THE GAME WINDOW\n"
         "  player                                    position, view, what is carried\n"
         "  player position x y z | player look <id | x y z> | player turn <deg> [pitch]\n"
-        "  player walk <forward|back|left|right> <seconds> [run] | player jump | player stop\n"
+        "  player walk <forward|back|left|right> <seconds> [run] | player jump | player stop | player view [first|third]\n"
         "  player grab [id] | player release | player throw [N·s] | player rotate <deg> [tilt]   (carried part, like R)\n"
         "  tool select|saw [x|y|z] [angle] [kerf_mm]|drill [D_mm] [depth_mm]|round [r_mm] [chamfer]|mill [L W depth]|plane [mm]\n"
         "  window inspector|drawing|console|help [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"

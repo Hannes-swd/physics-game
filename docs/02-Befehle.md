@@ -592,9 +592,10 @@ Alle `player`-Befehle (außer der Abfrage) schalten bei Bedarf automatisch in de
 | `player look <id>` | zum Mittelpunkt eines Teils schauen |
 | `player look x y z` | zu einem Punkt (cm) schauen |
 | `player turn <deg> [pitch]` | nach rechts (+) / links (−) drehen; optional Neigung absolut (Grad, + = hoch) |
-| `player walk <forward\|back\|left\|right> <seconds> [run]` | eine Zeit lang laufen (4 m/s, rennen 7 m/s). `player run …` rennt |
+| `player walk <forward\|back\|left\|right> <seconds> [run]` | eine Zeit lang laufen (4 m/s, rennen 7 m/s). `player run …` rennt. Schräg wie zwei Tasten: `forward-right`, `back-left` … |
 | `player stop` | stehen bleiben |
 | `player jump` | springen |
+| `player view [first\|third]` | durch die Augen der Figur oder von hinten über die Schulter (wie **F5**); ohne Angabe umschalten |
 | `player grab [id]` | Teil aufnehmen (mit id: vorher hinschauen). Reichweite 3,5 m, nicht durch andere Teile hindurch |
 | `player release` | Teil fallen lassen. Anderer Name: `drop` |
 | `player throw [N·s]` | getragenes Teil in Blickrichtung werfen (Standard: 9 m/s, höchstens 45 N·s) |

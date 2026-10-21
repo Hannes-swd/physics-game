@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 
+#include "Avatar.h"
 #include "Commands.h"
 #include "Drawing.h"
 #include "Materials.h"
@@ -488,6 +489,97 @@ int runSelfTest() {
         for (auto& o : w.objects())
             if (o->body != kNoBody && !o->fixed && o->hingeAxis < 0) fastest = std::max(fastest, (double)glm::length(physics.linearVelocity(o->body)));
         check(fastest < 20, "showcase runs 5 s without anything exploding", "fastest " + num(fastest) + " m/s, deepest " + num(worst * 1000) + " mm");
+    }
+
+    std::printf("== Player ==\n");
+    {
+        World w(physics, nullptr);
+        w.setSimulating(true);
+        const float dt = 1.0f / 60.0f;
+        // läuft (oder steht) eine Weile und gibt die größte Fußhöhe zurück
+        auto walk = [&](glm::vec3 wish, double seconds, const std::function<void(int)>& each = {}) {
+            double top = -1e9;
+            for (int i = 0; i < (int)(seconds / dt); ++i) {
+                if (each) each(i);
+                w.step(dt, [](float) {});
+                physics.updateCharacter(dt, wish, false, kNoBody);
+                top = std::max(top, physics.characterPosition().y);
+            }
+            return top;
+        };
+        // leichtes Brett (8 kg, 5 cm) und höherer Kasten (30 cm, Stufe) quer im Weg
+        w.addBox(materialIndex("spruce"), {0.6, 0.05, 0.6}, {1.5, 0.025, 0});
+        w.addBox(materialIndex("spruce"), {0.5, 0.30, 0.5}, {3.5, 0.15, 0});
+        w.simulateSeconds(1.0);
+        physics.createCharacter({0, 0, 0});
+        double top = walk({4, 0, 0}, 0.55);
+        check(top < 0.05 + 0.03, "player walks over a light board without being thrown up", "highest feet " + num(top * 100) + " cm");
+        top = walk({4, 0, 0}, 0.35);
+        double on = physics.characterPosition().y;
+        top = std::max(top, walk({0, 0, 0}, 1.5));
+        check(approx(on, 0.30, 0.02) && top < 0.30 + 0.03,"player steps onto a 30 cm box and stays on it",
+              "on " + num(on * 100) + " cm, highest " + num(top * 100) + " cm");
+
+        // das Brett unter den Füßen wird kräftig nach oben gestoßen (6 m/s): 8 kg können 75 kg kaum anheben
+        physics.setCharacterPosition({1.5, 0.06, 0});
+        walk({0, 0, 0}, 1.0);
+        Object* board = nullptr;
+        for (auto& o : w.objects())
+            if (std::abs(o->pos.x - 1.5) < 0.3) board = o.get();
+        double y0 = physics.characterPosition().y;
+        top = walk({0, 0, 0}, 2.0, [&](int i) {
+            if (board && i < 3) physics.setVelocity(board->body, glm::vec3(0, 6, 0), glm::vec3(0));
+        });
+        check(board && top - y0 < 0.4, "a light board jerked upward does not launch the player", "rises " + num((top - y0) * 100) + " cm");
+        physics.destroyCharacter();
+    }
+    {
+        // Spielfigur: eingebettetes Modell, Größe, Blickrichtung, Abläufe
+        AvatarModel fig;
+        std::string err;
+        check(fig.loadBuiltin(1.8f, &err), "player model loads", err);
+        const int idle = fig.clip("Idle"), walk = fig.clip("Walk"), run = fig.clip("Run");
+        check(idle >= 0 && walk >= 0 && run >= 0, "player model has idle, walk and run");
+        std::vector<solid::Vertex> v;
+        AvatarModel::Layer still{idle, 0.3f, 1.0f};
+        fig.pose(&still, 1, nullptr, 0, v);
+        glm::vec3 lo(1e9f), hi(-1e9f), eye(0), all(0);
+        int eyes = 0;
+        for (const solid::Vertex& p : v) {
+            lo = glm::min(lo, glm::vec3(p.px, p.py, p.pz));
+            hi = glm::max(hi, glm::vec3(p.px, p.py, p.pz));
+            all += glm::vec3(p.px, p.py, p.pz);
+        }
+        for (const AvatarModel::Part& part : fig.parts())
+            if (part.material == "Eye")
+                for (uint32_t i = part.first; i < part.first + part.count; ++i) eye += glm::vec3(v[i].px, v[i].py, v[i].pz), ++eyes;
+        all /= (float)std::max<size_t>(1, v.size());
+        check(!v.empty() && approx(lo.y, 0.0, 0.05) && hi.y > 1.6f && hi.y < 1.9f, "player model stands on the floor, 1.8 m tall",
+              "feet " + num(lo.y * 100) + " cm, top " + num(hi.y * 100) + " cm");
+        check(eyes > 0 && eye.z / eyes < all.z - 0.05f, "player model looks along -z like the camera", "eyes z " + num(eye.z / std::max(1, eyes)));
+        const float vw = fig.clipGroundSpeed(walk), vr = fig.clipGroundSpeed(run);
+        check(vw > 0.5f && vw < 3.0f && vr > vw, "step speed of walk and run read from the feet", num(vw) + " / " + num(vr) + " m/s");
+        const int left = fig.clip("Run_Left"), right = fig.clip("Run_Right"), back = fig.clip("Run_Back");
+        check(left >= 0 && right >= 0 && back >= 0 && fig.clipGroundSpeed(left) > 0.5f && fig.clipGroundSpeed(back) > 0.5f,
+              "player model runs sideways and backwards", num(fig.clipGroundSpeed(left)) + " / " + num(fig.clipGroundSpeed(back)) + " m/s");
+
+        // Landung: Knie um a beugen (Oberschenkel +a, Unterschenkel -2a). Die Schuhe hängen an Fuß-Zielen unter der
+        // Wurzel und müssen mitgehen; die Füße heben sich um Beinlänge * (1 - cos a)
+        const int thigh = fig.node("UpperLeg.L"), shin = fig.node("LowerLeg.L"), ankle = fig.node("LowerLeg.L_end");
+        const int thighR = fig.node("UpperLeg.R"), shinR = fig.node("LowerLeg.R");
+        fig.setFollow(fig.node("Foot.L"), shin);
+        fig.setFollow(fig.node("Foot.R"), shinR);
+        const float bendA = 0.6f;
+        const AvatarModel::Bend crouch[4] = {{thigh, {1, 0, 0}, bendA}, {shin, {1, 0, 0}, -2 * bendA}, {thighR, {1, 0, 0}, bendA},
+                                             {shinR, {1, 0, 0}, -2 * bendA}};
+        std::vector<solid::Vertex> c;
+        fig.pose(&still, 1, crouch, 4, c);
+        float low = 1e9f;
+        for (const solid::Vertex& p : c) low = std::min(low, p.py);
+        const float leg = glm::length(fig.restPosition(thigh) - fig.restPosition(shin)) + glm::length(fig.restPosition(shin) - fig.restPosition(ankle));
+        const float expect = leg * (1 - std::cos(bendA));
+        check(thigh >= 0 && approx(low, expect, 0.05), "bent knees lift the shoes with the legs", num(low * 100) + " cm, expected " + num(expect * 100));
+        check(fig.restPosition(fig.node("UpperArm.L")).x < 0, "left arm is on the left (-x)");
     }
     physics.shutdown();
     std::printf("\n%d of %d checks passed\n", checks - failures, checks);

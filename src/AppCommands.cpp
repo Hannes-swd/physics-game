@@ -229,6 +229,14 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         return s;
     }
     if (!play_) enterPlay();
+    if (sub == "view") {
+        const std::string v = arg(t, 2);
+        if (v == "first" || v == "1") thirdPerson_ = false;
+        else if (v == "third" || v == "3") thirdPerson_ = true;
+        else if (v.empty()) thirdPerson_ = !thirdPerson_;
+        else return "Error: player view [first|third]";
+        return thirdPerson_ ? "View from behind the player (F5)" : "View through the player's eyes (F5)";
+    }
     if (remote && (sub == "position" || sub == "teleport" || sub == "rotate"))
         return "Error: player " + sub + " only works for the host's player (co-players: walk there, R/Shift+R turn a carried part)";
     if (sub == "position" || sub == "teleport") {
@@ -269,11 +277,21 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         std::string dir = arg(t, 2);
         double sec = 1.0;
         parseNum(t, 3, sec);
-        if (dir == "forward" || dir == "f") autoMove_ = {1, 0};
-        else if (dir == "back" || dir == "backward") autoMove_ = {-1, 0};
-        else if (dir == "left") autoMove_ = {0, -1};
-        else if (dir == "right") autoMove_ = {0, 1};
-        else return "Error: player walk <forward|back|left|right> <seconds> [run]";
+        // auch schräg, wie zwei Tasten zugleich: forward-right, back-left ...
+        glm::dvec2 move(0);
+        std::string rest = dir;
+        while (!rest.empty()) {
+            const size_t dash = rest.find('-');
+            const std::string part = rest.substr(0, dash);
+            rest = dash == std::string::npos ? "" : rest.substr(dash + 1);
+            if (part == "forward" || part == "f") move += glm::dvec2(1, 0);
+            else if (part == "back" || part == "backward") move += glm::dvec2(-1, 0);
+            else if (part == "left") move += glm::dvec2(0, -1);
+            else if (part == "right") move += glm::dvec2(0, 1);
+            else return "Error: player walk <forward|back|left|right|forward-right|...> <seconds> [run]";
+        }
+        if (glm::length(move) < 1e-9) return "Error: player walk: directions cancel out";
+        autoMove_ = move;
         autoMoveTime_ = std::clamp(sec, 0.0, 120.0);
         autoRun_ = sub == "run" || arg(t, 4) == "run";
         return "Player walks " + dir + " for " + fmtNum(autoMoveTime_, 1) + " s" + (autoRun_ ? " (running)" : "");
@@ -325,7 +343,7 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         else throwHeld(j);
         return "Thrown: " + name;
     }
-    return "Error: unknown. player [position|look|turn|walk|run|stop|jump|grab|release|throw]";
+    return "Error: unknown. player [position|look|turn|walk|run|stop|jump|grab|release|throw|view]";
 }
 
 // ============================================================================ App-Befehle

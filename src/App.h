@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Avatar.h"
 #include "Commands.h"
 #include "Drawing.h"
 #include "Net.h"
@@ -52,7 +53,10 @@ struct NetPlayer {
     double yaw = 0, pitch = 0;
     uint32_t grabbed = 0;
     bool tooHeavy = false;
+    bool onGround = true;  // sonst in der Luft (Sprung, Fall)
 };
+
+glm::vec3 playerColor(uint32_t id);  // Erkennungsfarbe eines Spielers im LAN
 
 class App;
 
@@ -253,7 +257,13 @@ private:
     void drawNetWindow();
     void drawNetRequests();
     void drawPlayerTags();
+    // Spielfiguren zeichnen: Mitspieler und in der Ansicht von hinten (F5) die eigene
     void addAvatars(FrameDesc& fd);
+    void addFigure(FrameDesc& fd, uint32_t key, const glm::dvec3& feet, double yaw, double pitch, bool onGround, const glm::vec3* tint,
+                   float dt);
+    // Blickrichtung vom Kopf aus zum Greifen und Werfen; von hinten gesehen zielt sie auf das, was mitten im Bild liegt
+    glm::dvec3 aimForward() const { return play_ && thirdPerson_ ? aim_ : playerForward(); }
+    void updateThirdPersonEye();
 
     GLFWwindow* window_ = nullptr;
     Renderer renderer_;
@@ -315,6 +325,35 @@ private:
     Hand hand_;
     uint32_t lookAt_ = 0;
     double lookDist_ = 0;
+    bool thirdPerson_ = false;     // F5: Kamera hinter der Figur
+    glm::dvec3 thirdEye_{0}, aim_{0, 0, -1};
+    double eyeLag_ = 0, lastFeetY_ = 0;  // Kamera folgt einem Schritt auf eine Stufe weich nach oben
+
+    // Spielfiguren (Modell und Bewegungszustand je Spieler)
+    struct FigureAnim {
+        glm::dvec3 feet{0};
+        bool init = false;
+        glm::vec2 vel{0.0f};     // waagrecht, geglättet
+        glm::vec2 dir{0, 1};     // Laufrichtung relativ zum Blick (x rechts, y vorn), geglättet
+        float vy = 0.0f;         // senkrecht, geglättet
+        float phase = 0.0f;      // Schrittzyklus 0..1
+        float idleTime = 0.0f;
+        float airTime = 0.0f;    // so lange schon in der Luft
+        float air = 0.0f;        // 0 = am Boden, 1 = Sprunghaltung
+        float land = 0.0f;       // in die Knie federn nach der Landung
+    };
+    // Knochen der Figur, die prozedural bewegt werden (Sprung, Landung, Kopf)
+    struct FigureRig {
+        int head = -1, torso = -1, thigh[2] = {-1, -1}, shin[2] = {-1, -1}, foot[2] = {-1, -1}, arm[2] = {-1, -1};
+        float armSide[2] = {-1, 1};  // Seite des Arms (x), damit "abspreizen" auf beiden Seiten nach außen geht
+        float legLength = 0.9f;      // Hüfte bis Knöchel
+    };
+    AvatarModel avatar_;
+    FigureRig rig_;
+    bool avatarLoaded_ = false;
+    int clipIdle_ = -1, clipWalk_ = -1, clipRun_ = -1, clipLeft_ = -1, clipRight_ = -1, clipBack_ = -1;
+    std::map<uint32_t, FigureAnim> figureAnim_;
+    double figureTime_ = -1;
 
     // Oberfläche
     bool showConsole_ = false, showHelp_ = false, focusConsole_ = false;

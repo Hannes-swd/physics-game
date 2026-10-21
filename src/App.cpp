@@ -264,7 +264,7 @@ std::string App::cameraLook(const glm::dvec3& target, double dist) {
 
 glm::dvec3 App::playerEye() const {
     // Mitspieler: die Figur läuft beim Gastgeber, hier steht ihre zuletzt gemeldete (geglättete) Lage
-    return (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, 1.65, 0);
+    return (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, 1.65 + eyeLag_, 0);
 }
 
 glm::dvec3 App::playerForward() const {
@@ -274,6 +274,7 @@ glm::dvec3 App::playerForward() const {
 void App::computeViews() {
     const int W = std::max(1, renderer_.width()), H = std::max(1, renderer_.height());
     renderOrigin_ = play_ ? playerEye() : orbitTarget_;
+    if (play_ && thirdPerson_) updateThirdPersonEye();
     views_.clear();
     if (play_ || viewMode_ != ViewMode::Quad) {
         views_.push_back(makeView(play_ ? ViewMode::Perspective : viewMode_, 0, 0, W, H));
@@ -295,7 +296,7 @@ App::View App::makeView(ViewMode m, int x, int y, int w, int h) const {
     v.h = std::max(1, h);
     const double aspect = double(v.w) / double(v.h);
     if (play_) {
-        v.eye = playerEye();
+        v.eye = thirdPerson_ ? thirdEye_ : playerEye();
         v.target = v.eye + playerForward();
     } else {
         v.target = orbitTarget_;

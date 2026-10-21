@@ -81,10 +81,20 @@ foreach(src ${SHADER_SOURCES})
 endforeach()
 add_custom_target(shaders DEPENDS ${SHADER_OUTPUTS})
 
+# ---------------------------------------------------------------- Spielfigur (glTF, eingebettet)
+set(AVATAR_SRC ${CMAKE_CURRENT_SOURCE_DIR}/assets/characters/worker.glb)
+set(AVATAR_OUT ${SHADER_OUT}/worker.glb.inc)
+add_custom_command(
+  OUTPUT ${AVATAR_OUT}
+  COMMAND ${CMAKE_COMMAND} -DIN=${AVATAR_SRC} -DOUT=${AVATAR_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  DEPENDS ${AVATAR_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  COMMENT "Spielfigur worker.glb")
+add_custom_target(assets DEPENDS ${AVATAR_OUT})
+
 # ---------------------------------------------------------------- Spiel
 file(GLOB GAME_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h)
 add_executable(Werkstatt ${GAME_SOURCES})
-add_dependencies(Werkstatt shaders)
+add_dependencies(Werkstatt shaders assets)
 target_include_directories(Werkstatt PRIVATE ${SHADER_OUT} ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(Werkstatt PRIVATE Vulkan::Vulkan glfw glm::glm Jolt imgui)
 target_compile_definitions(Werkstatt PRIVATE

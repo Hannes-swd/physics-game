@@ -52,12 +52,6 @@ void anglesOf(const glm::dvec3& dir, double& yaw, double& pitch) {
     pitch = std::asin(std::clamp(d.y, -1.0, 1.0));
 }
 
-glm::vec3 playerColor(uint32_t id) {
-    static const glm::vec3 c[] = {{0.85f, 0.30f, 0.22f}, {0.22f, 0.50f, 0.92f}, {0.28f, 0.75f, 0.32f},
-                                  {0.92f, 0.70f, 0.18f}, {0.65f, 0.38f, 0.88f}, {0.18f, 0.75f, 0.78f}};
-    return c[id % 6];
-}
-
 // ---------------------------------------------------------------- Teile und Verbindungen übertragen
 
 void writeHulls(net::Writer& w, const std::vector<std::vector<glm::vec3>>& hulls) {
@@ -312,6 +306,7 @@ void writePlayer(net::Writer& w, const NetPlayer& p) {
     w.f64(p.pitch);
     w.u32(p.grabbed);
     w.u8(p.tooHeavy);
+    w.u8(p.onGround);
 }
 
 NetPlayer readPlayer(net::Reader& r) {
@@ -325,6 +320,7 @@ NetPlayer readPlayer(net::Reader& r) {
     p.pitch = r.f64();
     p.grabbed = r.u32();
     p.tooHeavy = r.u8() != 0;
+    p.onGround = r.u8() != 0;
     return p;
 }
 
@@ -382,6 +378,12 @@ private:
 };
 
 } // namespace
+
+glm::vec3 playerColor(uint32_t id) {
+    static const glm::vec3 c[] = {{0.85f, 0.30f, 0.22f}, {0.22f, 0.50f, 0.92f}, {0.28f, 0.75f, 0.32f},
+                                  {0.92f, 0.70f, 0.18f}, {0.65f, 0.38f, 0.88f}, {0.18f, 0.75f, 0.78f}};
+    return c[id % 6];
+}
 
 // ============================================================================ Allgemein
 
@@ -783,6 +785,7 @@ void App::netPlayerList() {
     if (!play_) anglesOf(orbitTarget_ - me.camEye, me.yaw, me.pitch);
     me.grabbed = hand_.grabbed;
     me.tooHeavy = hand_.tooHeavy;
+    me.onGround = physics_.characterOnGround();
     netPlayers_.push_back(me);
     for (const auto& p : peers_) {
         if (!p->accepted || p->closeAt >= 0) continue;
@@ -796,6 +799,7 @@ void App::netPlayerList() {
         np.pitch = p->pitch;
         np.grabbed = p->hand.grabbed;
         np.tooHeavy = p->hand.tooHeavy;
+        np.onGround = physics_.characterOnGround((int)p->id);
         netPlayers_.push_back(np);
     }
 }
@@ -1227,44 +1231,6 @@ void App::shareTransforms(const std::vector<uint32_t>& ids) {
 }
 
 // ============================================================================ Anzeige
-
-void App::addAvatars(FrameDesc& fd) {
-    if (netPlayers_.size() < 2) return;
-    if (!avatarMesh_.valid()) {  // Körper: Zylinder 1 m hoch, wird gestreckt
-        std::vector<solid::Vertex> v;
-        solid::buildTriangles(solid::makeCylinder(0.25, 1.0, 20), v);
-        avatarMesh_ = renderer_.createMesh(v);
-    }
-    const glm::dvec3 O = renderOrigin_;
-    const glm::mat4 I(1.0f);
-    for (const NetPlayer& p : netPlayers_) {
-        if (p.id == netSelfId_) continue;
-        const glm::vec3 col = playerColor(p.id);
-        auto add = [&](const GpuMesh* mesh, const glm::mat4& model, const glm::vec3& c) {
-            DrawItem it;
-            it.mesh = mesh;
-            it.data.model = model;
-            it.data.color = glm::vec4(c, 0.6f);
-            it.data.color2 = glm::vec4(c * 0.85f, 0.0f);
-            it.data.params = glm::vec4((float)Shading::Plain, 0, 0, 0);
-            fd.items.push_back(it);
-        };
-        const glm::mat4 turn = glm::rotate(I, (float)p.yaw, glm::vec3(0, 1, 0));
-        const glm::mat4 look = turn * glm::rotate(I, (float)p.pitch, glm::vec3(1, 0, 0));
-        const glm::vec3 dark(0.05f, 0.05f, 0.06f);
-        if (p.play) {  // Spielfigur: Körper, Kopf, Brille in Blickrichtung
-            const glm::vec3 feet = glm::vec3(p.feet - O);
-            add(&avatarMesh_, glm::translate(I, feet + glm::vec3(0, 0.75f, 0)) * turn * glm::scale(I, glm::vec3(1, 1.4f, 1)), col);
-            const glm::mat4 head = glm::translate(I, feet + glm::vec3(0, 1.62f, 0)) * look;
-            add(&world_->boxMesh(), head * glm::scale(I, glm::vec3(0.24f, 0.26f, 0.24f)), col * 1.15f);
-            add(&world_->boxMesh(), head * glm::translate(I, glm::vec3(0, 0.03f, -0.12f)) * glm::scale(I, glm::vec3(0.2f, 0.07f, 0.03f)), dark);
-        } else {  // Bau-Modus: schwebende Kamera mit Objektiv in Blickrichtung
-            const glm::mat4 cam = glm::translate(I, glm::vec3(p.camEye - O)) * look;
-            add(&world_->boxMesh(), cam * glm::scale(I, glm::vec3(0.18f, 0.12f, 0.22f)), col);
-            add(&world_->boxMesh(), cam * glm::translate(I, glm::vec3(0, 0, -0.13f)) * glm::scale(I, glm::vec3(0.09f, 0.09f, 0.05f)), dark);
-        }
-    }
-}
 
 void App::drawPlayerTags() {
     if (netPlayers_.size() < 2 || views_.empty()) return;

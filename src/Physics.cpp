@@ -287,15 +287,21 @@ struct Physics::Impl {
     std::unordered_map<uint32_t, Ref<Constraint>> constraints;
     uint32_t nextConstraint = 1;
     float accum = 0.0f;
-    std::map<int, Ref<CharacterVirtual>> characters;  // 0 = eigene Figur, sonst Mitspieler
+    struct Figure {
+        Ref<CharacterVirtual> c;
+        Vec3 ground = Vec3::sZero();  // übernommene (gefederte) Bodengeschwindigkeit
+    };
+    std::map<int, Figure> characters;  // 0 = eigene Figur, sonst Mitspieler
     CharacterVirtual* character(int who) const {
         auto it = characters.find(who);
-        return it == characters.end() ? nullptr : it->second.GetPtr();
+        return it == characters.end() ? nullptr : it->second.c.GetPtr();
     }
     BodyHandle ground = kNoBody;
     bool legacy = false;
     bool initialized = false;
 };
+
+static constexpr float kCharMass = 75.0f;  // Spielfigur (kg)
 
 Physics::Physics() : m(std::make_unique<Impl>()) {}
 Physics::~Physics() { shutdown(); }
@@ -977,6 +983,16 @@ void Physics::step(float frameDt, const std::function<void(float)>& preStep, con
         m->listener.contactPoints = 0;
         m->listener.count = 0;
         m->impulses.count = 0;
+        // Gewicht der Figuren als stetige Kraft auf das Teil unter den Füßen. Jolt gäbe es einmal pro Bild als Stoß:
+        // ein leichtes Teil schlägt davon auf den Boden, prallt zurück und wirft die Figur hoch.
+        const Vec3 gravity = m->system->GetGravity();
+        for (const auto& entry : m->characters) {
+            const CharacterVirtual& c = *entry.second.c;
+            const float down = c.GetGroundNormal().Dot(gravity);
+            if (!c.GetGroundBodyID().IsInvalid() && down < 0.0f)
+                m->system->GetBodyInterface().AddForce(c.GetGroundBodyID(), -(kCharMass * down / gravity.Length()) * gravity,
+                                                       c.GetGroundPosition());
+        }
         auto t0 = std::chrono::steady_clock::now();
         m->system->Update(dt, 1, m->temp.get(), m->jobs.get());
         const uint32_t nc = std::min<uint32_t>(m->listener.count.load(), (uint32_t)m->listener.buffer.size());
@@ -1176,30 +1192,58 @@ void Physics::createCharacter(const glm::dvec3& feet, int who) {
     s->mShape = capsule;
     s->mMaxSlopeAngle = DegreesToRadians(50.0f);
     s->mSupportingVolume = Plane(Vec3::sAxisY(), -kCharRadius);
-    s->mMass = 75.0f;
+    s->mMass = 0.0f;  // Gewicht auf den Untergrund bringt Physics::step als Kraft auf (kCharMass)
     s->mMaxStrength = 350.0f;  // so stark kann die Figur gegen Dinge drücken (N)
     s->mCharacterPadding = 0.02f;
     s->mPenetrationRecoverySpeed = 1.0f;
     s->mPredictiveContactDistance = 0.1f;
     s->mInnerBodyShape = capsule;
     s->mInnerBodyLayer = Layers::MOVING;
-    m->characters[who] = new CharacterVirtual(s, toR(feet), Quat::sIdentity(), 0, m->system.get());
+    m->characters[who] = {new CharacterVirtual(s, toR(feet), Quat::sIdentity(), 0, m->system.get())};
 }
 
 void Physics::destroyCharacter(int who) { m->characters.erase(who); }
 bool Physics::hasCharacter(int who) const { return m->character(who) != nullptr; }
 
 void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHandle ignore, int who) {
-    CharacterVirtual* c = m->character(who);
-    if (!c) return;
+    auto it = m->characters.find(who);
+    if (it == m->characters.end()) return;
+    CharacterVirtual* c = it->second.c;
     dt = std::clamp(dt, 1e-4f, 1.0f / 30.0f);
     c->UpdateGroundVelocity();
     Vec3 up = c->GetUp();
     Vec3 vertical = c->GetLinearVelocity().Dot(up) * up;
-    Vec3 ground = c->GetGroundVelocity();
+    const bool onGround = c->GetGroundState() == CharacterBase::EGroundState::OnGround;
+
+    // Bodengeschwindigkeit wie über die Beine gefedert übernehmen. Ungefiltert schleudert jedes Zucken des Teils unter
+    // den Füßen (Rückprall vom Boden unter dem Gewicht der Figur, Kippen, Stöße) sie hoch in die Luft.
+    Vec3 target = Vec3::sZero();
+    if (onGround) {
+        target = c->GetGroundVelocity();
+        // Ein leichtes Teil kann die schwere Figur kaum anheben: aufwärts nur ihr Anteil am gemeinsamen Impuls
+        float lift = target.Dot(up);
+        if (lift > 0.0f) {
+            BodyLockRead lock(m->system->GetBodyLockInterface(), c->GetGroundBodyID());
+            if (lock.Succeeded() && lock.GetBody().IsDynamic()) {
+                float invMass = lock.GetBody().GetMotionProperties()->GetInverseMass();
+                float share = invMass > 0.0f ? 1.0f / (1.0f + kCharMass * invMass) : 1.0f;
+                target -= (1.0f - share) * lift * up;
+                lift *= share;
+            }
+            if (lift > 3.0f) target -= (lift - 3.0f) * up;  // höchstens ca. 0,45 m Schwung nach oben
+        }
+        float speed = target.Length();
+        if (speed > 12.0f) target *= 12.0f / speed;
+    }
+    Vec3& ground = it->second.ground;
+    Vec3 d = target - ground;
+    Vec3 dUp = d.Dot(up) * up;
+    ground += (d - dUp) * (1.0f - std::exp(-dt / 0.06f))  // waagrecht: schnell mitgenommen
+              + dUp * (1.0f - std::exp(-dt / 0.15f));     // senkrecht: Knie federn Rucke ab
+
     Vec3 v;
-    bool towardsGround = (vertical.GetY() - ground.GetY()) < 0.1f;
-    if (c->GetGroundState() == CharacterBase::EGroundState::OnGround && towardsGround) {
+    bool towardsGround = (vertical - ground).Dot(up) < 0.1f;
+    if (onGround && towardsGround) {
         v = ground;
         if (jump) v += 4.6f * up;  // ca. 1,1 m Sprunghöhe
     } else {
@@ -1228,6 +1272,7 @@ void Physics::setCharacterPosition(const glm::dvec3& feet, int who) {
     if (!c) return;
     c->SetPosition(toR(feet));
     c->SetLinearVelocity(Vec3::sZero());
+    m->characters[who].ground = Vec3::sZero();
 }
 
 bool Physics::characterOnGround(int who) const {

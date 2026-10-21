@@ -31,6 +31,8 @@ struct DrawItem {
     const GpuMesh* mesh = nullptr;
     ObjectGpuData data;
     bool castShadow = true;
+    // ohne mesh: Dreiecke aus FrameDesc::frameVertices (jedes Bild neu, z.B. animierte Figuren)
+    uint32_t frameFirst = 0, frameCount = 0;
 };
 
 struct LineVertex {
@@ -51,6 +53,7 @@ struct FrameDesc {
     std::vector<LineVertex> lines;         // mit Tiefentest (Kanten, Raster)
     std::vector<LineVertex> overlayLines;  // immer sichtbar (Auswahl, Hilfslinien)
     std::vector<LineVertex> translucent;   // durchsichtige Dreiecke (Vorschau Säge/Bohrer)
+    std::vector<solid::Vertex> frameVertices;  // Dreiecke nur für dieses Bild (DrawItem::frameFirst/frameCount)
     glm::dvec3 origin{0.0};  // Darstellungsursprung: alle Positionen im Bild sind relativ dazu
     float fogDensity = 0.00035f;
     glm::mat4 lightViewProj{1.0f};
@@ -95,7 +98,7 @@ private:
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         VkSemaphore imageAvailable = VK_NULL_HANDLE;
         VkFence fence = VK_NULL_HANDLE;
-        Buffer objects, ubo, vertices;
+        Buffer objects, ubo, vertices, meshVertices;
         VkDescriptorSet set = VK_NULL_HANDLE;
     };
     struct Pending {

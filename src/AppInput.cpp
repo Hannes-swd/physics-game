@@ -125,6 +125,7 @@ void App::handleInput(float dt) {
             if (showConsole_ && play_) setCursorCaptured(false);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) showInspector_ = !showInspector_;
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false) && play_) thirdPerson_ = !thirdPerson_;
         if (ImGui::IsKeyPressed(ImGuiKey_F4, false)) {
             if (!selection_.empty()) showDrawing(selection_);
             else if (play_ && lookAt_) showDrawing({lookAt_});
@@ -555,7 +556,7 @@ void App::playInput(float) {
     }
 
     // Wohin schaue ich?
-    const glm::dvec3 eye = playerEye(), fwd = playerForward();
+    const glm::dvec3 eye = playerEye(), fwd = aimForward();
     RayHit h;
     lookAt_ = 0;
     if (world_->raycast(eye, fwd, h, hand_.grabbed) && h.obj && h.t < 4.0) {
@@ -624,7 +625,7 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
     for (int i = 0; i < in.tilts; ++i) hand.holdRel = glm::normalize(glm::angleAxis(glm::radians(15.0), glm::dvec3(1, 0, 0)) * hand.holdRel);
 }
 
-void App::grabForces(float) { holdForces(hand_, playerEye(), playerForward(), playYaw_); }
+void App::grabForces(float) { holdForces(hand_, playerEye(), aimForward(), playYaw_); }
 
 void App::holdForces(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw) {
     hand.tooHeavy = false;
@@ -707,6 +708,11 @@ void App::updatePlay(float dt) {
         BodyHandle ignore = kNoBody;
         if (Object* g = world_->find(hand_.grabbed)) ignore = g->body;
         physics_.updateCharacter(dt, wish, jump, ignore);
+        // Stufe hinauf: die Figur steht sofort oben, die Kamera gleitet nach (schneller, als man laufen oder springen kann)
+        const double y = physics_.characterPosition().y, dy = y - lastFeetY_;
+        if (physics_.characterOnGround() && dy > 0.04 && dy < 0.5 && dy > 8.0 * dt) eyeLag_ -= dy;
+        lastFeetY_ = y;
+        eyeLag_ = std::max(-0.5, eyeLag_ * std::exp(-dt / 0.09));
     }
     updatePeerFigures(dt);
 }
