@@ -104,7 +104,7 @@ Die vollständige Dokumentation der Befehlssprache inkl. Variablen, Funktionen u
 ## Häufig gestellte Fragen
 
 **F: Kann ich Werkstatt ohne GPU nutzen?**  
-A: Nein, Vulkan erfordert eine dedizierte GPU. CPU-Rendering wird nicht unterstützt.
+A: Nein, es braucht eine Grafik mit Vulkan 1.3. Neuere integrierte Grafik (z.B. Intel Iris Xe) reicht für kleine Szenen; CPU-Rendering wird nicht unterstützt. Siehe [Systemanforderungen](#systemanforderungen).
 
 **F: Welche Materialien sind verfügbar?**  
 A: Holz, Ziegel, Stein, Metall, Aluminium und weitere. Jedes Material hat spezifische Eigenschaften wie Dichte, Festigkeit und Reibung.
@@ -131,10 +131,35 @@ Für Fragen, Bug-Reports oder Feature-Requests öffnen Sie bitte ein Issue oder 
 
 ## Systemanforderungen
 
-- **OS:** Windows 10/11 (64-Bit)
-- **GPU:** Vulkan 1.3-fähige GPU (NVIDIA RTX, AMD RDNA, Intel Arc oder ähnlich)
-- **RAM:** Mindestens 4 GB (8+ GB empfohlen)
-- **Vulkan SDK:** [LunarG Vulkan SDK](https://vulkan.lunarg.com/)
+Richtwerte (nicht auf jeder Hardware gemessen):
+
+| | Minimum | Empfohlen |
+|---|---|---|
+| **Betriebssystem** | Windows 10 (64-Bit) | Windows 11 (64-Bit) |
+| **Prozessor** | 4 Kerne, z.B. Intel Core i5 (6. Gen.) / AMD Ryzen 3 | 6–8 Kerne, z.B. Intel Core i5/i7 (10. Gen.+) / AMD Ryzen 5/7 (3000+) |
+| **Grafik** | Vulkan 1.3 mit aktuellem Treiber: NVIDIA GTX 900, AMD RX 400, Intel Iris Xe oder neuer | NVIDIA GTX 1660 / RTX 2060, AMD RX 5600 oder besser |
+| **Grafikspeicher** | 2 GB | 4 GB+ |
+| **Arbeitsspeicher** | 8 GB | 16 GB |
+| **Speicherplatz** | ca. 100 MB zum Spielen | ca. 3 GB zum Selbst-Bauen (Visual Studio-Build mit Abhängigkeiten) |
+| **Bildschirm** | 1600 × 900 | 1920 × 1080 oder mehr |
+
+Was wie stark belastet:
+
+- **Prozessor (am wichtigsten):** Die Physik (Jolt) rechnet 240 Schritte pro Sekunde und verteilt die Arbeit auf alle Kerne
+  bis auf einen. Viele Teile, die sich gleichzeitig bewegen (Dominos, Kugelbahn, große Bauten), Bohrungen mit Stiften und
+  viele Verbindungen kosten vor allem CPU. Mehr Kerne und hoher Takt helfen hier am meisten.
+  Bearbeitungen (Sägen, Bohren, Abrunden, Biegen) laufen auf einem Kern: Bei komplizierten Teilen dauert ein Schnitt dann
+  einen Moment.
+- **Grafik:** eher genügsam. Schatten mit 4096 × 4096-Schattenkarte und 4× Kantenglättung; weit entfernte Teile werden
+  vereinfacht oder ausgeblendet. Integrierte Grafik reicht für kleine Werkstätten, für die große Beispiel-Welt und
+  „Vier Ansichten“ ist eine eigene Grafikkarte angenehmer. Schatten und Kanten lassen sich unter *Ansicht* abschalten.
+- **Arbeitsspeicher:** Jeder Rückgängig-Schritt speichert die ganze Szene (bis zu 50 Schritte). Bei sehr großen Szenen
+  wächst der Speicherbedarf daher mit der Zeit.
+
+Zum **Spielen** braucht es nur einen aktuellen Grafiktreiber (bringt Vulkan mit). Das
+[LunarG Vulkan SDK](https://vulkan.lunarg.com/) ist nur zum **Selbst-Bauen** nötig (Shader-Compiler `glslc`), siehe unten.
+Ob die Grafikkarte Vulkan 1.3 kann, zeigt z.B. `vulkaninfo --summary` (aus dem SDK) oder die
+[GPU-Datenbank von gpuinfo.org](https://vulkan.gpuinfo.org/).
 
 ## Installation & Starten
 
