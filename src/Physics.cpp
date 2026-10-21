@@ -41,6 +41,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -286,7 +287,11 @@ struct Physics::Impl {
     std::unordered_map<uint32_t, Ref<Constraint>> constraints;
     uint32_t nextConstraint = 1;
     float accum = 0.0f;
-    Ref<CharacterVirtual> character;
+    std::map<int, Ref<CharacterVirtual>> characters;  // 0 = eigene Figur, sonst Mitspieler
+    CharacterVirtual* character(int who) const {
+        auto it = characters.find(who);
+        return it == characters.end() ? nullptr : it->second.GetPtr();
+    }
     BodyHandle ground = kNoBody;
     bool legacy = false;
     bool initialized = false;
@@ -353,7 +358,7 @@ void Physics::shutdown() {
     if (!m || !m->initialized) return;
     ContactConstraintManager::sContactImpulseCallback = nullptr;
     gImpulses = nullptr;
-    m->character = nullptr;
+    m->characters.clear();
     for (auto& [id, c] : m->constraints) m->system->RemoveConstraint(c);
     m->constraints.clear();
     m->system.reset();
@@ -1161,7 +1166,7 @@ SweepHit Physics::sweep(BodyHandle h, const glm::dvec3& delta, const std::vector
 static constexpr float kCharHeight = 1.80f;
 static constexpr float kCharRadius = 0.30f;
 
-void Physics::createCharacter(const glm::dvec3& feet) {
+void Physics::createCharacter(const glm::dvec3& feet, int who) {
     Ref<CharacterVirtualSettings> s = new CharacterVirtualSettings();
     float halfCyl = 0.5f * kCharHeight - kCharRadius;
     RefConst<Shape> capsule = RotatedTranslatedShapeSettings(Vec3(0, 0.5f * kCharHeight, 0), Quat::sIdentity(),
@@ -1178,14 +1183,14 @@ void Physics::createCharacter(const glm::dvec3& feet) {
     s->mPredictiveContactDistance = 0.1f;
     s->mInnerBodyShape = capsule;
     s->mInnerBodyLayer = Layers::MOVING;
-    m->character = new CharacterVirtual(s, toR(feet), Quat::sIdentity(), 0, m->system.get());
+    m->characters[who] = new CharacterVirtual(s, toR(feet), Quat::sIdentity(), 0, m->system.get());
 }
 
-void Physics::destroyCharacter() { m->character = nullptr; }
-bool Physics::hasCharacter() const { return m->character != nullptr; }
+void Physics::destroyCharacter(int who) { m->characters.erase(who); }
+bool Physics::hasCharacter(int who) const { return m->character(who) != nullptr; }
 
-void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHandle ignore) {
-    CharacterVirtual* c = m->character.GetPtr();
+void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHandle ignore, int who) {
+    CharacterVirtual* c = m->character(who);
     if (!c) return;
     dt = std::clamp(dt, 1e-4f, 1.0f / 30.0f);
     c->UpdateGroundVelocity();
@@ -1213,16 +1218,19 @@ void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHa
                       m->system->GetDefaultLayerFilter(Layers::MOVING), bf, {}, *m->temp);
 }
 
-glm::dvec3 Physics::characterPosition() const {
-    return m->character ? fromR(m->character->GetPosition()) : glm::dvec3(0);
+glm::dvec3 Physics::characterPosition(int who) const {
+    const CharacterVirtual* c = m->character(who);
+    return c ? fromR(c->GetPosition()) : glm::dvec3(0);
 }
 
-void Physics::setCharacterPosition(const glm::dvec3& feet) {
-    if (!m->character) return;
-    m->character->SetPosition(toR(feet));
-    m->character->SetLinearVelocity(Vec3::sZero());
+void Physics::setCharacterPosition(const glm::dvec3& feet, int who) {
+    CharacterVirtual* c = m->character(who);
+    if (!c) return;
+    c->SetPosition(toR(feet));
+    c->SetLinearVelocity(Vec3::sZero());
 }
 
-bool Physics::characterOnGround() const {
-    return m->character && m->character->GetGroundState() == CharacterBase::EGroundState::OnGround;
+bool Physics::characterOnGround(int who) const {
+    const CharacterVirtual* c = m->character(who);
+    return c && c->GetGroundState() == CharacterBase::EGroundState::OnGround;
 }

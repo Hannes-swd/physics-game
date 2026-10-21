@@ -19,6 +19,7 @@ Anleitung sind deutsch.
 | [08-Verbindungen-und-Bruch.md](08-Verbindungen-und-Bruch.md) | Kleben, Nageln, Schrauben, Schweißen, Scharnier, Feder, Seil; Belastung und Bruch; Luft, Wind, Propeller |
 | [09-Bearbeitung.md](09-Bearbeitung.md) | Abrunden, Fasen, Fräsen (Tasche, Nut, Falz, Langloch, Zapfen), Hobeln, Drehbank, Biegen, Spiegeln, Skalieren, Vereinen, Ausschneiden |
 | [10-Stifte-und-Scharniere.md](10-Stifte-und-Scharniere.md) | Stift in Bohrung: selbstgebaute Scharniere und Achsen, Passung, Schmieren, Abrieb, Ausreißen, Tragen mit R |
+| [11-Mehrspieler.md](11-Mehrspieler.md) | Mehrspieler im LAN: Spiel öffnen, Mitspieler zulassen, beitreten, wer was rechnet, Ports |
 
 ## Schnellstart
 

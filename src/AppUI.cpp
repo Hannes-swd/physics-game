@@ -131,10 +131,13 @@ void App::drawUI() {
     }
     drawStatusBar();
     drawToasts();
+    drawPlayerTags();
     if (showInspector_) drawInspector();
     if (showDrawing_) drawDrawingWindow();
     if (showConsole_) drawConsole();
     if (showHelp_) drawHelp();
+    if (showNet_) drawNetWindow();
+    drawNetRequests();
 }
 
 void App::openImportDialog() {
@@ -163,8 +166,14 @@ void App::drawMenuBar() {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Bearbeiten")) {
-        if (ImGui::MenuItem("Rückgängig", "Strg+Z", false, world_->undoCount() > 0)) world_->undo();
-        if (ImGui::MenuItem("Wiederholen", "Strg+Y", false, world_->redoCount() > 0)) world_->redo();
+        if (ImGui::MenuItem("Rückgängig", "Strg+Z", false, undoSteps() > 0)) {
+            if (netClient()) runLine("undo", "konsole");
+            else world_->undo();
+        }
+        if (ImGui::MenuItem("Wiederholen", "Strg+Y", false, redoSteps() > 0)) {
+            if (netClient()) runLine("redo", "konsole");
+            else world_->redo();
+        }
         ImGui::Separator();
         if (ImGui::MenuItem("Alles auswählen", "Strg+A")) {
             selection_.clear();
@@ -172,11 +181,7 @@ void App::drawMenuBar() {
         }
         if (ImGui::MenuItem("Duplizieren", "Strg+D", false, !selection_.empty())) duplicateSelected();
         if (ImGui::MenuItem("Löschen", "Entf", false, !selection_.empty())) deleteSelected();
-        if (ImGui::MenuItem("Absetzen", "G", false, !selection_.empty())) {
-            world_->pushUndo();
-            for (uint32_t id : selection_)
-                if (Object* o = world_->find(id)) world_->dropToSurface(*o);
-        }
+        if (ImGui::MenuItem("Absetzen", "G", false, !selection_.empty())) dropSelected();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Ansicht")) {
@@ -218,12 +223,21 @@ void App::drawMenuBar() {
         if (ImGui::MenuItem("Spielen (Physik)", "Tab", play_)) setMode(true);
         ImGui::EndMenu();
     }
+    drawNetMenu();
     if (ImGui::BeginMenu("Hilfe")) {
         ImGui::MenuItem("Steuerung", nullptr, &showHelp_);
         ImGui::EndMenu();
     }
+    if (netRole_ != NetRole::Off) {
+        std::string lan = netRole_ == NetRole::Host ? "LAN: Gastgeber · " + std::to_string(netPlayers_.size()) + " Spieler"
+                                                    : (netWelcomed_ ? "LAN: bei " + netHostName_ : std::string("LAN: verbinde ..."));
+        ImGui::SameLine(ImGui::GetWindowWidth() - 350 - ImGui::CalcTextSize(lan.c_str()).x);
+        ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1), "%s", lan.c_str());
+    }
     ImGui::SameLine(ImGui::GetWindowWidth() - 330);
-    ImGui::TextColored(play_ ? ImVec4(0.4f, 1.0f, 0.5f, 1) : kAccent, play_ ? "SPIEL-MODUS (Physik an)" : "BAU-MODUS (Physik aus)");
+    const bool simOn = netClient() ? netHostSim_ : world_->simulating();  // im LAN läuft sie, sobald irgendwer spielt
+    ImGui::TextColored(play_ ? ImVec4(0.4f, 1.0f, 0.5f, 1) : kAccent,
+                       play_ ? "SPIEL-MODUS (Physik an)" : simOn ? "BAU-MODUS (Physik an)" : "BAU-MODUS (Physik aus)");
     ImGui::EndMainMenuBar();
 }
 
@@ -435,15 +449,26 @@ void App::drawProperties() {
         std::snprintf(nameBuf_, sizeof(nameBuf_), "%s", o->name.c_str());
         nameBufFor_ = o->id;
     }
+    // Mitspieler: Änderungen als Befehl an den Gastgeber (er schickt das Ergebnis zurück)
+    const bool remote = netClient();
+    const std::string idText = std::to_string(o->id);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputText("##name", nameBuf_, sizeof(nameBuf_), ImGuiInputTextFlags_EnterReturnsTrue)) o->name = nameBuf_;
-    if (ImGui::IsItemDeactivatedAfterEdit()) o->name = nameBuf_;
+    bool renamed = ImGui::InputText("##name", nameBuf_, sizeof(nameBuf_), ImGuiInputTextFlags_EnterReturnsTrue);
+    renamed |= ImGui::IsItemDeactivatedAfterEdit();
+    if (renamed && o->name != nameBuf_) {
+        if (remote) runLine("name " + idText + " " + quoteArg(nameBuf_), "konsole");
+        else o->name = nameBuf_;
+    }
     ImGui::TextDisabled("#%u  %s%s", o->id, o->shape.c_str(), o->edits ? " (bearbeitet)" : "");
 
     int mat = o->material;
     if (ImGui::BeginCombo("Material", materials()[mat].label)) {
         for (int i = 0; i < (int)materials().size(); ++i)
             if (ImGui::Selectable(materials()[i].label, i == mat)) {
+                if (remote) {
+                    runLine("material " + idText + " " + materials()[i].name, "konsole");
+                    continue;
+                }
                 world_->pushUndo();
                 world_->setMaterial(*o, i);
             }
@@ -459,45 +484,61 @@ void App::drawProperties() {
 
     ImGui::SeparatorText("Lage");
     double pos[3] = {o->pos.x * 100, o->pos.y * 100, o->pos.z * 100};
-    if (ImGui::DragScalarN("Position cm", ImGuiDataType_Double, pos, 3, 0.1f, nullptr, nullptr, "%.2f"))
+    if (ImGui::DragScalarN("Position cm", ImGuiDataType_Double, pos, 3, 0.1f, nullptr, nullptr, "%.2f")) {
         world_->setTransform(*o, glm::dvec3(pos[0], pos[1], pos[2]) / 100.0, o->rot);
-    if (ImGui::IsItemActivated()) world_->pushUndo();
+        shareTransforms({o->id});
+    }
+    if (ImGui::IsItemActivated()) pushUndo();
     glm::dvec3 e = glm::degrees(glm::eulerAngles(o->rot));
     double eul[3] = {e.x, e.y, e.z};
-    if (ImGui::DragScalarN("Drehung °", ImGuiDataType_Double, eul, 3, 0.5f, nullptr, nullptr, "%.1f"))
+    if (ImGui::DragScalarN("Drehung °", ImGuiDataType_Double, eul, 3, 0.5f, nullptr, nullptr, "%.1f")) {
         world_->setTransform(*o, o->pos, glm::dquat(glm::radians(glm::dvec3(eul[0], eul[1], eul[2]))));
-    if (ImGui::IsItemActivated()) world_->pushUndo();
+        shareTransforms({o->id});
+    }
+    if (ImGui::IsItemActivated()) pushUndo();
     if (ImGui::Button("90° Y (R)")) rotateSelected(1, 90);
     ImGui::SameLine();
     if (ImGui::Button("90° X")) rotateSelected(0, 90);
     ImGui::SameLine();
     if (ImGui::Button("90° Z")) rotateSelected(2, 90);
     ImGui::SameLine();
-    if (ImGui::Button("Absetzen (G)")) {
-        world_->pushUndo();
-        for (uint32_t id : selection_)
-            if (Object* p = world_->find(id)) world_->dropToSurface(*p);
-    }
+    if (ImGui::Button("Absetzen (G)")) dropSelected();
 
     ImGui::SeparatorText("Lagerung");
     bool fixed = o->fixed;
     if (ImGui::Checkbox("Fest verankert (unbeweglich)", &fixed)) {
-        world_->pushUndo();
-        world_->setFixed(*o, fixed);
+        if (remote) {
+            runLine("fix " + idText + (fixed ? " on" : " off"), "konsole");
+        } else {
+            world_->pushUndo();
+            world_->setFixed(*o, fixed);
+        }
     }
     if (!o->fixed) {
         const char* axes[] = {"keine Achse", "Drehachse lokal X", "Drehachse lokal Y", "Drehachse lokal Z"};
+        auto axleCmd = [&](int axis, float rpm, float tq) {
+            runLine("axle " + idText + " " + (axis < 0 ? std::string("off") : std::string(1, "xyz"[axis])) + " " + fmtNum(rpm, 2) + " " +
+                        fmtNum(tq, 3),
+                    "konsole");
+        };
         int ax = o->hingeAxis + 1;
         if (ImGui::Combo("Achse", &ax, axes, 4)) {
-            world_->pushUndo();
-            world_->setHinge(*o, ax - 1, o->motorRpm, o->motorTorque);
+            if (remote) {
+                axleCmd(ax - 1, o->motorRpm, o->motorTorque);
+            } else {
+                world_->pushUndo();
+                world_->setHinge(*o, ax - 1, o->motorRpm, o->motorTorque);
+            }
         }
         if (o->hingeAxis >= 0) {
             float rpm = o->motorRpm, tq = o->motorTorque;
             bool changed = ImGui::DragFloat("Motor U/min", &rpm, 0.5f, -3000, 3000, "%.1f");
+            bool done = ImGui::IsItemDeactivatedAfterEdit();
             changed |= ImGui::DragFloat("Max. Moment Nm", &tq, 0.1f, 0, 10000, "%.2f");
-            if (ImGui::IsItemActivated()) world_->pushUndo();
-            if (changed) world_->setHinge(*o, o->hingeAxis, rpm, tq);
+            done |= ImGui::IsItemDeactivatedAfterEdit();
+            if (ImGui::IsItemActivated() && !remote) world_->pushUndo();
+            if (changed) world_->setHinge(*o, o->hingeAxis, rpm, tq);  // beim Mitspieler nur Vorschau bis zum Loslassen
+            if (done && remote) axleCmd(o->hingeAxis, o->motorRpm, o->motorTorque);
         }
     }
     ImGui::Separator();
@@ -516,15 +557,21 @@ void App::drawProperties() {
                 std::string pct = fmtNum(j.load * 100.0, 0) + " % belastet";
                 ImGui::ProgressBar((float)std::min(j.load, 1.0), ImVec2(170, 0), pct.c_str());
                 ImGui::SameLine();
+                const std::string jn = "j" + std::to_string(j.id);
                 bool ub = j.unbreakable;
                 if (ImGui::Checkbox("hält alles", &ub)) {
-                    world_->pushUndo();
-                    j.unbreakable = ub;
+                    if (remote) {
+                        runLine("joint " + jn + " unbreakable " + (ub ? "on" : "off"), "konsole");
+                    } else {
+                        world_->pushUndo();
+                        j.unbreakable = ub;
+                    }
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("lösen")) removeId = j.id;
                 ImGui::PushItemWidth(120);
-                bool changed = false;
+                bool changed = false, done = false;
+                std::string setting;  // Mitspieler: Befehl "joint jN <setting> <wert>" beim Loslassen
                 if (j.type == JointType::Glue) {
                     float ft = (float)j.ft;
                     if (ImGui::DragFloat("Haftung MPa", &ft, 0.02f, 0.0001f, 100.0f, "%.3f") && ft > 0) {
@@ -532,32 +579,49 @@ void App::drawProperties() {
                         j.ft = ft;
                         changed = true;
                     }
+                    setting = "strength " + fmtNum(j.ft, 4);
                 } else if (j.type == JointType::Nail || j.type == JointType::Screw) {
                     changed |= ImGui::DragInt("Anzahl", &j.count, 0.2f, 1, 100);
+                    setting = "count " + std::to_string(j.count);
                 } else {
                     float f = (float)j.maxForce;
                     if (ImGui::DragFloat("Bruchkraft N", &f, 10.0f, 1.0f, 1e7f, "%.0f")) {
                         j.maxForce = f;
                         changed = true;
                     }
+                    setting = "force " + fmtNum(j.maxForce, 1);
                     if (j.type == JointType::Hinge) {
+                        done |= ImGui::IsItemDeactivatedAfterEdit();
+                        if (done && remote) runLine("joint " + jn + " " + setting, "konsole");
+                        done = false;
                         changed |= ImGui::DragFloat("Motor U/min", &j.motorRpm, 5.0f, -20000.0f, 20000.0f, "%.0f");
+                        setting = "motor " + fmtNum(j.motorRpm, 1);
                     } else if (j.type == JointType::Spring) {
+                        done |= ImGui::IsItemDeactivatedAfterEdit();
+                        if (done && remote) runLine("joint " + jn + " " + setting, "konsole");
+                        done = false;
                         float k = (float)j.stiffness;
                         if (ImGui::DragFloat("Steifigkeit N/m", &k, 10.0f, 1.0f, 1e7f, "%.0f")) {
                             j.stiffness = k;
                             changed = true;
                         }
+                        setting = "stiffness " + fmtNum(j.stiffness, 1);
                     }
                 }
-                if (ImGui::IsItemActivated()) world_->pushUndo();
-                if (changed) world_->updateJoint(j);
+                done |= ImGui::IsItemDeactivatedAfterEdit();
+                if (ImGui::IsItemActivated() && !remote) world_->pushUndo();
+                if (changed) world_->updateJoint(j);  // beim Mitspieler nur Vorschau bis zum Loslassen
+                if (done && remote) runLine("joint " + jn + " " + setting, "konsole");
                 ImGui::PopItemWidth();
                 ImGui::PopID();
             }
             if (removeId) {
-                world_->pushUndo();
-                world_->removeJoint(removeId);
+                if (remote) {
+                    runLine("detach j" + std::to_string(removeId), "konsole");
+                } else {
+                    world_->pushUndo();
+                    world_->removeJoint(removeId);
+                }
             }
         }
     }
@@ -631,8 +695,12 @@ void App::drawProperties() {
     ImGui::Separator();
     bool unb = o->unbreakable;
     if (ImGui::Checkbox("Unzerbrechlich", &unb)) {
-        world_->pushUndo();
-        o->unbreakable = unb;
+        if (remote) {
+            runLine("unbreakable " + idText + (unb ? " on" : " off"), "konsole");
+        } else {
+            world_->pushUndo();
+            o->unbreakable = unb;
+        }
     }
     if (ImGui::Button("Duplizieren")) duplicateSelected();
     ImGui::SameLine();
@@ -779,9 +847,9 @@ void App::drawPlayHud() {
     dl->AddLine(ImVec2(c.x - 8, c.y), ImVec2(c.x + 8, c.y), col, 2);
     dl->AddLine(ImVec2(c.x, c.y - 8), ImVec2(c.x, c.y + 8), col, 2);
     std::string info;
-    if (Object* g = world_->find(grabbed_)) {
+    if (Object* g = world_->find(hand_.grabbed)) {
         info = "Trägt: " + g->name + " (" + fmtNum(g->mass, 2) + " kg)";
-        if (tooHeavy_) info += " - zu schwer zum Heben!";
+        if (hand_.tooHeavy) info += " - zu schwer zum Heben!";
     } else if (Object* o = world_->find(lookAt_)) {
         info = o->name + "  " + fmtNum(o->mass, 2) + " kg" + (o->fixed ? "  (fest)" : "  [Maus links / E]");
     }
@@ -814,7 +882,14 @@ void App::drawInspector() {
         return;
     }
     ImGui::TextDisabled("Pfeile: rot Gewicht · grün Kontakt · lila Hand · cyan Luft · blau Geschwindigkeit · weiß Summe");
-    std::istringstream ss(world_->inspectText(inspectTarget_));
+    if (netClient()) {  // Messwerte kommen vom Gastgeber (dort läuft die Physik)
+        if (time_ >= netInspectAt_) {
+            netInspectAt_ = time_ + 0.5;
+            netSendCommand("inspect " + std::to_string(inspectTarget_), 0, 0, true);
+        }
+        if (netInspectText_.empty()) netInspectText_ = world_->inspectText(inspectTarget_);
+    }
+    std::istringstream ss(netClient() ? netInspectText_ : world_->inspectText(inspectTarget_));
     std::string line;
     while (std::getline(ss, line)) {
         if (!line.empty() && line[0] != ' ') {

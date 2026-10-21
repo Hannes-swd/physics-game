@@ -4,12 +4,15 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "Commands.h"
 #include "Drawing.h"
+#include "Net.h"
 #include "Physics.h"
 #include "Remote.h"
 #include "Renderer.h"
@@ -20,6 +23,70 @@ struct GLFWwindow;
 
 enum class ViewMode { Perspective = 0, Top = 1, Front = 2, Side = 3, Quad = 4 };
 enum class Tool { Select = 0, Saw = 1, Drill = 2, Round = 3, Mill = 4, Plane = 5 };
+enum class NetRole { Off = 0, Host = 1, Client = 2 };
+
+// Was eine Spielfigur in der Hand hält (eigene Figur und die der Mitspieler)
+struct Hand {
+    uint32_t grabbed = 0;
+    glm::dvec3 grabLocal{0};
+    glm::dquat holdRel{1, 0, 0, 0};  // Lage des getragenen Teils relativ zur Blickrichtung (R dreht sie)
+    double holdDist = 1.5;
+    bool heldByMouse = false;
+    bool tooHeavy = false;
+};
+
+// Maus und Tasten einer Spielfigur seit der letzten Auswertung (Tragen, Werfen, Drehen)
+struct HandInput {
+    bool lmbDown = false;
+    int lmbPresses = 0, rmbPresses = 0, ePresses = 0;
+    int turns = 0, tilts = 0;  // R / Shift+R
+    double scroll = 0;
+};
+
+// Eine Spielfigur, wie alle sie sehen (der Gastgeber verteilt die Liste)
+struct NetPlayer {
+    uint32_t id = 0;
+    std::string name;
+    bool play = false;
+    glm::dvec3 feet{0}, camEye{0};  // Füße (Spiel-Modus) bzw. Kamera (Bau-Modus)
+    double yaw = 0, pitch = 0;
+    uint32_t grabbed = 0;
+    bool tooHeavy = false;
+};
+
+class App;
+
+// Ein Mitspieler aus Sicht des Gastgebers
+struct Peer {
+    uint32_t id = 0;              // Spielernummer, zugleich Nummer seiner Spielfigur in der Physik
+    std::string name;
+    std::unique_ptr<net::Connection> conn;
+    bool greeted = false;         // hat sich vorgestellt
+    bool accepted = false;        // vom Gastgeber zugelassen
+    double since = 0;             // verbunden seit (Spielzeit)
+    double closeAt = -1;          // abgelehnt/entfernt: Verbindung ab dieser Zeit schließen
+    // Spielfigur
+    bool play = false;
+    double yaw = 0, pitch = 0;
+    glm::vec3 wish{0};            // Laufgeschwindigkeit (Welt)
+    bool jump = false;
+    glm::dvec3 camEye{0};
+    Hand hand;
+    // Befehle laufen beim Gastgeber, aber mit Auswahl und Kamera des Mitspielers
+    std::vector<uint32_t> selection;
+    bool selectionChanged = false;
+    glm::dvec3 spawnRef{0};
+    std::unique_ptr<CommandHost> commands;
+    // Was der Mitspieler schon hat (nur Änderungen werden gesendet)
+    struct Sent {
+        uint32_t rev = 0;
+        size_t meta = 0;
+        glm::dvec3 pos{0};
+        glm::dquat rot{1, 0, 0, 0};
+    };
+    std::unordered_map<uint32_t, Sent> sent;
+    std::string sentJoints, sentLoads;
+};
 
 struct AppOptions {
     bool validation = false;
@@ -60,6 +127,8 @@ public:
     std::string statusText() override;
     bool queryValue(const std::string& name, double& num, std::string& str) override;
     std::string wait(double seconds) override;
+
+    NetRole netRole() const { return netRole_; }
 
 private:
     struct View {
@@ -112,6 +181,9 @@ private:
     void playInput(float dt);
     void updatePlay(float dt);
     void grabForces(float dt);
+    // Tragen/Werfen/Drehen einer Spielfigur (eigene oder Mitspieler)
+    void handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in);
+    void holdForces(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw);
     void updatePreview();
     void applyTool();
     void enterPlay();
@@ -120,10 +192,12 @@ private:
     void rotateSelected(int axis, double deg);
     void deleteSelected();
     void duplicateSelected();
+    void dropSelected();
     void focusSelected();
     bool isSelected(uint32_t id) const;
     void toggleSelected(uint32_t id);
     glm::dvec3 selectionCenter() const;
+    glm::dvec3 orbitEye() const;
 
     // AppUI.cpp
     void setupStyle();
@@ -143,6 +217,43 @@ private:
     void log(const std::string& text, int kind = 0);  // 0 normal, 1 Befehl, 2 Fehler, 3 Info
     void openImportDialog();
     void saveDialog(bool save);
+
+    // AppNet.cpp (LAN-Mehrspieler: Gastgeber rechnet alles, Mitspieler zeigen seine Welt und schicken Eingaben/Befehle)
+    bool netClient() const { return netRole_ == NetRole::Client; }
+    void netUpdate(float dt);
+    void netStop(const std::string& why);
+    bool netHost(std::string* err);
+    bool netJoin(const std::string& address, std::string* err);
+    void netEvent(const std::string& text, bool ok);  // Meldung an alle Mitspieler
+    bool peersPlaying() const;
+    Peer* findPeer(uint32_t id);
+    void netHostUpdate(float dt);
+    void netPeerMessage(Peer& p, net::Msg type, const std::string& payload);
+    void netAccept(Peer& p);
+    void netReject(Peer& p, const std::string& reason);
+    void netRemovePeer(size_t index, const std::string& why);
+    void netSync(Peer& p);
+    void netPlayerList();
+    void peerForces(float h);          // im Physik-Teilschritt: Mitspieler tragen Teile
+    void updatePeerFigures(float dt);  // Mitspieler laufen
+    glm::dvec3 peerEye(const Peer& p) const;
+    void netClientUpdate(float dt);
+    void netHostMessage(net::Msg type, const std::string& payload);
+    void netSendCommand(const std::string& line, int source, uint64_t client, bool quiet);
+    void netSendResult(Peer& p, uint32_t request, const ScriptJob& job);
+    bool localCommand(const std::string& line) const;  // Mitspieler: läuft auf dem eigenen Rechner
+    std::string lanCommand(const std::vector<std::string>& args);  // Befehl "lan"
+    // Bau-Modus: Teile wurden verschoben. Mitspieler schickt die neue Lage zum Gastgeber; beim Gastgeber bleiben sie
+    // ruhig liegen, auch wenn die Physik gerade läuft
+    void pushUndo();
+    void shareTransforms(const std::vector<uint32_t>& ids);
+    size_t undoSteps() const { return netClient() ? netUndo_ : world_->undoCount(); }
+    size_t redoSteps() const { return netClient() ? netRedo_ : world_->redoCount(); }
+    void drawNetMenu();
+    void drawNetWindow();
+    void drawNetRequests();
+    void drawPlayerTags();
+    void addAvatars(FrameDesc& fd);
 
     GLFWwindow* window_ = nullptr;
     Renderer renderer_;
@@ -196,16 +307,12 @@ private:
     bool cursorCaptured_ = false;
     double cursorX_ = 0, cursorY_ = 0;
     double scrollAccum_ = 0;
-    bool heldByMouse_ = false, prevLmb_ = false, prevRmb_ = false;
+    bool prevLmb_ = false, prevRmb_ = false;
     glm::dvec2 autoMove_{0};      // per Befehl: x = vorwärts, y = rechts
     double autoMoveTime_ = 0;
     bool autoRun_ = false, jumpRequest_ = false;
     double playYaw_ = 0, playPitch_ = 0;
-    uint32_t grabbed_ = 0;
-    glm::dvec3 grabLocal_{0};
-    glm::dquat holdRel_{1, 0, 0, 0};  // Lage des getragenen Teils relativ zur Blickrichtung (R dreht sie)
-    double holdDist_ = 1.5;
-    bool tooHeavy_ = false;
+    Hand hand_;
     uint32_t lookAt_ = 0;
     double lookDist_ = 0;
 
@@ -227,9 +334,10 @@ private:
     bool scriptBusy_ = false;
     struct Job {
         std::unique_ptr<ScriptJob> job;
-        int source = 0;
+        int source = 0;            // 0 Konsole, 1 Skript, 2 Fernsteuerung, 3 Mitspieler im LAN
         uint64_t client = 0;
         std::string line;
+        uint32_t peer = 0, request = 0;  // Mitspieler: Spielernummer und Nummer seiner Anfrage
     };
     std::vector<Job> jobs_;
     struct Toast {
@@ -263,4 +371,50 @@ private:
     Sheet sheet_;
     std::string drawingInfo_;
     int drawnObjects_ = 0, drawnLod_[3] = {0, 0, 0}, culledObjects_ = 0;
+
+    // LAN-Mehrspieler
+    NetRole netRole_ = NetRole::Off;
+    char netName_[40] = {};
+    bool showNet_ = false;
+    bool netConfirm_ = true;              // Gastgeber: Mitspieler erst nach Bestätigung zulassen
+    net::Listener netListener_;
+    net::Beacon netBeacon_;
+    net::Search netSearch_;
+    std::vector<std::string> netAddresses_;  // eigene LAN-Adressen (Anzeige beim Gastgeber)
+    std::vector<std::unique_ptr<Peer>> peers_;
+    uint32_t netNextPeer_ = 2;            // 1 = Gastgeber
+    double netSyncAccum_ = 0, netLoadsAccum_ = 0;
+    std::vector<NetPlayer> netPlayers_;   // alle Spielfiguren, auch die eigene
+    uint32_t netSelfId_ = 0;
+    std::unique_ptr<net::Connection> netConn_;  // Mitspieler: Verbindung zum Gastgeber
+    std::string netHostName_, netStatus_;
+    bool netWelcomed_ = false;
+    double netConnectStart_ = 0;
+    char netAddress_[64] = {};
+    struct NetRequest {
+        int source = 0;
+        uint64_t client = 0;
+        bool quiet = false;
+    };
+    std::map<uint32_t, NetRequest> netRequests_;
+    uint32_t netNextRequest_ = 1;
+    HandInput netHand_;                   // Mitspieler: seit dem letzten Senden
+    glm::vec3 netWish_{0};
+    bool netJump_ = false, netSpawn_ = false;
+    glm::dvec3 netSpawnFeet_{0};
+    glm::dvec3 netFeet_{0}, netFeetTarget_{0};  // eigene Figur laut Gastgeber (geglättet)
+    bool netUndoPending_ = false;
+    // Selbst verschobene Teile: Lagen vom Gastgeber kurz zurückhalten (sie sind älter als die eigene Bewegung)
+    struct OwnMove {
+        double time = 0;
+        bool held = false;
+        glm::dvec3 pos{0};
+        glm::dquat rot{1, 0, 0, 0};
+    };
+    std::unordered_map<uint32_t, OwnMove> netOwnMoves_;
+    size_t netUndo_ = 0, netRedo_ = 0;
+    bool netHostSim_ = false;             // Physik läuft beim Gastgeber
+    double netInputAccum_ = 0, netInspectAt_ = 0;
+    std::string netInspectText_;
+    GpuMesh avatarMesh_;
 };

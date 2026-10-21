@@ -199,6 +199,7 @@ void World::rebuildGeometry(Object& o) {
     }
     o.mass = o.volume * materials()[o.material].density;
     o.edgesValid = false;
+    o.netRev = ++netRevs_;
     if (o.kind == ObjKind::Solid) {
         const std::vector<BoreGeom> oldBores = o.coll.bores;
         if (legacyCollision_) {  // nur für Messungen: jedes Stück eine Hülle
@@ -1416,6 +1417,39 @@ bool World::redo() {
     restore(redo_.back());
     redo_.pop_back();
     return true;
+}
+
+// ============================================================================ LAN-Mehrspieler
+
+Object* World::netPut(const ObjectState& s) {
+    nextId_ = std::max(nextId_, s.id + 1);
+    Object* o = find(s.id);
+    if (!o) {
+        auto n = std::make_unique<Object>();
+        static_cast<ObjectState&>(*n) = s;
+        lastCreated_ = s.id;  // "last" in Befehlen
+        return insert(std::move(n));
+    }
+    static_cast<ObjectState&>(*o) = s;
+    o->coll.bores.clear();  // Abrieb kommt vom Gastgeber, nicht neu zuordnen
+    rebuildGeometry(*o);
+    rebuildBody(*o);
+    rebuildJointsOf(o->id);
+    return o;
+}
+
+void World::netMove(Object& o, const glm::dvec3& pos, const glm::dquat& rot) {
+    o.pos = pos;
+    o.rot = rot;
+    if (o.body != kNoBody) physics_.setTransform(o.body, pos, rot, false);
+    refreshPlacement(o);
+}
+
+void World::netSetJoints(const std::vector<JointState>& joints) {
+    for (auto& j : joints_)
+        if (j->constraint) physics_.destroyConstraint(j->constraint);
+    joints_.clear();
+    for (const JointState& js : joints) addJoint(js, nullptr);
 }
 
 // ============================================================================ Szene

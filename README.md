@@ -46,6 +46,7 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 | [Verbindungen & Bruch](docs/08-Verbindungen-und-Bruch.md) | Kleber, Nägel, Schrauben, Schweißnaht, Scharnier, Feder, Seil, Bruch, Luft, Propeller |
 | [Bearbeitung](docs/09-Bearbeitung.md) | Abrunden, Fasen, Fräsen, Hobeln, Drehbank, Biegen, Spiegeln, Skalieren, Formen kombinieren |
 | [Stifte & Scharniere](docs/10-Stifte-und-Scharniere.md) | selbstgebaute Scharniere: Stift in Bohrung, Schmieren, Abrieb, Ausreißen |
+| [Mehrspieler](docs/11-Mehrspieler.md) | im LAN zusammen bauen und spielen: Gastgeber rechnet, Mitspieler treten bei |
 
 ## Projektstruktur
 

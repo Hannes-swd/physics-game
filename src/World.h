@@ -98,6 +98,7 @@ struct Object : ObjectState {
     glm::dvec3 safePos{0};
     glm::dquat safeRot{1, 0, 0, 0};
     bool hasSafe = false;
+    uint32_t netRev = 0;            // neu bei jeder neuen Geometrie (LAN: Teil neu an die Mitspieler senden)
 };
 
 // Verbindungen zwischen zwei Teilen
@@ -303,6 +304,14 @@ public:
     // Nur für Messungen: alte Kollision (keine Grundformen, keine Vereinfachung, CCD nur für dünne Teile)
     void setLegacyCollision(bool on) { legacyCollision_ = on; }
 
+    // ---------------------------------------------------------- LAN-Mehrspieler: Mitspieler übernimmt die Welt vom Gastgeber
+    // Teil anlegen oder (gleiche Nummer) ersetzen; Verbindungen bleiben bestehen
+    Object* netPut(const ObjectState& s);
+    // Lage setzen ohne Physik-Nebenwirkungen (der Mitspieler simuliert nicht selbst)
+    void netMove(Object& o, const glm::dvec3& pos, const glm::dquat& rot);
+    // alle Verbindungen ersetzen
+    void netSetJoints(const std::vector<JointState>& joints);
+
 private:
     struct Snapshot {
         std::vector<ObjectState> objects;
@@ -359,6 +368,7 @@ private:
     double airDensity_ = 1.204;
     glm::dvec3 wind_{0};
     uint32_t lastCreated_ = 0;
+    uint32_t netRevs_ = 0;                              // Zähler für Object::netRev
     bool buildCollision_ = true;
     int rescues_ = 0;                                   // so oft wurde ein Teil an seine letzte freie Stelle zurückgesetzt
     std::unordered_map<uint64_t, std::pair<double, int>> rescueLog_;  // Paar -> (Beginn, Anzahl) im Zeitfenster

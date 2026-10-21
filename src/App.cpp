@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
@@ -101,6 +102,10 @@ bool App::init(const AppOptions& opt) {
     renderer_.initImGui();
 
     if (!opt.emptyScene) world_->demoScene();
+    {  // Name im LAN: Windows-Benutzer
+        const char* user = std::getenv("USERNAME");
+        std::snprintf(netName_, sizeof(netName_), "%s", user && *user ? user : "Spieler");
+    }
     log("Welcome to the workshop! F1 = console, 'help' lists all commands.", 3);
     if (remote_.start(opt.port))
         log("Remote control active: Werkstatt.exe --send \"command\" (port " + std::to_string(opt.port) + ")", 3);
@@ -121,6 +126,8 @@ bool App::init(const AppOptions& opt) {
 void App::shutdown() {
     renderer_.waitIdle();
     remote_.stop();
+    netStop("");
+    renderer_.destroyMesh(avatarMesh_);
     world_.reset();
     physics_.shutdown();
     renderer_.shutdown();
@@ -147,18 +154,21 @@ int App::run(const AppOptions& opt) {
 
         // Befehle kommen auch an, wenn das Fenster minimiert ist
         remote_.poll([&](uint64_t client, const std::string& l) { submit(l, 2, client); });
+        netUpdate(dt);  // LAN: Mitspieler bzw. Gastgeber (auch minimiert)
         processScriptQueue();
         stepJobs();
         for (const std::string& e : world_->takeEvents()) {  // Brüche usw.
             log("!! " + e, 2);
             toast(e, false);
+            netEvent(e, false);
         }
         if (quit_) break;
 
         int fw = 0, fh = 0;
         glfwGetFramebufferSize(window_, &fw, &fh);
         if (fw == 0 || fh == 0) {  // minimiert
-            glfwWaitEventsTimeout(0.05);
+            if (!play_ && peersPlaying()) updatePlay(dt);  // Gastgeber: Mitspieler laufen weiter
+            glfwWaitEventsTimeout(peers_.empty() ? 0.05 : 0.01);
             continue;
         }
         if (dt > 0) fps_ = fps_ * 0.95f + (1.0f / dt) * 0.05f;
@@ -169,7 +179,7 @@ int App::run(const AppOptions& opt) {
 
         computeViews();
         handleInput(dt);
-        if (play_) updatePlay(dt);
+        if (play_ || peersPlaying()) updatePlay(dt);
         computeViews();
         updatePreview();
         drawUI();
@@ -252,7 +262,10 @@ std::string App::cameraLook(const glm::dvec3& target, double dist) {
 
 // ============================================================================ Kameras
 
-glm::dvec3 App::playerEye() const { return physics_.characterPosition() + glm::dvec3(0, 1.65, 0); }
+glm::dvec3 App::playerEye() const {
+    // Mitspieler: die Figur läuft beim Gastgeber, hier steht ihre zuletzt gemeldete (geglättete) Lage
+    return (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, 1.65, 0);
+}
 
 glm::dvec3 App::playerForward() const {
     return glm::dvec3(-std::sin(playYaw_) * std::cos(playPitch_), std::sin(playPitch_), -std::cos(playYaw_) * std::cos(playPitch_));
@@ -435,7 +448,7 @@ void App::buildFrame(FrameDesc& fd) {
             }
             // Detailstufe: 0 = voll + Kanten, 1 = voll, 2 = grobe Ersatzform
             int lod = px > 28 ? 0 : (px > 3 ? 1 : 2);
-            if (sel || o->id == hovered_ || o->id == grabbed_) lod = 0;
+            if (sel || o->id == hovered_ || o->id == hand_.grabbed) lod = 0;
             if (fd.items.size() >= 8000) break;
             ++drawnObjects_;
             ++drawnLod_[lod];
@@ -455,7 +468,7 @@ void App::buildFrame(FrameDesc& fd) {
             it.data.color2 = glm::vec4(m.color2, m.metallic);
             float hl = 0;
             if (preview_.valid && preview_.objId == o->id) hl = 3;
-            else if (sel || o->id == grabbed_) hl = 2;
+            else if (sel || o->id == hand_.grabbed) hl = 2;
             else if (o->id == hovered_ || (play_ && o->id == lookAt_)) hl = 1;
             it.data.params = glm::vec4((float)m.shading, o->seed * 10.0f, hl, 0);
             glm::dvec3 ctr = (o->wMin + o->wMax) * 0.5;
@@ -471,6 +484,8 @@ void App::buildFrame(FrameDesc& fd) {
             }
         }
     });
+
+    addAvatars(fd);  // andere Spieler im LAN
 
     // Auswahl: Hüllquader + lokale Achsen
     if (!play_) {

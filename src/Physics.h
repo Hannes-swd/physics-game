@@ -206,14 +206,14 @@ public:
               const std::function<void(float)>& postStep = nullptr);
     float fixedDt() const { return 1.0f / 240.0f; }
 
-    // Spielfigur (Ego-Modus)
-    void createCharacter(const glm::dvec3& feet);
-    void destroyCharacter();
-    bool hasCharacter() const;
-    void updateCharacter(float dt, const glm::vec3& wishVelocity, bool jump, BodyHandle ignore);
-    glm::dvec3 characterPosition() const;
-    void setCharacterPosition(const glm::dvec3& feet);
-    bool characterOnGround() const;
+    // Spielfiguren (Ego-Modus). who = 0: eigene Figur, weitere Nummern: Mitspieler im LAN
+    void createCharacter(const glm::dvec3& feet, int who = 0);
+    void destroyCharacter(int who = 0);
+    bool hasCharacter(int who = 0) const;
+    void updateCharacter(float dt, const glm::vec3& wishVelocity, bool jump, BodyHandle ignore, int who = 0);
+    glm::dvec3 characterPosition(int who = 0) const;
+    void setCharacterPosition(const glm::dvec3& feet, int who = 0);
+    bool characterOnGround(int who = 0) const;
 
 private:
     void applyRollingResistance(float dt);

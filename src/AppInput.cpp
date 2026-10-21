@@ -40,13 +40,21 @@ void App::rotateSelected(int axis, double deg) {
     ax[axis] = 1;
     glm::dquat q = glm::angleAxis(glm::radians(deg), ax);
     glm::dvec3 c = selectionCenter();
-    world_->pushUndo();
+    pushUndo();
     for (uint32_t id : selection_)
         if (Object* o = world_->find(id)) world_->setTransform(*o, c + q * (o->pos - c), q * o->rot);
+    shareTransforms(selection_);
 }
 
 void App::deleteSelected() {
     if (selection_.empty()) return;
+    if (netClient()) {  // der Gastgeber löscht (ein Rückgängig-Schritt für alle)
+        std::string cmd = "delete";
+        for (uint32_t id : selection_) cmd += " " + std::to_string(id);
+        runLine(cmd, "tool");
+        selection_.clear();
+        return;
+    }
     world_->pushUndo();
     for (uint32_t id : selection_) world_->remove(id);
     status_ = std::to_string(selection_.size()) + " part(s) deleted";
@@ -63,6 +71,13 @@ void App::duplicateSelected() {
             mx = glm::max(mx, o->wMax);
         }
     glm::dvec3 off(mx.x - mn.x + 0.02, 0, 0);
+    if (netClient()) {
+        std::string cmd;
+        for (uint32_t id : selection_)
+            cmd += (cmd.empty() ? "copy " : " ; copy ") + std::to_string(id) + " " + fmtNum(off.x * 100, 3) + " 0 0";
+        runLine(cmd, "tool");
+        return;
+    }
     world_->pushUndo();
     std::vector<uint32_t> copies;
     for (uint32_t id : selection_)
@@ -70,6 +85,19 @@ void App::duplicateSelected() {
     selection_ = copies;
     status_ = std::to_string(copies.size()) + " part(s) copied";
     statusTime_ = time_;
+}
+
+void App::dropSelected() {
+    if (selection_.empty()) return;
+    pushUndo();
+    for (uint32_t id : selection_)
+        if (Object* o = world_->find(id)) world_->dropToSurface(*o);
+    shareTransforms(selection_);
+}
+
+glm::dvec3 App::orbitEye() const {
+    return orbitTarget_ + orbitDist_ * glm::dvec3(std::cos(orbitPitch_) * std::sin(orbitYaw_), std::sin(orbitPitch_),
+                                                  std::cos(orbitPitch_) * std::cos(orbitYaw_));
 }
 
 void App::focusSelected() {
@@ -112,7 +140,7 @@ void App::handleInput(float dt) {
 
     // Ziel des Physik-Inspektors
     uint32_t target = 0;
-    if (play_) target = grabbed_ ? grabbed_ : lookAt_;
+    if (play_) target = hand_.grabbed ? hand_.grabbed : lookAt_;
     else target = selectedId() ? selectedId() : hovered_;
     if (target && target != inspectTarget_ && (play_ || selectedId())) inspectTarget_ = target;
     if (inspectTarget_ && !world_->find(inspectTarget_)) inspectTarget_ = 0;
@@ -164,8 +192,14 @@ void App::buildInput(float) {
         if (ImGui::IsKeyPressed(ImGuiKey_4, false)) viewMode_ = ViewMode::Side;
         if (ImGui::IsKeyPressed(ImGuiKey_5, false)) viewMode_ = ViewMode::Quad;
         if (ctrl) {
-            if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) log(world_->undo() ? "Undone" : "Nothing to undo", 3);
-            if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) log(world_->redo() ? "Redone" : "Nothing to redo", 3);
+            if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+                if (netClient()) runLine("undo", "key");
+                else log(world_->undo() ? "Undone" : "Nothing to undo", 3);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+                if (netClient()) runLine("redo", "key");
+                else log(world_->redo() ? "Redone" : "Nothing to redo", 3);
+            }
             if (ImGui::IsKeyPressed(ImGuiKey_D, false)) duplicateSelected();
             if (ImGui::IsKeyPressed(ImGuiKey_A, false)) {
                 selection_.clear();
@@ -187,11 +221,7 @@ void App::buildInput(float) {
             }
             if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) deleteSelected();
             if (ImGui::IsKeyPressed(ImGuiKey_F, false)) focusSelected();
-            if (ImGui::IsKeyPressed(ImGuiKey_G, false) && !selection_.empty()) {
-                world_->pushUndo();
-                for (uint32_t id : selection_)
-                    if (Object* o = world_->find(id)) world_->dropToSurface(*o);
-            }
+            if (ImGui::IsKeyPressed(ImGuiKey_G, false)) dropSelected();
             if (ImGui::IsKeyPressed(ImGuiKey_R, false)) {
                 int axis = 1;
                 if (v.mode == ViewMode::Front) axis = 2;
@@ -250,7 +280,7 @@ void App::buildInput(float) {
         const View& dv = views_[dragView_];
         if (!dragging_ && std::hypot(mx - dragStartMx_, my - dragStartMy_) > 4.0) {
             dragging_ = true;
-            world_->pushUndo();
+            pushUndo();
         }
         if (dragging_ && mouseRay(dv, mx, my, ro, rd)) {
             const bool vertical = !dv.ortho && io.KeyShift;
@@ -304,6 +334,9 @@ void App::buildInput(float) {
                     for (auto& [id, p0] : dragStarts_)
                         if (Object* o = world_->find(id)) world_->setTransform(*o, p0 + delta, o->rot);
                 }
+                std::vector<uint32_t> ids;
+                for (auto& [id, p0] : dragStarts_) ids.push_back(id);
+                shareTransforms(ids);
             }
         }
     }
@@ -403,6 +436,20 @@ void App::applyTool() {
                     "tool");
         return;
     }
+    if (netClient()) {  // Mitspieler: Sägen und Bohren als Befehl, der Gastgeber führt sie aus
+        auto n = [](double v) { return fmtNum(v, 6); };
+        if (tool_ == Tool::Saw)
+            runLine("cut " + id + " " + std::string(1, "xyz"[sawAxis_]) + " " + n(preview_.distFromEnd * 100) + " " + n(sawAngle_) + " " +
+                        n(sawKerfMm_),
+                    "tool");
+        else {
+            const glm::dvec3 f = preview_.from * 100.0, d = glm::normalize(preview_.dir);
+            runLine("drillat " + id + " " + n(f.x) + " " + n(f.y) + " " + n(f.z) + " " + n(d.x) + " " + n(d.y) + " " + n(d.z) + " " +
+                        n(drillDiaMm_) + (drillDepthMm_ > 0 ? " " + n(drillDepthMm_ + 1.0) : ""),
+                    "tool");
+        }
+        return;
+    }
     std::vector<uint32_t> ids;
     std::string err;
     world_->pushUndo();
@@ -441,9 +488,7 @@ void App::setCursorCaptured(bool on) {
 void App::enterPlay() {
     if (play_) return;
     // Figur dort absetzen, wo die Baukamera hinschaut
-    glm::dvec3 eye = orbitTarget_ + orbitDist_ * glm::dvec3(std::cos(orbitPitch_) * std::sin(orbitYaw_), std::sin(orbitPitch_),
-                                                            std::cos(orbitPitch_) * std::cos(orbitYaw_));
-    glm::dvec3 fwd = orbitTarget_ - eye;
+    glm::dvec3 fwd = orbitTarget_ - orbitEye();
     fwd.y = 0;
     fwd = glm::length(fwd) > 1e-6 ? glm::normalize(fwd) : glm::dvec3(0, 0, -1);
     glm::dvec3 feet = orbitTarget_ - fwd * 2.5;
@@ -451,8 +496,14 @@ void App::enterPlay() {
     double groundY = 0;
     if (world_->raycast(glm::dvec3(feet.x, orbitTarget_.y + 20.0, feet.z), glm::dvec3(0, -1, 0), h)) groundY = h.point.y;
     feet.y = groundY + 0.05;
-    if (!physics_.hasCharacter()) physics_.createCharacter(feet);
-    else physics_.setCharacterPosition(feet);
+    if (netClient()) {  // die Figur steht beim Gastgeber: dort absetzen lassen
+        netSpawn_ = true;
+        netSpawnFeet_ = netFeet_ = netFeetTarget_ = feet;
+    } else if (!physics_.hasCharacter()) {
+        physics_.createCharacter(feet);
+    } else {
+        physics_.setCharacterPosition(feet);
+    }
     playYaw_ = std::atan2(-fwd.x, -fwd.z);
     {  // direkt auf das Ziel schauen
         glm::dvec3 eyeP = feet + glm::dvec3(0, 1.65, 0);
@@ -462,7 +513,7 @@ void App::enterPlay() {
     play_ = true;
     dragCandidate_ = dragging_ = false;
     preview_.valid = false;
-    world_->setSimulating(true);
+    if (!netClient()) world_->setSimulating(true);
     setCursorCaptured(true);
     log("Play mode: WASD walk, left mouse grab, right mouse throw, Tab back", 3);
 }
@@ -471,8 +522,11 @@ void App::leavePlay() {
     if (!play_) return;
     glm::dvec3 eye = playerEye(), fwd = playerForward();
     play_ = false;
-    grabbed_ = 0;
-    world_->setSimulating(false);
+    hand_.grabbed = 0;
+    netWish_ = glm::vec3(0);
+    // Figur weg: Läuft die Physik weiter (Mitspieler), wäre sie sonst ein unsichtbares Hindernis
+    if (!netClient()) physics_.destroyCharacter();
+    if (!netClient() && !peersPlaying()) world_->setSimulating(false);  // Mitspieler laufen noch: Physik weiter
     setCursorCaptured(false);
     orbitDist_ = 2.5;
     orbitTarget_ = eye + fwd * orbitDist_;
@@ -504,7 +558,7 @@ void App::playInput(float) {
     const glm::dvec3 eye = playerEye(), fwd = playerForward();
     RayHit h;
     lookAt_ = 0;
-    if (world_->raycast(eye, fwd, h, grabbed_) && h.obj && h.t < 4.0) {
+    if (world_->raycast(eye, fwd, h, hand_.grabbed) && h.obj && h.t < 4.0) {
         lookAt_ = h.obj->id;
         lookDist_ = h.t;
     }
@@ -512,66 +566,81 @@ void App::playInput(float) {
     // Maustasten direkt von GLFW (ImGui ignoriert die Maus, solange sie gefangen ist)
     const bool lmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     const bool rmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-    const bool lmbPressed = lmbDown && !prevLmb_, rmbPressed = rmbDown && !prevRmb_;
+    HandInput in;
+    in.lmbDown = lmbDown;
+    in.lmbPresses = lmbDown && !prevLmb_;
+    in.rmbPresses = rmbDown && !prevRmb_;
     prevLmb_ = lmbDown;
     prevRmb_ = rmbDown;
-    const bool ePressed = !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false);
+    in.ePresses = !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false);
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_R, false)) ++(io.KeyShift ? in.tilts : in.turns);
+    in.scroll = scrollAccum_;
+    if (netClient()) {  // Tragen und Werfen rechnet der Gastgeber: sammeln, netUpdate schickt es
+        netHand_.lmbDown = in.lmbDown;
+        netHand_.lmbPresses += in.lmbPresses;
+        netHand_.rmbPresses += in.rmbPresses;
+        netHand_.ePresses += in.ePresses;
+        netHand_.turns += in.turns;
+        netHand_.tilts += in.tilts;
+        netHand_.scroll += in.scroll;
+        return;
+    }
+    handActions(hand_, eye, fwd, playYaw_, in);
+}
 
-    auto tryGrab = [&]() {
-        if (!lookAt_ || h.t > 3.5) return;
-        Object* o = world_->find(lookAt_);
-        if (!o || o->fixed || o->body == kNoBody) return;
-        grabbed_ = o->id;
-        grabLocal_ = h.localPoint;
-        holdDist_ = std::max(0.5, h.t);
+void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in) {
+    auto tryGrab = [&](bool byMouse) {
+        RayHit h;
+        if (!world_->raycast(eye, fwd, h, 0) || !h.obj || h.t > 3.5) return;
+        Object* o = h.obj;
+        if (o->fixed || o->body == kNoBody) return;
+        hand.grabbed = o->id;
+        hand.grabLocal = h.localPoint;
+        hand.holdDist = std::max(0.5, h.t);
+        hand.heldByMouse = byMouse;
         // Lage merken (relativ zur Blickrichtung): das Teil bleibt so in der Hand, statt am Griffpunkt zu pendeln
-        holdRel_ = glm::conjugate(glm::angleAxis(playYaw_, glm::dvec3(0, 1, 0))) * o->rot;
+        hand.holdRel = glm::conjugate(glm::angleAxis(yaw, glm::dvec3(0, 1, 0))) * o->rot;
         physics_.activate(o->body);
     };
     // Maus links halten = tragen, E = aufnehmen/ablegen ohne Halten
-    if (ePressed) {
-        if (grabbed_) {
-            grabbed_ = 0;
-        } else {
-            tryGrab();
-            heldByMouse_ = false;
-        }
-    } else if (lmbPressed && !grabbed_) {
-        tryGrab();
-        heldByMouse_ = true;
+    for (int i = 0; i < in.ePresses; ++i) {
+        if (hand.grabbed) hand.grabbed = 0;
+        else tryGrab(false);
     }
-    if (grabbed_ && heldByMouse_ && !lmbDown) grabbed_ = 0;
-    if (rmbPressed && grabbed_) {  // werfen
-        if (Object* o = world_->find(grabbed_)) {
+    if (in.ePresses == 0 && in.lmbPresses > 0 && !hand.grabbed) tryGrab(true);
+    if (hand.grabbed && hand.heldByMouse && !in.lmbDown) hand.grabbed = 0;
+    if (in.rmbPresses > 0 && hand.grabbed) {  // werfen
+        if (Object* o = world_->find(hand.grabbed)) {
             double m = std::max(0.01, (double)physics_.mass(o->body));
             double j = std::min(m * 9.0, 45.0);
-            physics_.addImpulseAt(o->body, glm::vec3(fwd * j), o->pos + o->rot * grabLocal_);
+            physics_.addImpulseAt(o->body, glm::vec3(fwd * j), o->pos + o->rot * hand.grabLocal);
         }
-        grabbed_ = 0;
+        hand.grabbed = 0;
     }
-    if (grabbed_ && scrollAccum_ != 0.0) holdDist_ = std::clamp(holdDist_ + scrollAccum_ * 0.15, 0.4, 3.5);
+    if (!hand.grabbed) return;
+    if (in.scroll != 0.0) hand.holdDist = std::clamp(hand.holdDist + in.scroll * 0.15, 0.4, 3.5);
     // R: getragenes Teil um 15° drehen (um die Hochachse), Shift+R: nach vorne kippen (um die Querachse)
-    if (grabbed_ && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_R, false)) {
-        const glm::dvec3 axis = io.KeyShift ? glm::dvec3(1, 0, 0) : glm::dvec3(0, 1, 0);
-        holdRel_ = glm::normalize(glm::angleAxis(glm::radians(15.0), axis) * holdRel_);
-    }
+    for (int i = 0; i < in.turns; ++i) hand.holdRel = glm::normalize(glm::angleAxis(glm::radians(15.0), glm::dvec3(0, 1, 0)) * hand.holdRel);
+    for (int i = 0; i < in.tilts; ++i) hand.holdRel = glm::normalize(glm::angleAxis(glm::radians(15.0), glm::dvec3(1, 0, 0)) * hand.holdRel);
 }
 
-void App::grabForces(float) {
-    tooHeavy_ = false;
-    if (!grabbed_) return;
-    Object* o = world_->find(grabbed_);
+void App::grabForces(float) { holdForces(hand_, playerEye(), playerForward(), playYaw_); }
+
+void App::holdForces(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw) {
+    hand.tooHeavy = false;
+    if (!hand.grabbed) return;
+    Object* o = world_->find(hand.grabbed);
     if (!o || o->body == kNoBody || o->fixed) {
-        grabbed_ = 0;
+        hand.grabbed = 0;
         return;
     }
     glm::dvec3 pos;
     glm::dquat rot;
     physics_.getTransform(o->body, pos, rot);
-    const glm::dvec3 p = pos + rot * grabLocal_;
-    const glm::dvec3 target = playerEye() + playerForward() * holdDist_;
+    const glm::dvec3 p = pos + rot * hand.grabLocal;
+    const glm::dvec3 target = eye + fwd * hand.holdDist;
     if (glm::length(target - p) > 2.0) {  // hängt fest -> loslassen
-        grabbed_ = 0;
+        hand.grabbed = 0;
         return;
     }
     const double m = std::max(0.01, (double)physics_.mass(o->body));
@@ -580,7 +649,7 @@ void App::grabForces(float) {
     glm::dvec3 f = m * (w * w * (target - p) - 2.0 * w * v) + glm::dvec3(0, m * 9.81, 0);
     if (glm::length(f) > kMaxLiftForce) {
         f = glm::normalize(f) * kMaxLiftForce;
-        tooHeavy_ = m * 9.81 > kMaxLiftForce * 0.95;
+        hand.tooHeavy = m * 9.81 > kMaxLiftForce * 0.95;
     }
     physics_.addForceAt(o->body, glm::vec3(f), p);
     world_->addExternalForce(o->id, f);
@@ -588,7 +657,7 @@ void App::grabForces(float) {
     // zwei Händen aufbringt. Lange, schwere Teile (Tür, Balken) lassen sich so nur langsam drehen und kippen.
     BodyState s;
     if (physics_.bodyState(o->body, s) && s.dynamic && std::abs(glm::determinant(s.invInertiaWorld)) > 1e-30) {
-        const glm::dquat target = glm::angleAxis(playYaw_, glm::dvec3(0, 1, 0)) * holdRel_;
+        const glm::dquat target = glm::angleAxis(yaw, glm::dvec3(0, 1, 0)) * hand.holdRel;
         glm::dquat err = target * glm::conjugate(rot);
         if (err.w < 0) err = -err;
         const double sinHalf = glm::length(glm::dvec3(err.x, err.y, err.z));
@@ -602,6 +671,7 @@ void App::grabForces(float) {
     }
 }
 
+// Läuft, solange jemand spielt: eigene Figur und/oder Mitspieler. Beim Mitspieler nur die Eingabe merken.
 void App::updatePlay(float dt) {
     ImGuiIO& io = ImGui::GetIO();
     glm::vec3 wish(0);
@@ -610,7 +680,7 @@ void App::updatePlay(float dt) {
     const glm::vec3 fwd(-std::sin(playYaw_), 0, -std::cos(playYaw_));
     const glm::vec3 right(std::cos(playYaw_), 0, -std::sin(playYaw_));
     bool run = false;
-    if (cursorCaptured_ && !io.WantTextInput) {
+    if (play_ && cursorCaptured_ && !io.WantTextInput) {
         if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) wish += fwd;
         if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) wish -= fwd;
         if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) wish += right;
@@ -618,14 +688,25 @@ void App::updatePlay(float dt) {
         run = glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
         jump = jump || ImGui::IsKeyPressed(ImGuiKey_Space, false);
     }
-    if (autoMoveTime_ > 0) {  // per Befehl "spieler laufe"
+    if (play_ && autoMoveTime_ > 0) {  // per Befehl "spieler laufe"
         wish += fwd * (float)autoMove_.x + right * (float)autoMove_.y;
         run = run || autoRun_;
         autoMoveTime_ = std::max(0.0, autoMoveTime_ - dt);
     }
     if (glm::length(wish) > 0) wish = glm::normalize(wish) * (run ? 7.0f : 4.0f);
-    world_->step(dt, [&](float h) { grabForces(h); });
-    BodyHandle ignore = kNoBody;
-    if (Object* g = world_->find(grabbed_)) ignore = g->body;
-    physics_.updateCharacter(dt, wish, jump, ignore);
+    if (netClient()) {  // der Gastgeber bewegt die Figur
+        netWish_ = wish;
+        netJump_ = netJump_ || jump;
+        return;
+    }
+    world_->step(dt, [&](float h) {
+        if (play_) grabForces(h);
+        peerForces(h);
+    });
+    if (play_) {
+        BodyHandle ignore = kNoBody;
+        if (Object* g = world_->find(hand_.grabbed)) ignore = g->body;
+        physics_.updateCharacter(dt, wish, jump, ignore);
+    }
+    updatePeerFigures(dt);
 }

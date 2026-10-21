@@ -67,6 +67,10 @@ void App::submit(const std::string& line, int source, uint64_t client) {
         log("[remote] > " + line, 1);
         toast("Remote: " + line);
     }
+    if (netClient() && !localCommand(line)) {  // die Welt gehört dem Gastgeber
+        netSendCommand(line, source, client, false);
+        return;
+    }
     std::string err;
     auto job = parseScript(line, &err);
     if (!job) {
@@ -93,7 +97,15 @@ void App::submit(const std::string& line, int source, uint64_t client) {
 
 void App::stepJobs() {
     for (size_t i = 0; i < jobs_.size();) {
-        bool done = stepScript(*jobs_[i].job, *this, time_, [&](const std::string& t, bool ok) { log(t, ok ? 0 : 2); });
+        Peer* peer = jobs_[i].peer ? findPeer(jobs_[i].peer) : nullptr;
+        if (jobs_[i].peer && !peer) {  // Mitspieler ist weg
+            jobs_.erase(jobs_.begin() + i);
+            continue;
+        }
+        CommandHost& host = peer ? *peer->commands : static_cast<CommandHost&>(*this);
+        bool done = stepScript(*jobs_[i].job, host, time_, [&](const std::string& t, bool ok) {
+            if (!peer) log(t, ok ? 0 : 2);
+        });
         if (!done) {
             ++i;
             continue;
@@ -101,7 +113,9 @@ void App::stepJobs() {
         Job j = std::move(jobs_[i]);
         jobs_.erase(jobs_.begin() + i);
         const std::string& out = j.job->output;
-        if (j.source == 2) {
+        if (peer) {
+            netSendResult(*peer, j.request, *j.job);
+        } else if (j.source == 2) {
             remote_.respond(j.client, out);
             std::string first;
             size_t p = 0;
@@ -170,41 +184,43 @@ void App::lookAtPoint(const glm::dvec3& p) {
 bool App::grabObject(uint32_t id, double dist, const glm::dvec3& localPoint) {
     Object* o = world_->find(id);
     if (!o || o->fixed || o->body == kNoBody) return false;
-    grabbed_ = id;
-    grabLocal_ = localPoint;
-    holdDist_ = std::clamp(dist, 0.5, kReach);
-    holdRel_ = glm::conjugate(glm::angleAxis(playYaw_, glm::dvec3(0, 1, 0))) * o->rot;
-    heldByMouse_ = false;
+    hand_.grabbed = id;
+    hand_.grabLocal = localPoint;
+    hand_.holdDist = std::clamp(dist, 0.5, kReach);
+    hand_.holdRel = glm::conjugate(glm::angleAxis(playYaw_, glm::dvec3(0, 1, 0))) * o->rot;
+    hand_.heldByMouse = false;
     physics_.activate(o->body);
     return true;
 }
 
 void App::throwHeld(double impulse) {
-    Object* o = world_->find(grabbed_);
-    grabbed_ = 0;
+    Object* o = world_->find(hand_.grabbed);
+    hand_.grabbed = 0;
     if (!o || o->body == kNoBody) return;
     double m = std::max(0.01, (double)physics_.mass(o->body));
     double j = impulse > 0 ? impulse : std::min(m * 9.0, 45.0);
-    physics_.addImpulseAt(o->body, glm::vec3(playerForward() * j), o->pos + o->rot * grabLocal_);
+    physics_.addImpulseAt(o->body, glm::vec3(playerForward() * j), o->pos + o->rot * hand_.grabLocal);
 }
 
 std::string App::playerCommand(const std::vector<std::string>& t) {
     const std::string sub = arg(t, 1);
+    // Mitspieler im LAN: die Figur läuft beim Gastgeber, Befehle wirken wie Tasten (laufen, springen, E, werfen)
+    const bool remote = netClient();
     auto partArg = [&](const std::string& a) -> uint32_t {
         if (a == "selected" || a == "sel") return selectedId();
         if (a == "last") return world_->lastCreatedId();
         return (uint32_t)std::atoi(a.c_str());
     };
     if (sub.empty() || sub == "info" || sub == "status") {
-        if (!physics_.hasCharacter()) return "No player yet (mode play)";
-        glm::dvec3 p = physics_.characterPosition() * 100.0;
+        if (remote ? !play_ : !physics_.hasCharacter()) return "No player yet (mode play)";
+        glm::dvec3 p = (playerEye() - glm::dvec3(0, 1.65, 0)) * 100.0;
         std::string s = "position_cm   " + fmtNum(p.x, 1) + " " + fmtNum(p.y, 1) + " " + fmtNum(p.z, 1) + "  (feet)\n";
         s += "view          heading " + fmtNum(glm::degrees(playYaw_), 1) + "°, pitch " + fmtNum(glm::degrees(playPitch_), 1) + "°\n";
-        s += std::string("on_ground     ") + (physics_.characterOnGround() ? "yes" : "no") + "\n";
-        Object* g = world_->find(grabbed_);
+        if (!remote) s += std::string("on_ground     ") + (physics_.characterOnGround() ? "yes" : "no") + "\n";
+        Object* g = world_->find(hand_.grabbed);
         s += "holding       " + (g ? "#" + std::to_string(g->id) + " " + g->name + " (" + fmtNum(g->mass, 3) + " kg)" : std::string("nothing")) + "\n";
         RayHit h;
-        if (world_->raycast(playerEye(), playerForward(), h, grabbed_) && h.obj && h.t < 10)
+        if (world_->raycast(playerEye(), playerForward(), h, hand_.grabbed) && h.obj && h.t < 10)
             s += "looking_at    #" + std::to_string(h.obj->id) + " " + h.obj->name + " (" + fmtNum(h.t, 2) + " m)\n";
         else
             s += "looking_at    nothing nearby\n";
@@ -213,6 +229,8 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         return s;
     }
     if (!play_) enterPlay();
+    if (remote && (sub == "position" || sub == "teleport" || sub == "rotate"))
+        return "Error: player " + sub + " only works for the host's player (co-players: walk there, R/Shift+R turn a carried part)";
     if (sub == "position" || sub == "teleport") {
         double x, y, z;
         if (!parseNum(t, 2, x) || !parseNum(t, 3, y) || !parseNum(t, 4, z)) return "Error: player position x y z (cm, feet)";
@@ -242,9 +260,9 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
     }
     if (sub == "rotate") {  // getragenes Teil drehen (wie Taste R / Shift+R)
         double deg, tilt = 0;
-        if (!grabbed_ || !parseNum(t, 2, deg)) return "Error: player rotate <degrees> [tilt_degrees]   (only while carrying)";
+        if (!hand_.grabbed || !parseNum(t, 2, deg)) return "Error: player rotate <degrees> [tilt_degrees]   (only while carrying)";
         parseNum(t, 3, tilt);
-        holdRel_ = glm::normalize(glm::angleAxis(glm::radians(tilt), glm::dvec3(1, 0, 0)) * glm::angleAxis(glm::radians(deg), glm::dvec3(0, 1, 0)) * holdRel_);
+        hand_.holdRel = glm::normalize(glm::angleAxis(glm::radians(tilt), glm::dvec3(1, 0, 0)) * glm::angleAxis(glm::radians(deg), glm::dvec3(0, 1, 0)) * hand_.holdRel);
         return "Carried part turned by " + fmtNum(deg, 1) + "°" + (tilt != 0 ? ", tilted by " + fmtNum(tilt, 1) + "°" : std::string());
     }
     if (sub == "walk" || sub == "run") {
@@ -282,23 +300,29 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         if (want && h.obj->id != want) return "Error: #" + std::to_string(want) + " is hidden behind #" + std::to_string(h.obj->id) + " " + h.obj->name;
         if (h.t > kReach) return "Error: too far away (" + fmtNum(h.t, 2) + " m, reach " + fmtNum(kReach, 1) + " m). Walk there first: player walk forward 1";
         if (h.obj->fixed) return "Error: " + h.obj->name + " is fixed";
+        if (remote) {  // wie Taste E (erst loslassen, was schon in der Hand ist); der Gastgeber nimmt das Teil auf
+            netHand_.ePresses += hand_.grabbed ? 2 : 1;
+            return "Grabbing #" + std::to_string(h.obj->id) + " " + h.obj->name + " (" + fmtNum(h.obj->mass, 3) + " kg)";
+        }
         grabObject(h.obj->id, h.t, h.localPoint);
         std::string s = "Now holding #" + std::to_string(h.obj->id) + " " + h.obj->name + " (" + fmtNum(h.obj->mass, 3) + " kg)";
         if (h.obj->mass * 9.81 > 420.0) s += " - too heavy to lift, it is only pushed/dragged";
         return s;
     }
     if (sub == "release" || sub == "drop") {
-        Object* g = world_->find(grabbed_);
-        grabbed_ = 0;
+        Object* g = world_->find(hand_.grabbed);
+        if (remote && g) netHand_.ePresses += 1;
+        else hand_.grabbed = 0;
         return g ? "Released: " + g->name : "Player holds nothing";
     }
     if (sub == "throw") {
-        Object* g = world_->find(grabbed_);
+        Object* g = world_->find(hand_.grabbed);
         if (!g) return "Error: player holds nothing";
         double j = 0;
         parseNum(t, 2, j);
         std::string name = g->name;
-        throwHeld(j);
+        if (remote) netHand_.rmbPresses += 1;  // wie rechte Maustaste
+        else throwHeld(j);
         return "Thrown: " + name;
     }
     return "Error: unknown. player [position|look|turn|walk|run|stop|jump|grab|release|throw]";
@@ -309,6 +333,10 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
 bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, std::string& out) {
     if (cmd == "player") {
         out = playerCommand(t);
+        return true;
+    }
+    if (cmd == "lan") {
+        out = lanCommand(t);
         return true;
     }
     if (cmd == "tool") {
@@ -405,7 +433,7 @@ std::string App::statusText() {
     s += "camera        target " + fmtNum(c.x) + " " + fmtNum(c.y) + " " + fmtNum(c.z) + " cm, distance " + fmtNum(orbitDist_, 2) + " m\n";
     if (physics_.hasCharacter()) {
         glm::dvec3 p = physics_.characterPosition() * 100.0;
-        Object* g = world_->find(grabbed_);
+        Object* g = world_->find(hand_.grabbed);
         s += "player        " + fmtNum(p.x) + " " + fmtNum(p.y) + " " + fmtNum(p.z) + " cm" + (g ? ", holds #" + std::to_string(g->id) : std::string("")) + "\n";
     }
     s += std::string("windows       inspector ") + (showInspector_ ? "on" : "off") + ", drawing " + (showDrawing_ ? "on" : "off") +
@@ -417,6 +445,8 @@ std::string App::statusText() {
          std::to_string(ps.contacts) + " contacts, " + std::to_string(ps.activeBodies) + " active, max penetration " +
          fmtNum(std::max(0.0f, ps.maxPenetration) * 1000.0, 1) + " mm\n";
     s += "remote        " + std::string(remote_.running() ? "active, port " + std::to_string(opt_.port) : "off") + "\n";
+    if (netRole_ == NetRole::Host) s += "lan           host, " + std::to_string(peers_.size()) + " co-player(s) connected\n";
+    else if (netClient()) s += "lan           co-player, connected to " + netHostName_ + "\n";
     return s;
 }
 
@@ -442,12 +472,12 @@ bool App::queryValue(const std::string& n, double& num, std::string& str) {
         else if (p == "y") num = pos.y * 100;
         else if (p == "z") num = pos.z * 100;
         else if (p == "onground") num = physics_.characterOnGround() ? 1 : 0;
-        else if (p == "holding") num = grabbed_;
+        else if (p == "holding") num = hand_.grabbed;
         else if (p == "heading") num = glm::degrees(playYaw_);
         else if (p == "pitch") num = glm::degrees(playPitch_);
         else if (p == "lookingat") {
             RayHit h;
-            num = (world_->raycast(playerEye(), playerForward(), h, grabbed_) && h.obj && h.t < 10) ? h.obj->id : 0;
+            num = (world_->raycast(playerEye(), playerForward(), h, hand_.grabbed) && h.obj && h.t < 10) ? h.obj->id : 0;
         } else {
             return false;
         }

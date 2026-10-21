@@ -326,7 +326,7 @@ std::string commandHelp() {
         "  new cylinder <mat> <D> <H> [x y z] | new tube <mat> <D_out> <D_in> <L> [x y z] | new sphere <mat> <D> [x y z]\n"
         "  new gear <mat> <teeth> <module_mm> <width> [bore_mm] [x y z]\n"
         "  new propeller <mat> <D> [blades] [angle] [blade_width] [thickness_mm]   axis y, +rotation = thrust to +y\n"
-        "  import <file.obj> [mat] [scale] | copy <id> [dx dy dz] | delete <id|all>\n"
+        "  import <file.obj> [mat] [scale] | copy <id> [dx dy dz] | delete <id ...|all>\n"
         "  list | info <id> | inspect <id> | materials | chunks | overlaps <id>\n"
         "PLACE\n"
         "  position <id> x y z                       teleport (warns when it overlaps something)\n"
@@ -375,7 +375,9 @@ std::string commandHelp() {
         "  player walk <forward|back|left|right> <seconds> [run] | player jump | player stop\n"
         "  player grab [id] | player release | player throw [N·s] | player rotate <deg> [tilt]   (carried part, like R)\n"
         "  tool select|saw [x|y|z] [angle] [kerf_mm]|drill [D_mm] [depth_mm]|round [r_mm] [chamfer]|mill [L W depth]|plane [mm]\n"
-        "  window inspector|drawing|console|help [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n";
+        "  window inspector|drawing|console|help [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"
+        "  lan [status] | lan host | lan join <address> | lan leave       multiplayer in the local network\n"
+        "  lan accept [name|all] | lan decline <name> | lan kick <name> | lan confirm on|off | lan name <text>\n";
 }
 
 CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
@@ -1274,12 +1276,17 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             w.clear();
             res.text = std::to_string(n) + " parts deleted";
         } else {
-            Object* o = obj(1);
-            if (!o) return fail("delete <id|all>");
-            std::string b = brief(*o);
+            std::vector<uint32_t> ids;  // mehrere Teile: ein Rückgängig-Schritt
+            for (size_t i = 1; i < t.size(); ++i) {
+                Object* o = obj(i);
+                if (!o) return fail("delete <id> [id ...] | delete all");
+                if (std::find(ids.begin(), ids.end(), o->id) == ids.end()) ids.push_back(o->id);
+            }
+            if (ids.empty()) return fail("delete <id> [id ...] | delete all");
+            std::string b = brief(*w.find(ids[0]));
             w.pushUndo();
-            w.remove(o->id);
-            res.text = "Deleted: " + b;
+            for (uint32_t id : ids) w.remove(id);
+            res.text = ids.size() == 1 ? "Deleted: " + b : std::to_string(ids.size()) + " parts deleted";
         }
     } else if (cmd == "impulse" || cmd == "push") {
         Object* o = obj(1);
@@ -1405,7 +1412,7 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
     } else if (cmd == "quit" || cmd == "exit") {
         host.requestQuit();
         res.text = "Bye";
-    } else if (cmd == "player" || cmd == "tool" || cmd == "window" || cmd == "display") {
+    } else if (cmd == "player" || cmd == "tool" || cmd == "window" || cmd == "display" || cmd == "lan") {
         return fail("'" + t[0] + "' only works in the game window");
     } else {
         return fail("unknown command '" + t[0] + "'. 'help' shows all commands.");
