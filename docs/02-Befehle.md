@@ -90,7 +90,7 @@ Verfügbar: **spruce** (Fichte), **oak** (Eiche), **brick** (Ziegel), **concrete
 **steel** (Stahl), **aluminium**, **brass** (Messing), **copper** (Kupfer), **rubber** (Gummi), **plastic** (Kunststoff ABS), **charcoal** (Holzkohle, bleibt übrig, wenn Holz abbrennt).
 Bei Befehlen reichen die ersten drei Buchstaben (`spr`, `ste`, `alu`).
 
-Alle Werte stehen in `assets/materials.txt`. Ändern, neu anlegen, speichern und neu laden:
+Alle Werte stehen in `assets/materials.json`. Ändern, neu anlegen, speichern und neu laden:
 `materials keys | show <m> | set <m> <key> <value...> | new <name> [copy_of] | save [file] | reload [file] | file`
 (siehe [13-Materialien.md](13-Materialien.md#befehle)).
 

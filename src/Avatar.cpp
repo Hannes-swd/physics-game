@@ -1,4 +1,5 @@
 #include "Avatar.h"
+#include "Json.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
@@ -12,155 +13,6 @@ namespace {
 // eingebettet beim Bauen (cmake/embed_file.cmake)
 const unsigned char kWorkerGlb[] = {
 #include "worker.glb.inc"
-};
-
-// ---------------------------------------------------------------- kleiner JSON-Leser (nur was glTF braucht)
-
-struct Json {
-    enum Type { Null, Bool, Number, String, Array, Object } type = Null;
-    double num = 0;
-    std::string str;
-    std::vector<Json> arr;
-    std::vector<std::pair<std::string, Json>> obj;
-
-    static const Json& none() {
-        static const Json n;
-        return n;
-    }
-    // Schlüssel als std::string, damit j[0] eindeutig der Index ist (0 wäre sonst auch ein Nullzeiger)
-    const Json& operator[](const std::string& key) const {
-        for (const auto& kv : obj)
-            if (kv.first == key) return kv.second;
-        return none();
-    }
-    const Json& operator[](size_t i) const { return i < arr.size() ? arr[i] : none(); }
-    bool has(const std::string& key) const { return &(*this)[key] != &none(); }
-    size_t size() const { return arr.size(); }
-    int integer(int def = -1) const { return type == Number ? (int)num : def; }
-    float number(float def = 0.0f) const { return type == Number ? (float)num : def; }
-};
-
-class JsonParser {
-public:
-    JsonParser(const char* begin, const char* end) : p_(begin), end_(end) {}
-    bool parse(Json& out) {
-        if (!value(out, 0)) return false;
-        space();
-        return true;
-    }
-
-private:
-    const char* p_;
-    const char* end_;
-
-    void space() {
-        while (p_ < end_ && (*p_ == ' ' || *p_ == '\t' || *p_ == '\n' || *p_ == '\r')) ++p_;
-    }
-    bool literal(const char* word) {
-        size_t n = std::strlen(word);
-        if ((size_t)(end_ - p_) < n || std::strncmp(p_, word, n) != 0) return false;
-        p_ += n;
-        return true;
-    }
-    bool string(std::string& s) {
-        if (p_ >= end_ || *p_ != '"') return false;
-        ++p_;
-        while (p_ < end_ && *p_ != '"') {
-            char c = *p_++;
-            if (c != '\\') {
-                s += c;
-                continue;
-            }
-            if (p_ >= end_) return false;
-            c = *p_++;
-            switch (c) {
-            case 'n': s += '\n'; break;
-            case 't': s += '\t'; break;
-            case 'r': s += '\r'; break;
-            case 'b': s += '\b'; break;
-            case 'f': s += '\f'; break;
-            case 'u': {
-                if (end_ - p_ < 4) return false;
-                unsigned cp = (unsigned)std::stoul(std::string(p_, p_ + 4), nullptr, 16);
-                p_ += 4;
-                if (cp < 0x80) {
-                    s += (char)cp;
-                } else if (cp < 0x800) {
-                    s += (char)(0xC0 | (cp >> 6));
-                    s += (char)(0x80 | (cp & 0x3F));
-                } else {
-                    s += (char)(0xE0 | (cp >> 12));
-                    s += (char)(0x80 | ((cp >> 6) & 0x3F));
-                    s += (char)(0x80 | (cp & 0x3F));
-                }
-                break;
-            }
-            default: s += c;  // \" \\ \/
-            }
-        }
-        if (p_ >= end_) return false;
-        ++p_;
-        return true;
-    }
-    bool value(Json& v, int depth) {
-        if (depth > 64) return false;
-        space();
-        if (p_ >= end_) return false;
-        const char c = *p_;
-        if (c == '{') {
-            ++p_;
-            v.type = Json::Object;
-            space();
-            if (p_ < end_ && *p_ == '}') return ++p_, true;
-            while (true) {
-                space();
-                std::string key;
-                if (!string(key)) return false;
-                space();
-                if (p_ >= end_ || *p_++ != ':') return false;
-                v.obj.emplace_back(std::move(key), Json());
-                if (!value(v.obj.back().second, depth + 1)) return false;
-                space();
-                if (p_ < end_ && *p_ == ',') {
-                    ++p_;
-                    continue;
-                }
-                if (p_ < end_ && *p_ == '}') return ++p_, true;
-                return false;
-            }
-        }
-        if (c == '[') {
-            ++p_;
-            v.type = Json::Array;
-            space();
-            if (p_ < end_ && *p_ == ']') return ++p_, true;
-            while (true) {
-                v.arr.emplace_back();
-                if (!value(v.arr.back(), depth + 1)) return false;
-                space();
-                if (p_ < end_ && *p_ == ',') {
-                    ++p_;
-                    continue;
-                }
-                if (p_ < end_ && *p_ == ']') return ++p_, true;
-                return false;
-            }
-        }
-        if (c == '"') {
-            v.type = Json::String;
-            return string(v.str);
-        }
-        if (literal("true")) return v.type = Json::Bool, v.num = 1, true;
-        if (literal("false")) return v.type = Json::Bool, true;
-        if (literal("null")) return true;
-        char* stop = nullptr;
-        std::string tmp(p_, std::min<size_t>(end_ - p_, 64));
-        v.num = std::strtod(tmp.c_str(), &stop);
-        if (stop == tmp.c_str()) return false;
-        v.type = Json::Number;
-        p_ += stop - tmp.c_str();
-        return true;
-    }
 };
 
 // ---------------------------------------------------------------- glTF-Zugriffe
@@ -239,7 +91,7 @@ bool AvatarModel::load(const uint8_t* data, size_t size, float height, std::stri
         at += 8 + ((len + 3) & ~3u);
     }
     if (!json || !g.bin) return fail("JSON or BIN chunk missing");
-    if (!JsonParser((const char*)json, (const char*)json + jsonSize).parse(g.doc)) return fail("JSON unreadable");
+    if (!parseJson((const char*)json, (const char*)json + jsonSize, g.doc)) return fail("JSON unreadable");
     const Json& doc = g.doc;
 
     // Knoten (Ruhelage) und Reihenfolge Eltern vor Kindern

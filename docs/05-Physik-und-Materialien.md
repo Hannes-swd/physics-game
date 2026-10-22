@@ -190,7 +190,7 @@ und das große Rad (30 Zähne) mit 13,34 U/min (Theorie 13,33).
 
 ## Materialien
 
-Die Werte unten sind die mitgelieferten aus `assets/materials.txt`. Dort (oder im Spiel unter *Ansicht → Materialien
+Die Werte unten sind die mitgelieferten aus `assets/materials.json`. Dort (oder im Spiel unter *Ansicht → Materialien
 bearbeiten*) lassen sie sich ändern und neue Materialien anlegen, siehe [13-Materialien.md](13-Materialien.md).
 
 | Material (Befehl) | Menü | Dichte kg/m³ | Haft-/Gleitreibung | Rollreibung | Stoßzahl | Zug MPa | Druck MPa | E-Modul GPa | Bruchenergie J/m² | biegbar ab Radius |

@@ -977,7 +977,7 @@ void App::drawMaterialEditor() {
         }
     }
     if (ImGui::Button("Speichern", ImVec2(-1, 0))) {
-        const std::string path = materialFile().empty() ? defaultMaterialFile() : materialFile();
+        const std::string path = materialSavePath();
         std::string err;
         if (saveMaterialFile(path, &err)) {
             materialsDirty_ = false;

@@ -339,7 +339,7 @@ std::string commandHelp() {
         "  new spike <mat> <D> <L> [tip_radius_mm=0] [x y z]   cone pointing down (0 = sharp, larger = round tip)\n"
         "  import <file.obj> [mat] [scale] | copy <id> [dx dy dz] | delete <id ...|all>\n"
         "  list | info <id> | inspect <id> | materials | chunks | overlaps <id>\n"
-        "MATERIALS (all values in assets/materials.txt, see docs/13-Materialien.md)\n"
+        "MATERIALS (all values in assets/materials.json, see docs/13-Materialien.md)\n"
         "  materials keys | materials show <m> | materials set <m> <key> <value...> | materials new <name> [copy_of]\n"
         "  materials save [file] | materials reload [file] | materials file\n"
         "PLACE\n"
@@ -547,7 +547,7 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
                        "). Change it with 'materials set " + materials()[m].name + " <key> <value>' or in the window, then 'materials save'.\n" +
                        materialText(m);
         } else if (sub == "save") {
-            const std::string path = t.size() > 2 ? t[2] : (materialFile().empty() ? defaultMaterialFile() : materialFile());
+            const std::string path = t.size() > 2 ? t[2] : materialSavePath();
             std::string err;
             if (!saveMaterialFile(path, &err)) return fail(err);
             res.text = std::to_string(materials().size()) + " materials saved to " + path;

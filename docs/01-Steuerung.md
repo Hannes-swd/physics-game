@@ -111,7 +111,7 @@ Die Figur schiebt beim Laufen auch lose Teile weg (mit bis zu 350 N).
 | **Eigenschaften** (rechts, Bau-Modus) | Name, Material, Größe, Volumen, Masse, Haft-/Gleitreibung, Position und Drehung zum Eintippen, Lagerung (fest / Drehachse mit Motor), **Bearbeiten** (alle Kanten abrunden/fasen/schleifen, Drehbank, Biegen, Spiegeln, Skalieren), **Temperatur** (anzeigen, setzen, anzünden, löschen), Verbindungen, Unzerbrechlich. Bei zwei gewählten Teilen: **Verbinden** und **Formen kombinieren** (Vereinen, Ausschneiden, Schnittmenge) |
 | **Konsole** (F1) | Befehle und alle Meldungen |
 | **Physik-Inspektor** (F3) | Live-Werte, siehe [05-Physik-und-Materialien.md](05-Physik-und-Materialien.md) |
-| **Materialien** (Menü Ansicht → Materialien bearbeiten) | alle Werte jedes Materials ändern, neue Materialien als Kopie anlegen, in `assets/materials.txt` speichern, Datei neu laden ([13](13-Materialien.md)) |
+| **Materialien** (Menü Ansicht → Materialien bearbeiten) | alle Werte jedes Materials ändern, neue Materialien als Kopie anlegen, in `assets/materials.json` speichern, Datei neu laden ([13](13-Materialien.md)) |
 | **Dreitafelprojektion** (F4) | Technische Zeichnung, siehe [06-Dreitafelprojektion.md](06-Dreitafelprojektion.md) |
 | **Statusleiste** (unten) | Hinweise, Teil unter der Maus, Chunks, gezeichnete Teile je Detailstufe, FPS; im Spiel-Modus auch Physikzeit, Kontakte, aktive Teile und größtes Eindringen |
 

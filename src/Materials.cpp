@@ -1,6 +1,7 @@
-// Materialien: Liste aus der Datei assets/materials.txt (Rückfall: beim Bauen eingebettete Kopie), Reibungspaare,
+// Materialien: Liste aus der Datei assets/materials.json (Rückfall: beim Bauen eingebettete Kopie), Reibungspaare,
 // abgeleitete Werte (Verschleiß, Lochleibung, Festigkeit bei Wärme und Kälte), Schmierstoffe, Wärme-Werkzeuge.
 #include "Materials.h"
+#include "Json.h"
 
 #include <algorithm>
 #include <cctype>
@@ -19,7 +20,7 @@ namespace {
 
 // eingebettet beim Bauen (cmake/embed_file.cmake), mit 0 abgeschlossen
 const unsigned char kBuiltinMaterials[] = {
-#include "materials.txt.inc"
+#include "materials.json.inc"
     0};
 
 std::string lower(const char* s) {
@@ -168,9 +169,11 @@ std::filesystem::path exeDir() {
 std::string findMaterialFile() {
     std::error_code ec;
     const std::filesystem::path dir = exeDir();
-    for (const std::filesystem::path& p : {dir / "materials.txt", std::filesystem::current_path(ec) / "assets" / "materials.txt",
-                                           dir / "assets" / "materials.txt", dir.parent_path().parent_path() / "assets" / "materials.txt"})
-        if (std::filesystem::is_regular_file(p, ec)) return p.lexically_normal().u8string();
+    // zuerst materials.json, sonst eine alte materials.txt
+    for (const char* file : {"materials.json", "materials.txt"})
+        for (const std::filesystem::path& p : {dir / file, std::filesystem::current_path(ec) / "assets" / file,
+                                               dir / "assets" / file, dir.parent_path().parent_path() / "assets" / file})
+            if (std::filesystem::is_regular_file(p, ec)) return p.lexically_normal().u8string();
     return {};
 }
 
@@ -357,7 +360,127 @@ bool setMaterialValue(Material& m, const MaterialField& f, const std::string& va
 
 // ============================================================================ Datei
 
-bool loadMaterialText(const std::string& text, const std::string& source, std::string* report) {
+namespace {
+
+// Gemeinsamer Abschluss beider Formate: Verweise prüfen, bei Erfolg die Liste übernehmen
+bool commitMaterials(std::vector<Material>& list, std::vector<PairEntry>& pairs, const std::string& header, const std::string& source,
+                     std::string problems, bool fatal, std::string* report) {
+    // Paare dürfen nur bekannte Materialien oder Klassen nennen
+    for (const PairEntry& p : pairs)
+        for (const std::string& n : {p.a, p.b}) {
+            bool known = false;
+            for (int i = 0; kClassNames[i]; ++i) known |= n == kClassNames[i];
+            for (const Material& m : list) known |= n == m.name;
+            if (!known) problems += source + ": pair " + p.a + " " + p.b + ": '" + n + "' is neither a material nor a class\n";
+        }
+    for (const Material& m : list)
+        if (!m.residue.empty()) {
+            bool known = false;
+            for (const Material& r : list) known |= m.residue == r.name;
+            if (!known) problems += source + ": " + m.name + ": residue '" + m.residue + "' is not a material (burns to ashes)\n";
+        }
+    if (list.empty()) {
+        problems += source + ": no material found\n";
+        fatal = true;
+    }
+    if (report) *report = problems;
+    if (fatal) return false;
+    Registry& r = reg();
+    r.list = std::move(list);
+    r.pairs = std::move(pairs);
+    r.header = header;
+    return true;
+}
+
+// JSON-Wert als Text, wie ihn setMaterialValue versteht: Listen mit Leerzeichen, null = none
+bool jsonToValue(const Json& j, std::string& out) {
+    switch (j.type) {
+    case Json::Null: out = "none"; return true;
+    case Json::Number: {
+        char b[40];
+        std::snprintf(b, sizeof(b), "%.9g", j.num);
+        out = b;
+        return true;
+    }
+    case Json::String: out = j.str; return true;
+    case Json::Array: {
+        out.clear();
+        for (const Json& e : j.arr) {
+            std::string s;
+            if (e.type == Json::Array || e.type == Json::Object || !jsonToValue(e, s)) return false;
+            out += (out.empty() ? "" : " ") + s;
+        }
+        return true;
+    }
+    default: return false;
+    }
+}
+
+// Materialdatei im JSON-Format: {"materials": [{"name": "steel", "density": 7850, ...}], "pairs": [{"a": .., "b": .., "friction": [.., ..]}]}
+// Schlüssel, die mit "_" beginnen, sind Erklärungen und werden übergangen.
+bool loadMaterialJson(const std::string& text, const std::string& source, std::string* report) {
+    Json doc;
+    std::string err;
+    if (!parseJson(text, doc, &err)) {
+        if (report) *report = source + ": " + err + "\n";
+        return false;
+    }
+    std::vector<Material> list;
+    std::vector<PairEntry> pairs;
+    std::string problems;
+    bool fatal = false;
+    if (doc.type != Json::Object || doc["materials"].type != Json::Array) {
+        if (report) *report = source + ": expected { \"materials\": [ ... ] }\n";
+        return false;
+    }
+    for (const auto& [key, value] : doc.obj)
+        if (key != "materials" && key != "pairs" && (key.empty() || key[0] != '_')) problems += source + ": unknown key '" + key + "'\n";
+    for (size_t i = 0; i < doc["materials"].arr.size(); ++i) {
+        const Json& jm = doc["materials"].arr[i];
+        const std::string where = source + ": material " + std::to_string(i + 1);
+        if (jm.type != Json::Object || jm["name"].type != Json::String) {
+            problems += where + ": needs \"name\": \"...\"\n";
+            fatal = true;
+            continue;
+        }
+        const std::string name = lower(jm["name"].str.c_str());
+        if (!validName(name)) {
+            problems += where + ": name '" + name + "': only a-z, 0-9, _ and -\n";
+            fatal = true;
+            continue;
+        }
+        for (const Material& m : list)
+            if (name == m.name) {
+                problems += where + ": material '" + name + "' exists twice\n";
+                fatal = true;
+            }
+        Material m;
+        m.name = internString(name);
+        m.label = m.name;
+        for (const auto& [key, value] : jm.obj) {
+            if (key == "name" || (!key.empty() && key[0] == '_')) continue;
+            const MaterialField* f = findMaterialField(lower(key.c_str()));
+            std::string v;
+            if (!f) problems += source + ": " + name + ": unknown key '" + key + "'\n";
+            else if (!jsonToValue(value, v)) problems += source + ": " + name + ": " + key + ": unexpected value\n";
+            else if (!setMaterialValue(m, *f, v, &err)) problems += source + ": " + name + ": " + err + "\n";
+        }
+        list.push_back(std::move(m));
+    }
+    for (const Json& jp : doc["pairs"].arr) {
+        const Json& fr = jp["friction"];
+        if (jp["a"].type != Json::String || jp["b"].type != Json::String || fr.size() != 2 || fr[0].type != Json::Number ||
+            fr[1].type != Json::Number) {
+            problems += source + ": pair: {\"a\": \"..\", \"b\": \"..\", \"friction\": [static, sliding]} expected\n";
+            continue;
+        }
+        pairs.push_back({lower(jp["a"].str.c_str()), lower(jp["b"].str.c_str()), (float)fr[0].num, (float)fr[1].num});
+    }
+    return commitMaterials(list, pairs, "", source, problems, fatal, report);
+}
+
+// altes Textformat ([material name], key = value)
+bool loadMaterialIni(const std::string& text, const std::string& source, std::string* report) {
     std::vector<Material> list;
     std::vector<PairEntry> pairs;
     std::string header, problems;
@@ -430,31 +553,15 @@ bool loadMaterialText(const std::string& text, const std::string& source, std::s
             warn("unknown key '" + key + "'");
         }
     }
-    // Paare dürfen nur bekannte Materialien oder Klassen nennen
-    for (const PairEntry& p : pairs)
-        for (const std::string& n : {p.a, p.b}) {
-            bool known = false;
-            for (int i = 0; kClassNames[i]; ++i) known |= n == kClassNames[i];
-            for (const Material& m : list) known |= n == m.name;
-            if (!known) problems += source + ": pair " + p.a + " " + p.b + ": '" + n + "' is neither a material nor a class\n";
-        }
-    for (const Material& m : list)
-        if (!m.residue.empty()) {
-            bool known = false;
-            for (const Material& r : list) known |= m.residue == r.name;
-            if (!known) problems += source + ": " + m.name + ": residue '" + m.residue + "' is not a material (burns to ashes)\n";
-        }
-    if (list.empty()) {
-        problems += source + ": no [material ...] section found\n";
-        fatal = true;
-    }
-    if (report) *report = problems;
-    if (fatal) return false;
-    Registry& r = reg();
-    r.list = std::move(list);
-    r.pairs = std::move(pairs);
-    r.header = header;
-    return true;
+    return commitMaterials(list, pairs, header, source, problems, fatal, report);
+}
+
+} // namespace
+
+bool loadMaterialText(const std::string& text, const std::string& source, std::string* report) {
+    const size_t first = text.find_first_not_of(" \t\r\n\xEF\xBB\xBF");
+    if (first != std::string::npos && text[first] == '{') return loadMaterialJson(text, source, report);
+    return loadMaterialIni(text, source, report);  // alte materials.txt
 }
 
 bool loadMaterialFile(const std::string& path, std::string* report) {
@@ -472,40 +579,109 @@ bool loadMaterialFile(const std::string& path, std::string* report) {
 
 void loadBuiltinMaterials() {
     std::string report;
-    loadMaterialText(reinterpret_cast<const char*>(kBuiltinMaterials), "built-in materials.txt", &report);
+    loadMaterialText(reinterpret_cast<const char*>(kBuiltinMaterials), "built-in materials.json", &report);
     reg().file.clear();
 }
 
 const std::string& materialFile() { return reg().file; }
 
+std::string materialSavePath() {
+    const std::string& f = reg().file;
+    if (f.empty()) return defaultMaterialFile();
+    std::filesystem::path p = std::filesystem::u8path(f);
+    if (p.extension() != ".json") p.replace_extension(".json");  // alte materials.txt: daneben als JSON
+    return p.u8string();
+}
+
 std::string defaultMaterialFile() {
     const std::filesystem::path repo = exeDir().parent_path().parent_path() / "assets";
     std::error_code ec;
-    if (std::filesystem::is_directory(repo, ec)) return (repo / "materials.txt").lexically_normal().u8string();
-    return (exeDir() / "materials.txt").u8string();
+    if (std::filesystem::is_directory(repo, ec)) return (repo / "materials.json").lexically_normal().u8string();
+    return (exeDir() / "materials.json").u8string();
 }
+
+namespace {
+
+// ein Material als JSON-Objekt, Schlüssel in der Reihenfolge der Feldtabelle
+Json materialJson(const Material& m0) {
+    Material& m = const_cast<Material&>(m0);  // nur gelesen
+    Json j = Json::makeObject();
+    j.set("name", Json::makeString(m.name));
+    for (const MaterialField& f : materialFields()) {
+        Json v;
+        switch (f.type) {
+        case MaterialField::Text: v = Json::makeString(m.label); break;
+        case MaterialField::Words:
+            v = Json::makeArray();
+            for (const std::string& a : m.aliases) v.push(Json::makeString(a));
+            break;
+        case MaterialField::Choice: v = Json::makeString(f.choices[materialChoice(m, f)]); break;
+        case MaterialField::Name:
+            if (!m.residue.empty()) v = Json::makeString(m.residue);  // sonst null = nur Asche
+            break;
+        default: {
+            int n = 0;
+            const float* x = materialNumbers(m, f, n);
+            if (!x || (f.type == MaterialField::Optional && materialValue(m, f) == "none")) break;  // null = keins
+            if (n == 1) {
+                v = Json::makeNumber(std::stod(fmt(x[0])));
+            } else {
+                v = Json::makeArray();
+                for (int i = 0; i < n; ++i) v.push(Json::makeNumber(std::stod(fmt(x[i]))));
+            }
+        }
+        }
+        j.set(f.key, std::move(v));
+    }
+    return j;
+}
+
+} // namespace
 
 std::string materialText(int i) {
     const auto& list = materials();
     if (i < 0 || i >= (int)list.size()) return {};
-    const Material& m = list[i];
-    std::string s = std::string("[material ") + m.name + "]\n";
-    for (const MaterialField& f : materialFields()) {
-        std::string key = f.key;
-        key.resize(std::max<size_t>(key.size(), 18), ' ');
-        s += key + " = " + materialValue(m, f) + "\n";
-    }
-    return s;
+    return writeJson(materialJson(list[i]));
 }
 
 std::string materialsText() {
     const Registry& r = reg();
-    std::string s = r.header.empty() ? "# Werkstatt - Materialien (Beschreibung der Werte: docs/13-Materialien.md)\n\n" : r.header;
-    if (s.size() < 2 || s.substr(s.size() - 2) != "\n\n") s += "\n";
-    for (int i = 0; i < (int)r.list.size(); ++i) s += materialText(i) + "\n";
-    s += "# ---------------------------------------------------------------- Reibung je Paar\n";
-    for (const PairEntry& p : r.pairs) s += "[pair " + p.a + " " + p.b + "]\nfriction = " + fmt(p.s) + " " + fmt(p.k) + "\n";
-    return s;
+    Json doc = Json::makeObject();
+    // Erklärungen (werden beim Laden übergangen): was jeder Wert bedeutet, aus der Feldtabelle
+    Json& info = doc.set("_info", Json::makeArray());
+    info.push(Json::makeString("Werkstatt - Materialien. Jedes Material ist ein Eintrag in \"materials\"; fehlende Werte nehmen den Standard."));
+    info.push(Json::makeString("\"name\" ist der Befehlsname (klein, a-z 0-9 _ -). null schaltet etwas ab (schmilzt nicht, brennt nicht ...)."));
+    info.push(Json::makeString("Reibung zweier Materialien: \"pairs\" (a und b sind Materialnamen oder Klassen). Mehr: docs/13-Materialien.md"));
+    info.push(Json::makeString("Im Spiel: Ansicht -> Materialien bearbeiten, oder Befehle 'materials ...'."));
+    Json& keys = doc.set("_keys", Json::makeObject());
+    for (const MaterialField& f : materialFields()) {
+        std::string d = std::string(f.group) + ": " + f.label;
+        if (*f.unit) d += std::string(" (") + f.unit + ")";
+        if (f.type == MaterialField::Choice) {
+            d += ", eines von:";
+            for (int c = 0; f.choices[c]; ++c) d += std::string(" ") + f.choices[c];
+        }
+        if (f.type == MaterialField::Pair) d += ", [Haft, Gleit]";
+        if (f.type == MaterialField::Color) d += ", [r, g, b] 0..1";
+        if (f.type == MaterialField::Words) d += ", Liste von Namen";
+        if (f.type == MaterialField::Optional) d += ", null = keins";
+        if (f.type == MaterialField::Name) d += ", Materialname oder null (nur Asche)";
+        keys.set(f.key, Json::makeString(d));
+    }
+    Json& mats = doc.set("materials", Json::makeArray());
+    for (const Material& m : r.list) mats.push(materialJson(m));
+    Json& pairs = doc.set("pairs", Json::makeArray());
+    for (const PairEntry& p : r.pairs) {
+        Json jp = Json::makeObject();
+        jp.set("a", Json::makeString(p.a));
+        jp.set("b", Json::makeString(p.b));
+        Json fr = Json::makeArray();
+        fr.push(Json::makeNumber(std::stod(fmt(p.s))));
+        fr.push(Json::makeNumber(std::stod(fmt(p.k))));
+        jp.set("friction", std::move(fr));
+        pairs.push(std::move(jp));
+    }
+    return writeJson(doc);
 }
 
 bool saveMaterialFile(const std::string& path, std::string* err) {

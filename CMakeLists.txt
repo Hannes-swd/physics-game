@@ -90,14 +90,14 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -DIN=${AVATAR_SRC} -DOUT=${AVATAR_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
   DEPENDS ${AVATAR_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
   COMMENT "Spielfigur worker.glb")
-# Materialien: das Spiel liest assets/materials.txt; diese Kopie ist eingebaut, falls die Datei fehlt
-set(MATERIALS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials.txt)
-set(MATERIALS_OUT ${SHADER_OUT}/materials.txt.inc)
+# Materialien: das Spiel liest assets/materials.json; diese Kopie ist eingebaut, falls die Datei fehlt
+set(MATERIALS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials.json)
+set(MATERIALS_OUT ${SHADER_OUT}/materials.json.inc)
 add_custom_command(
   OUTPUT ${MATERIALS_OUT}
   COMMAND ${CMAKE_COMMAND} -DIN=${MATERIALS_SRC} -DOUT=${MATERIALS_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
   DEPENDS ${MATERIALS_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
-  COMMENT "Materialien materials.txt")
+  COMMENT "Materialien materials.json")
 add_custom_target(assets DEPENDS ${AVATAR_OUT} ${MATERIALS_OUT})
 
 # ---------------------------------------------------------------- Spiel

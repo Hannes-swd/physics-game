@@ -45,7 +45,7 @@
 | `src/Bench.cpp` | `--bench`: misst Rechenzeit, Eindringtiefe und Rettungen alter und neuer Einstellungen in elf Szenen |
 | `src/Renderer.*`, `shaders/` | Vulkan-Grafik |
 | `src/Drawing.*` | Dreitafelprojektion, Blatt, SVG |
-| `src/Materials.*` | Materialliste aus `assets/materials.txt` (eingebettete Kopie als Rückfall), Feldtabelle (Laden, Speichern, `materials set`, Editor), Reibungspaare, Festigkeit je Temperatur, Kälte-Sprödigkeit, Wärme-Werkzeuge, Schmierstoffe |
+| `src/Materials.*`, `src/Json.*` | Materialliste aus `assets/materials.json` (eingebettete Kopie als Rückfall), Feldtabelle (Laden, Speichern, `materials set`, Editor), Reibungspaare, Festigkeit je Temperatur, Kälte-Sprödigkeit, Wärme-Werkzeuge, Schmierstoffe |
 | `src/ObjLoader.*` | OBJ-Import |
 | `src/Png.*` | PNG-Schreiber für Fotos |
 | `src/SelfTest.cpp` | automatische Prüfungen |
@@ -292,7 +292,7 @@ Mit einem Wort dahinter laufen nur die Szenen, deren Name es enthält (z. B. `--
 
 | Vorhaben | Wo |
 |---|---|
-| neues Material | nur `assets/materials.txt` (Abschnitt `[material <name>]`, siehe [13](13-Materialien.md)) oder im Spiel: Menü Ansicht → Materialien bearbeiten. Neue Werte für alle Materialien: Feld in `Material` (`Materials.h`) und eine Zeile in der Feldtabelle `fieldDefs()` (`Materials.cpp`) – Datei, Befehle und Editor kennen ihn dann automatisch. Neue Darstellung: `shaders/mesh.frag` |
+| neues Material | nur `assets/materials.json` (ein Eintrag in `"materials"`, siehe [13](13-Materialien.md)) oder im Spiel: Menü Ansicht → Materialien bearbeiten. Neue Werte für alle Materialien: Feld in `Material` (`Materials.h`) und eine Zeile in der Feldtabelle `fieldDefs()` (`Materials.cpp`) – Datei, Befehle und Editor kennen ihn dann automatisch. Neue Darstellung: `shaders/mesh.frag` |
 | neuer Befehl | `src/Commands.cpp` (`runCommand`), Hilfe-Text in `commandHelp()` |
 | neue Bearbeitung | `src/Edit.cpp` (Werkzeug als Liste konvexer Ebenen-Körper, dann `removeMaterial` oder `applyResult`) + Befehl in `Commands.cpp` |
 | neuer Fenster-Befehl | `src/AppCommands.cpp` (`appCommand`) |

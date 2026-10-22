@@ -1,4 +1,4 @@
-// Materialien: alle Werte stehen in der Datei assets/materials.txt (beim Bauen auch ins Programm eingebettet, falls
+// Materialien: alle Werte stehen in der Datei assets/materials.json (beim Bauen auch ins Programm eingebettet, falls
 // die Datei fehlt). Die Feldtabelle materialFields() beschreibt jeden Wert einmal: Einlesen, Speichern, Befehle
 // ("materials set ...") und der Material-Editor im Fenster benutzen sie.
 #pragma once
@@ -100,6 +100,7 @@ std::string materialText(int material);  // ein Abschnitt
 bool saveMaterialFile(const std::string& path, std::string* err);
 const std::string& materialFile();       // geladene Datei ("" = eingebaut)
 std::string defaultMaterialFile();       // wohin gespeichert wird, wenn nichts geladen war
+std::string materialSavePath();          // geladene Datei (eine alte .txt: daneben als .json) oder die Standarddatei
 // Neues Material (Kopie von base), Name umbenennen, Text-Feld setzen. -1 + err bei Fehler
 int addMaterial(const std::string& name, int base, std::string* err);
 bool renameMaterial(int material, const std::string& name, std::string* err);

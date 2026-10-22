@@ -59,7 +59,7 @@ private:
 
 int runSelfTest() {
     const double pi = 3.14159265358979323846;
-    loadBuiltinMaterials();  // die mitgelieferten Werte, unabhängig von Änderungen an assets/materials.txt
+    loadBuiltinMaterials();  // die mitgelieferten Werte, unabhängig von Änderungen an assets/materials.json
     std::printf("== Geometry ==\n");
     {
         solid::Solid box;
@@ -618,6 +618,19 @@ int runSelfTest() {
         loadMaterialText("[material soft]\nclass = metal\ndensity = 1000\nwobble = 3\n", "partial", &report);
         check(materials().size() == 1 && report.find("unknown key 'wobble'") != std::string::npos && materials()[0].heat.meltC <= 0,
               "unknown keys are reported, missing values take the defaults", report.substr(0, report.find('\n')));
+        // JSON: Werte, null = keins, Fehler mit Zeilenangabe
+        const bool jsonOk = loadMaterialText("{\"materials\": [{\"name\": \"glass\", \"class\": \"stone\", \"density\": 2500,\n"
+                                             "  \"color\": [0.8, 0.9, 1], \"melts_at\": 1400, \"ignites_at\": null, \"aliases\": [\"glas\"]}],\n"
+                                             " \"pairs\": [{\"a\": \"glass\", \"b\": \"glass\", \"friction\": [0.9, 0.4]}]}",
+                                             "json", &report);
+        float gs = 0, gk = 0;
+        if (jsonOk) frictionPair(0, 0, gs, gk);
+        check(jsonOk && materials().size() == 1 && findMaterialIndex("glas") == 0 && materials()[0].density == 2500 &&
+                  materials()[0].heat.meltC == 1400 && !combustible(0) && approx(gs, 0.9, 1e-6),
+              "the JSON material file is read (lists, null, aliases, pairs)", report);
+        check(!loadMaterialText("{\"materials\": [\n  {\"name\": \"x\" \"density\": 1}\n]}", "broken.json", &report) && materials().size() == 1 &&
+                  report.find("line 2") != std::string::npos,
+              "a broken JSON file names the line and keeps the old list", report.substr(0, report.find('\n')));
         loadBuiltinMaterials();
 
         World w(physics, nullptr);
