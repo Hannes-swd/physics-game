@@ -1059,6 +1059,22 @@ void App::drawMaterialEditor() {
             if (ImGui::ColorEdit3(label.c_str(), v, ImGuiColorEditFlags_Float)) changed(false);
             break;
         }
+        case MaterialField::Name: {  // ein anderes Material (Rest nach dem Abbrennen) oder keins
+            const std::string cur = materialValue(m, f);
+            if (ImGui::BeginCombo(label.c_str(), cur == "none" ? "none (Asche)" : cur.c_str())) {
+                if (ImGui::Selectable("none (Asche)", cur == "none")) {
+                    setMaterialValue(m, f, "none", nullptr);
+                    changed(false);
+                }
+                for (const Material& r : list)
+                    if (&r != &m && ImGui::Selectable(r.name, cur == r.name)) {
+                        setMaterialValue(m, f, r.name, nullptr);
+                        changed(false);
+                    }
+                ImGui::EndCombo();
+            }
+            break;
+        }
         case MaterialField::Optional: {
             int n = 0;
             float* v = materialNumbers(m, f, n);

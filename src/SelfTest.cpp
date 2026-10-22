@@ -546,6 +546,31 @@ int runSelfTest() {
               num(val("board.burning")) + " spots, " + num(val("board.charred")) + " % charred");
         run("extinguish all ; wait 5");
         check(val("board.burning") == 0, "water puts the fire out");
+        // Abbrennen: das Holz wird nach und nach kleiner, Kohle bleibt liegen
+        {
+            World w2(physics, nullptr);
+            w2.setSimulating(true);
+            TestHost h2(w2);
+            auto v2 = [&](const std::string& expr) {
+                std::string o = runScriptSync(h2, "print " + expr);
+                size_t p = o.rfind("= ");
+                return p == std::string::npos ? -1e30 : std::atof(o.c_str() + p + 2);
+            };
+            runScriptSync(h2, "new box spruce 60 10 2 0 1 0 ; set b = last ; ignite $b ; heat speed 10 ; sim 30");
+            const double vol = v2("b.volume");
+            check(vol > 100 && vol < 1150, "a burning board gets smaller bit by bit", num(vol) + " of 1200 cm3 left after 5 min");
+            int coalSeen = 0;
+            for (int i = 0; i < 40 && v2("parts") > 0; ++i) {
+                runScriptSync(h2, "sim 10");
+                int coal = 0;
+                for (const auto& o : w2.objects()) coal += materials()[o->material].name == std::string("charcoal");
+                coalSeen = std::max(coalSeen, coal);
+            }
+            int coalLeft = 0;
+            for (const auto& o : w2.objects()) coalLeft += materials()[o->material].name == std::string("charcoal");
+            check(coalSeen >= 3 && coalLeft >= 1 && w2.burningParts() == 0, "charcoal appears where the wood burned out and stays when the fire is out",
+                  std::to_string(coalSeen) + " pieces at most, " + std::to_string(coalLeft) + " left");
+        }
         run("air vacuum");
         check(runScriptSync(host, "ignite $board").find("oxygen") != std::string::npos, "no fire in a vacuum");
         run("air normal");

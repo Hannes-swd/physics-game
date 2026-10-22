@@ -16,6 +16,7 @@
 #include <glm/gtx/component_wise.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <numeric>
@@ -37,6 +38,7 @@ constexpr int kMaxCells = 400;
 constexpr double kMinCell = 0.004;
 constexpr double kShapeEvery = 0.5;      // abgebrannte/geschmolzene Stellen so oft entfernen (s Spielzeit)
 constexpr size_t kMaxMeltObjects = 80;   // mehr Tropfen und Pfützen nicht
+constexpr size_t kMaxResidueObjects = 80;  // mehr Kohlestücke nicht
 const glm::ivec3 kNb[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 
 double kelvin(double c) { return c + kKelvin; }
@@ -115,6 +117,47 @@ void glueLimits(const std::string& key, double& soft, double& fail) {
     else if (key == "construction") soft = 70, fail = 140;
 }
 
+// Anteil des Zellvolumens, der beim Abbrennen noch steht: Verkohlen allein schrumpft Holz wenig (bis 75 %, das Holzgas
+// entweicht), die Flamme frisst dann die Kohle von außen weg
+float burnVolume(float fuel) { return fuel >= 0.35f ? 0.75f + 0.25f * (fuel - 0.35f) / 0.65f : 0.75f * fuel / 0.35f; }
+// in Viertelschritten: die Form wird nur bei einem Sprung neu gebaut (Kollision neu berechnen kostet Zeit)
+float burnLevel(float fuel) {
+    if (fuel <= 0.001f) return 0.0f;
+    return std::clamp(std::ceil(burnVolume(fuel) * 4.0f - 1e-4f) / 4.0f, 0.25f, 1.0f);
+}
+
+// Quader einer Zelle (lokal), auf den Anteil "level" geschrumpft: entlang der Achsen, auf denen die Zelle frei liegt, wie
+// Holz von außen nach innen abbrennt. Geschrumpft wird immer zur Mitte des Gitters hin: so behalten Nachbarzellen ihre
+// gemeinsame Fläche und das Teil zerfällt nicht in Krümel. keep: Zellen, die stehen bleiben (alles andere gilt als frei)
+void cellBox(const HeatGrid& g, int i, float level, const std::vector<uint8_t>& keep, glm::dvec3& mn, glm::dvec3& mx) {
+    const glm::ivec3 c = cellCoord(g, i);
+    mn = g.origin + glm::dvec3(c) * g.cell;
+    mx = mn + g.cell;
+    if (level >= 0.999f) return;
+    bool open[3];
+    int k = 0;
+    for (int a = 0; a < 3; ++a) {
+        glm::ivec3 qn = c, qp = c;
+        --qn[a];
+        ++qp[a];
+        open[a] = !inGrid(g, qn) || !keep[g.index(qn.x, qn.y, qn.z)] || !inGrid(g, qp) || !keep[g.index(qp.x, qp.y, qp.z)];
+        k += open[a];
+    }
+    const double f = std::pow((double)std::max(level, 0.01f), 1.0 / std::max(k, 1));
+    for (int a = 0; a < 3; ++a) {
+        if (k > 0 && !open[a]) continue;
+        const double L = g.cell[a] * f;
+        const double mid = 2 * c[a] + 1 - g.dim[a];  // > 0: Zelle liegt auf der oberen Hälfte des Gitters
+        if (mid > 0) mx[a] = mn[a] + L;
+        else if (mid < 0) mn[a] = mx[a] - L;
+        else {
+            const double m = 0.5 * (mn[a] + mx[a]);
+            mn[a] = m - 0.5 * L;
+            mx[a] = m + 0.5 * L;
+        }
+    }
+}
+
 // Mittel, Kleinst- und Höchstwerte eines Teils neu berechnen. true: im Gleichgewicht mit der Luft (Ta)
 bool summarizeHeat(Object& o, double Ta) {
     Object::HeatInfo& hi = o.heatInfo;
@@ -160,17 +203,26 @@ void World::fitHeat(Object& o) {
     HeatGrid old = std::move(o.heat);
     HeatGrid& g = o.heat;
     g = HeatGrid();
-    const glm::dvec3 ext = glm::max(o.bbMax - o.bbMin, glm::dvec3(1e-4));
-    double cell = std::max(std::max({ext.x, ext.y, ext.z}) / kMaxDim, kMinCell);
-    glm::ivec3 dim;
-    for (;;) {
-        dim = glm::max(glm::ivec3(glm::ceil(ext / cell - 1e-6)), glm::ivec3(1));
-        if (dim.x * dim.y * dim.z <= kMaxCells) break;
-        cell *= 1.12;
+    if (o.heatInfo.keepLayout && !old.empty()) {
+        // Die Form wurde gerade aus diesem Gitter gebaut (Abbrennen): gleiche Zellen, damit Werte und Schrumpfstufen passen
+        g.dim = old.dim;
+        g.cell = old.cell;
+        g.origin = old.origin;
+    } else {
+        const glm::dvec3 ext = glm::max(o.bbMax - o.bbMin, glm::dvec3(1e-4));
+        double cell = std::max(std::max({ext.x, ext.y, ext.z}) / kMaxDim, kMinCell);
+        glm::ivec3 dim;
+        for (;;) {
+            dim = glm::max(glm::ivec3(glm::ceil(ext / cell - 1e-6)), glm::ivec3(1));
+            if (dim.x * dim.y * dim.z <= kMaxCells) break;
+            cell *= 1.12;
+        }
+        g.dim = dim;
+        g.cell = ext / glm::dvec3(dim);
+        g.origin = o.bbMin;
     }
-    g.dim = dim;
-    g.cell = ext / glm::dvec3(dim);
-    g.origin = o.bbMin;
+    o.heatInfo.keepLayout = false;
+    const glm::ivec3 dim = g.dim;
     g.cells.resize((size_t)dim.x * dim.y * dim.z);
     // Welche Zellen enthalten Material? Mitte und 8 Punkte darum prüfen (dünne Stege)
     const bool exact = o.kind == ObjKind::Solid && !o.solid.pieces.empty();
@@ -222,9 +274,12 @@ void World::fitHeat(Object& o) {
             c.fuel = s.fuel;
             c.melt = s.melt;
             c.burning = s.burning && c.inside && c.area > 0;
+            // Schrumpfstufe gilt nur im gleichen Gitter; in einem neuen ist die Form schon so, wie der Brennstoff sagt
+            c.shape = same ? s.shape : (fuel ? burnLevel(c.fuel) : 1.0f);
         } else {
             c.temp = c.peak = (float)ambient_;
             c.fuel = fuel ? 1.0f : 0.0f;
+            c.shape = 1.0f;
         }
     }
     summarizeHeat(o, ambient_);
@@ -679,7 +734,7 @@ void World::stepHeat(double dt) {
                     if ((flame && c.temp >= th.ignitionC) || c.temp >= th.ignitionC + 150) c.burning = 1;
                 }
                 if (c.burning) {
-                    if (!oxygen || c.fuel <= 0.0f || c.area <= 0 || c.temp < th.ignitionC - 100) {
+                    if (!oxygen || c.fuel <= 0.0f || c.area <= 0 || c.temp < th.ignitionC - 50) {
                         c.burning = 0;
                         if (c.fuel <= 0.0f) c.chr = 1.0f;
                     } else {
@@ -955,6 +1010,12 @@ void World::heatShapes(bool cells) {
         if (!o->heat.empty() && !o->heatInfo.idle) ids.push_back(o->id);
     size_t meltObjects = 0;
     for (const auto& o : objects_) meltObjects += o->meltForm != MeltForm::None;
+    // Kohlestücke zählen (Teile aus einem Material, das als Rest übrig bleibt)
+    std::vector<uint8_t> isResidue(materials().size(), 0);
+    for (int i = 0; i < (int)materials().size(); ++i)
+        if (residueOf(i) >= 0) isResidue[residueOf(i)] = 1;
+    size_t residueCount = 0;
+    for (const auto& o : objects_) residueCount += isResidue[std::clamp(o->material, 0, (int)isResidue.size() - 1)];
     for (uint32_t id : ids) {
         Object* o = find(id);
         if (!o || o->heat.empty()) continue;
@@ -989,15 +1050,108 @@ void World::heatShapes(bool cells) {
                 molten.push_back(i);
             }
         }
-        if (fuelMat && o->volume < 3e-6 && o->heatInfo.burning == 0 && o->heatInfo.chr > 0.8f) {  // Kohlekrümel: zu Asche
-            remove(id);
+        const int residue = fuelMat ? residueOf(o->material) : -1;
+        // kleine verkohlte Reste: Holz wird ganz zu Kohle, Kohlekrümel zu Asche
+        if (fuelMat && o->volume < 3e-6 && o->heatInfo.burning == 0 && o->heatInfo.chr > 0.8f) {
+            if (residue >= 0 && residue != o->material) {
+                setMaterial(*o, residue);
+                for (HeatCell& c : o->heat.cells) c.chr = 1.0f, c.shape = 1.0f;
+                continue;
+            }
+            if (o->volume < 5e-7) {
+                remove(id);
+                continue;
+            }
+        }
+        // Kohle und kleine Holzstücke werden als Ganzes gleichmäßig kleiner: sie bleiben ein Stück, und Skalieren kostet
+        // kaum Rechenzeit. Ein kleines Holzstück, das abgebrannt ist, wird ganz zu Kohle; Kohle zu Asche.
+        if (fuelMat && o->kind == ObjKind::Solid && (residue < 0 || o->volume < 5e-5)) {
+            double now = 0, target = 0;
+            int n = 0;
+            for (const HeatCell& c : g.cells)
+                if (c.inside) {
+                    now += c.shape;
+                    target += burnLevel(c.fuel);
+                    ++n;
+                }
+            if (n == 0) continue;
+            now /= n;
+            target /= n;
+            if (target <= 0.02 || (int)burnt.size() == inside) {
+                if (residue >= 0 && residue != o->material) {
+                    setMaterial(*o, residue);
+                    for (HeatCell& c : o->heat.cells) c.chr = 1.0f, c.shape = 1.0f;
+                } else {
+                    remove(id);
+                }
+                continue;
+            }
+            if (target < now - 0.1) {
+                const glm::dvec3 v = o->body != kNoBody ? glm::dvec3(physics_.linearVelocity(o->body)) : glm::dvec3(0);
+                const glm::dvec3 w = o->body != kNoBody ? glm::dvec3(physics_.angularVelocity(o->body)) : glm::dvec3(0);
+                std::string err;
+                const double f = std::cbrt(target / now);
+                g.origin *= f;  // Gitter mitskalieren: jede Zelle behält ihre Werte
+                g.cell *= f;
+                if (scalePart(id, glm::dvec3(f), &err)) {
+                    for (HeatCell& c : o->heat.cells) c.shape = burnLevel(c.fuel);
+                    if (o->body != kNoBody && !o->fixed) {
+                        physics_.activate(o->body);
+                        physics_.setVelocity(o->body, glm::vec3(v), glm::vec3(w));
+                    }
+                }
+            }
             continue;
         }
+        // brennende Stellen werden kleiner (in Vierteln)
+        bool shrink = false;
+        if (fuelMat)
+            for (const HeatCell& c : g.cells)
+                if (c.inside && c.fuel > 0.001f && burnLevel(c.fuel) < c.shape - 1e-3f) shrink = true;
         const bool allLiquid = !liquidForm && (int)burnt.size() + liquid >= inside && liquid > 0;
-        if (burnt.empty() && molten.empty() && !allLiquid) continue;
+        if (burnt.empty() && molten.empty() && !allLiquid && !shrink) continue;
         const std::string name = o->name;
-        if ((int)burnt.size() == inside) {  // nichts mehr übrig: Asche
-            events_.push_back(name + " burned down to ashes");
+        const glm::dvec3 v0 = o->body != kNoBody ? glm::dvec3(physics_.linearVelocity(o->body)) : glm::dvec3(0);
+        const glm::dvec3 w0 = o->body != kNoBody ? glm::dvec3(physics_.angularVelocity(o->body)) : glm::dvec3(0);
+        const glm::dvec3 pos0 = o->pos;
+        // Wo das Holz ganz abgebrannt ist, bleibt Kohle liegen: ein Stück so groß wie das, was zuletzt noch stand
+        // (höchstens der Anteil residue_share der Zelle), mit der Temperatur der Glut
+        int coal = 0;
+        if (residue >= 0 && residue != o->material && !burnt.empty()) {
+            std::vector<uint8_t> before(g.cells.size());
+            for (int i = 0; i < (int)g.cells.size(); ++i) before[i] = g.cells[i].inside;
+            const double share = materials()[o->material].residueShare;
+            for (int i : burnt) {
+                if (residueCount >= kMaxResidueObjects || coal >= 12 || share <= 0) break;
+                const HeatCell& c = g.cells[i];
+                glm::dvec3 mn, mx;
+                cellBox(g, i, std::max(c.shape, 0.25f), before, mn, mx);
+                glm::dvec3 size = mx - mn;
+                const double frac = std::max(c.shape, 0.25f);
+                if (share < frac) size *= std::cbrt(share / frac);
+                size -= glm::dvec3(0.002);  // etwas Luft zu den Nachbarn
+                if (glm::compMin(size) < 0.003 || size.x * size.y * size.z < 2e-7) continue;
+                std::string base = materials()[residue].name;
+                base[0] = (char)std::toupper((unsigned char)base[0]);
+                Object* ch = addBox(residue, size, o->pos + o->rot * (0.5 * (mn + mx)), nextName(base));
+                if (!ch) continue;
+                setTransform(*ch, ch->pos, o->rot);
+                setTemperature(*ch, c.temp);
+                for (HeatCell& k : ch->heat.cells) {
+                    k.chr = 1.0f;
+                    k.peak = std::max(k.peak, c.peak);
+                }
+                if (ch->body != kNoBody) {
+                    physics_.activate(ch->body);
+                    physics_.setVelocity(ch->body, glm::vec3(v0 + glm::cross(w0, ch->pos - pos0)), glm::vec3(0));
+                }
+                ++coal;
+                ++residueCount;
+            }
+        }
+        if ((int)burnt.size() == inside) {  // nichts mehr übrig
+            events_.push_back(name + (coal ? " burned down, " + std::to_string(coal) + " piece(s) of " + materials()[residue].name + " remain"
+                                           : std::string(" burned down to ashes")));
             remove(id);
             continue;
         }
@@ -1028,9 +1182,6 @@ void World::heatShapes(bool cells) {
         }
         if (o->kind != ObjKind::Solid) continue;
         // Zellen als Quader abziehen; Randzellen reichen etwas über die Begrenzung hinaus
-        const glm::dvec3 v0 = o->body != kNoBody ? glm::dvec3(physics_.linearVelocity(o->body)) : glm::dvec3(0);
-        const glm::dvec3 w0 = o->body != kNoBody ? glm::dvec3(physics_.angularVelocity(o->body)) : glm::dvec3(0);
-        const glm::dvec3 pos0 = o->pos;
         std::vector<std::vector<solid::Plane>> tools;
         auto box = [&](int i) {
             const glm::ivec3 c = cellCoord(g, i);
@@ -1060,17 +1211,41 @@ void World::heatShapes(bool cells) {
         double removed = 0;
         std::string err;
         bool ok;
-        if (o->solid.pieces.size() + tools.size() <= 12) {
-            // wenige Stellen: genau abziehen, die Form bleibt erhalten
+        if (!fuelMat && o->solid.pieces.size() + tools.size() <= 12) {
+            // wenige geschmolzene Stellen: genau abziehen, die Form bleibt erhalten
             ok = removeMaterial(id, tools, &removed, &parts, &err);
         } else {
-            // Jeder Schnitt zerlegt das Teil in mehr Stücke, und die Kollision wird immer teurer. Darum die Form aus den
-            // übrigen Zellen neu bauen: möglichst große Quader (erst entlang x, dann über y und z zusammengefasst)
+            // Die Form aus den übrigen Zellen neu bauen (jeder einzelne Schnitt würde das Teil in immer mehr Stücke zerlegen
+            // und die Kollision teuer machen): volle Zellen zu möglichst großen Quadern zusammengefasst (erst entlang x, dann
+            // über y und z), angebrannte Zellen einzeln und auf ihre Schrumpfstufe verkleinert. Solange das Teil aus wenigen
+            // Stücken besteht, wird jeder Quader mit der bisherigen Form geschnitten: runde Scheite bleiben rund.
             std::vector<uint8_t> keep(g.cells.size(), 0), used(g.cells.size(), 0);
             for (int i = 0; i < (int)g.cells.size(); ++i) keep[i] = g.cells[i].inside;
             for (int i : burnt) keep[i] = 0;
             for (int i : molten) keep[i] = 0;
+            std::vector<float> level(g.cells.size(), 1.0f);
+            if (fuelMat)
+                for (int i = 0; i < (int)g.cells.size(); ++i)
+                    if (keep[i]) level[i] = std::min(g.cells[i].shape, std::max(burnLevel(g.cells[i].fuel), 0.25f));
+            const bool clip = o->solid.pieces.size() <= 24;
             solid::Solid s;
+            auto addPiece = [&](const glm::dvec3& mn, const glm::dvec3& mx) {
+                if (clip) {
+                    solid::Solid part = solid::intersect(o->solid, solid::boxTool(mn, mx));
+                    for (auto& p : part.pieces) s.pieces.push_back(std::move(p));
+                    return;
+                }
+                solid::Piece p = solid::makeBox(0.5 * (mx - mn));
+                solid::transform(p, glm::translate(glm::dmat4(1.0), 0.5 * (mn + mx)));
+                s.pieces.push_back(std::move(p));
+            };
+            for (int i = 0; i < (int)g.cells.size(); ++i)
+                if (keep[i] && level[i] < 0.999f) {
+                    used[i] = 1;
+                    glm::dvec3 mn, mx;
+                    cellBox(g, i, level[i], keep, mn, mx);
+                    addPiece(mn, mx);
+                }
             for (int z = 0; z < g.dim.z; ++z)
                 for (int y = 0; y < g.dim.y; ++y)
                     for (int x = 0; x < g.dim.x; ++x) {
@@ -1092,14 +1267,14 @@ void World::heatShapes(bool cells) {
                         for (int c = z; c <= z1; ++c)
                             for (int b = y; b <= y1; ++b)
                                 for (int a = x; a <= x1; ++a) used[g.index(a, b, c)] = 1;
-                        const glm::dvec3 mn = g.origin + glm::dvec3(x, y, z) * g.cell;
-                        const glm::dvec3 mx = g.origin + glm::dvec3(x1 + 1, y1 + 1, z1 + 1) * g.cell;
-                        solid::Piece p = solid::makeBox(0.5 * (mx - mn));
-                        solid::transform(p, glm::translate(glm::dmat4(1.0), 0.5 * (mn + mx)));
-                        s.pieces.push_back(std::move(p));
+                        addPiece(g.origin + glm::dvec3(x, y, z) * g.cell, g.origin + glm::dvec3(x1 + 1, y1 + 1, z1 + 1) * g.cell);
                     }
             removed = std::max(0.0, vBefore - solid::volume(s));
+            for (int i = 0; i < (int)g.cells.size(); ++i)
+                if (keep[i]) g.cells[i].shape = level[i];
+            o->heatInfo.keepLayout = true;  // die neue Form passt zu diesem Gitter
             ok = !s.pieces.empty() && applyResult(*o, std::move(s), &parts, &err);
+            if (Object* p = find(id)) p->heatInfo.keepLayout = false;
             if (!ok && err.empty()) err = "nothing would be left";
         }
         if (!ok) {

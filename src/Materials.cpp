@@ -108,6 +108,8 @@ const std::vector<FieldDef>& fieldDefs() {
         {{"heat_of_combustion", "Heizwert", "Wärme", F::Number, "J/kg", nullptr, 0, 6e7f}, {NUM(m.heat.heatOfCombustion), 0, 0}},
         {{"burn_rate", "Abbrand", "Wärme", F::Number, "kg/(m²·s)", nullptr, 0, 0.2f}, {NUM(m.heat.burnRate), 0, 0}},
         {{"smoke", "Rauch", "Wärme", F::Number, "", nullptr, 0, 1}, {NUM(m.heat.soot), 0, 0}},
+        {{"residue", "bleibt nach dem Abbrennen", "Wärme", F::Name, "", nullptr, 0, 0}, {nullptr, 0, 0}},
+        {{"residue_share", "Anteil, der übrig bleibt", "Wärme", F::Number, "", nullptr, 0, 1}, {NUM(m.residueShare), 0, 0}},
     };
     return defs;
 }
@@ -216,6 +218,15 @@ int materialIndex(const char* name) {
     return i < 0 ? 0 : i;
 }
 
+int residueOf(int material) {
+    const auto& m = materials();
+    if (m.empty() || m[std::clamp(material, 0, (int)m.size() - 1)].residue.empty()) return -1;
+    const std::string& r = m[std::clamp(material, 0, (int)m.size() - 1)].residue;
+    for (size_t i = 0; i < m.size(); ++i)
+        if (r == m[i].name) return (int)i;
+    return -1;
+}
+
 MaterialClass materialClass(int material) {
     const auto& m = materials();
     return m.empty() ? MaterialClass::Stone : m[std::clamp(material, 0, (int)m.size() - 1)].cls;
@@ -267,6 +278,7 @@ std::string materialValue(const Material& m0, const MaterialField& f) {
         return s;
     }
     case MaterialField::Choice: return f.choices[materialChoice(m, f)];
+    case MaterialField::Name: return m.residue.empty() ? "none" : m.residue;
     default: break;
     }
     int n = 0;
@@ -304,6 +316,19 @@ bool setMaterialValue(Material& m, const MaterialField& f, const std::string& va
             for (int i = 0; f.choices[i]; ++i) *err += std::string(" ") + f.choices[i];
         }
         return false;
+    }
+    case MaterialField::Name: {
+        const std::string l = lower(v.c_str());
+        if (l.empty() || l == "none" || l == "-" || l == "ash") {
+            m.residue.clear();
+            return true;
+        }
+        if (!validName(l)) {
+            if (err) *err = std::string(f.key) + ": '" + l + "' is not a material name (or 'none')";
+            return false;
+        }
+        m.residue = l;  // ob es das Material gibt, prüft das Laden (es darf weiter unten in der Datei stehen)
+        return true;
     }
     default: break;
     }
@@ -412,6 +437,12 @@ bool loadMaterialText(const std::string& text, const std::string& source, std::s
             for (int i = 0; kClassNames[i]; ++i) known |= n == kClassNames[i];
             for (const Material& m : list) known |= n == m.name;
             if (!known) problems += source + ": pair " + p.a + " " + p.b + ": '" + n + "' is neither a material nor a class\n";
+        }
+    for (const Material& m : list)
+        if (!m.residue.empty()) {
+            bool known = false;
+            for (const Material& r : list) known |= m.residue == r.name;
+            if (!known) problems += source + ": " + m.name + ": residue '" + m.residue + "' is not a material (burns to ashes)\n";
         }
     if (list.empty()) {
         problems += source + ": no [material ...] section found\n";
@@ -529,6 +560,8 @@ bool renameMaterial(int i, const std::string& name0, std::string* err) {
         if (p.a == old) p.a = name;
         if (p.b == old) p.b = name;
     }
+    for (Material& m : r.list)
+        if (m.residue == old) m.residue = name;
     r.list[i].name = internString(name);
     return true;
 }

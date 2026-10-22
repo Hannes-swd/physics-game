@@ -56,6 +56,8 @@ struct Material {
     float minBendRatio = -1;       // kleinster Biegeradius innen / Dicke (< 0: lässt sich nicht biegen)
     float splitEnergy = 0;         // Spaltenergie für einen Keil (J/m² Rissfläche, Holz entlang der Faser). 0 = spaltet nicht
     Thermal heat;
+    std::string residue;           // Material, das nach dem Abbrennen übrig bleibt (Holz: Holzkohle), leer = Asche
+    float residueShare = 0;        // Anteil des Volumens, der als Rest liegen bleibt
 };
 
 const std::vector<Material>& materials();
@@ -65,11 +67,12 @@ int materialIndex(const char* name);
 // -1 wenn unbekannt (für Befehle)
 int findMaterialIndex(const char* name);
 MaterialClass materialClass(int material);
+int residueOf(int material);  // Index des Rests nach dem Abbrennen, -1 = Asche
 
 // ---------------------------------------------------------------- Materialdatei
 // Beschreibung eines Werts: Schlüssel in der Datei, deutsche Bezeichnung, Gruppe, Art
 struct MaterialField {
-    enum Type { Text, Words, Choice, Number, Optional, Pair, Color };
+    enum Type { Text, Words, Choice, Number, Optional, Pair, Color, Name };  // Name: ein anderes Material oder none
     const char* key;
     const char* label;
     const char* group;      // "Allgemein", "Aussehen", "Mechanik", "Wärme"

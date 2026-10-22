@@ -43,6 +43,8 @@
 #   heat_of_combustion  Heizwert J/kg
 #   burn_rate           Abbrand an der Oberfläche kg/(m²·s)
 #   smoke               Rauch 0..1 (Holz wenig, Gummi viel und schwarz)
+#   residue             Material, das nach dem Abbrennen liegen bleibt (Holz: charcoal), none = nur Asche
+#   residue_share       Anteil des Volumens, der davon übrig bleibt 0..1
 #
 # REIBUNGSPAARE
 #   [pair <a> <b>]  friction = Haft Gleit. a und b sind Materialnamen oder Klassen (wood, metal ...).
@@ -83,6 +85,8 @@ ignites_at         = 300
 heat_of_combustion = 15000000
 burn_rate          = 0.011
 smoke              = 0.15
+residue            = charcoal
+residue_share      = 0.5
 
 [material oak]
 label              = Eiche
@@ -119,6 +123,8 @@ ignites_at         = 320
 heat_of_combustion = 15000000
 burn_rate          = 0.009
 smoke              = 0.15
+residue            = charcoal
+residue_share      = 0.5
 
 [material brick]
 label              = Ziegel
@@ -443,6 +449,45 @@ ignites_at         = 390
 heat_of_combustion = 35000000
 burn_rate          = 0.02
 smoke              = 0.85
+
+# Holzkohle: bleibt übrig, wenn Holz abbrennt. Glüht lange, brennt langsam fast ohne Flamme und Rauch, zerbröselt leicht
+[material charcoal]
+label              = Holzkohle
+aliases            = holzkohle kohle
+class              = wood
+texture            = wood
+color              = 0.05 0.045 0.04
+color2             = 0.02 0.02 0.02
+roughness          = 0.95
+metallic           = 0
+temper             = none
+density            = 250
+friction           = 0.6 0.5
+rolling            = 0.01
+restitution        = 0.15
+tensile            = 5
+compressive        = 10
+young              = 1
+hardness           = 5
+fracture_energy    = 2000
+split_energy       = none
+bend_radius        = none
+conductivity       = 0.1
+specific_heat      = 1000
+emissivity         = 0.95
+melts_at           = none
+latent_heat        = 0
+puddle_height      = 10
+soft_from          = 500
+half_strength_at   = 1000
+brittle_below      = none
+chars_from         = none
+ignites_at         = 400
+heat_of_combustion = 30000000
+burn_rate          = 0.0015
+smoke              = 0.02
+residue            = none
+residue_share      = 0
 
 # ---------------------------------------------------------------- Reibung je Paar (trocken, Tabellenbuch, gerundet)
 [pair steel steel]

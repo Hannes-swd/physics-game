@@ -110,10 +110,20 @@ Zeitraffer stabil, und eine Flamme heizt nie über ihre eigene Temperatur.
    brennenden Fläche, so kriecht das Feuer über ein Brett (etwa 1 mm/s auf einem liegenden 2-cm-Brett, nach oben viel
    schneller). Die Umgebung bekommt 30 % der Leistung als Wärmestrahlung (Punktquelle, nimmt mit dem Quadrat der
    Entfernung ab).
-5. **Abgebrannt**: Zellen ohne Brennstoff verschwinden aus der Form, das Teil zerfällt, wenn es durchgebrannt ist, Reste
-   unter 3 cm³ werden zu Asche. Damit die Kollision schnell bleibt, wird ein stark angebranntes Teil aus den übrigen Zellen
-   als wenige große Quader neu gebaut.
-6. **Löschen**: `extinguish` (Wasser) oder abkühlen: Fällt eine Stelle 100 °C unter die Zündtemperatur, geht sie aus.
+5. **Langsam verschwinden**: Jede brennende Stelle schrumpft in Vierteln, von ihren freien Seiten her zur Mitte des Teils
+   hin (wie Holz von außen nach innen abbrennt): Ein Brett wird dünner und kürzer, ein Scheit schmaler. Verkohlen allein
+   schrumpft Holz bis auf 75 % (das Holzgas entweicht), den Rest frisst die Flamme. Nachbarstellen behalten ihre
+   gemeinsame Fläche, das Teil zerfällt erst, wenn es wirklich durchgebrannt ist. Die Form wird nur bei einem Viertel-Sprung
+   neu gebaut (volle Zellen als große Quader, angebrannte einzeln, bei wenigen Stücken mit der alten Form geschnitten:
+   runde Scheite bleiben rund).
+6. **Kohle**: Ist eine Stelle ganz abgebrannt, bleibt dort ein Stück **Holzkohle** liegen – so groß wie das, was zuletzt
+   noch stand (höchstens `residue_share` der Zelle), mit der Temperatur der Glut. Kleine Holzstücke (unter 50 cm³) werden
+   als Ganzes kleiner und am Ende selbst zu Kohle. Holzkohle (Material `charcoal`) glüht in den Rissen, brennt langsam fast
+   ohne Flamme und Rauch weiter und wird dabei als Ganzes kleiner, bis nur Asche bleibt (Teil verschwindet). Ein einzelnes
+   Stück ohne Feuer daneben kühlt aus und geht aus: nach dem Feuer liegt schwarze Kohle da, in einem Glutbett glüht sie
+   lange weiter. Höchstens 80 Kohlestücke gleichzeitig. Was übrig bleibt, steht in der Materialdatei (`residue`,
+   `residue_share`; Gummi und Kunststoff: nur Asche).
+7. **Löschen**: `extinguish` (Wasser) oder abkühlen: Fällt eine Stelle 50 °C unter die Zündtemperatur, geht sie aus.
 
 ### Schmelzen
 
@@ -160,6 +170,7 @@ Mitgeliefert in `assets/materials.txt` (dort ändern oder neue Materialien anleg
 | Messing | 110 | 380 | 0,3 | 920 °C | 250 / 450 °C | – | – | – | – |
 | Kupfer | 390 | 385 | 0,5 | 1085 °C | 200 / 450 °C | – | – | – | – |
 | Gummi | 0,16 | 2000 | 0,9 | – (zersetzt sich) | 120 / 250 °C | −60 °C | 250 / 350 °C | 32 MJ/kg | 0,015 |
+| Holzkohle | 0,1 | 1000 | 0,95 | – | 500 / 1000 °C | – | – / 400 °C | 30 MJ/kg | 0,0015 |
 | Kunststoff (ABS) | 0,17 | 1400 | 0,9 | 230 °C | 80 / 105 °C | −40 °C | 300 / 390 °C | 35 MJ/kg | 0,020 |
 
 Schmelzwärme: Stahl 270, Aluminium 397, Messing 168, Kupfer 205, Stein 400, Kunststoff 100 kJ/kg.

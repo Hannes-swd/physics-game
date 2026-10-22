@@ -1660,6 +1660,13 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
             for (const HeatCell& c : g.cells)
                 out << " " << c.temp << " " << c.peak << " " << c.chr << " " << c.fuel << " " << c.melt << " " << (int)c.burning;
             out << "\n";
+            bool shrunk = false;  // abgebranntes Holz: wie weit jede Zelle schon geschrumpft ist
+            for (const HeatCell& c : g.cells) shrunk |= c.shape < 1.0f;
+            if (shrunk) {
+                out << "heatshape";
+                for (const HeatCell& c : g.cells) out << " " << c.shape;
+                out << "\n";
+            }
         }
         if (o.kind == ObjKind::Mesh && o.imported) {
             out << "scale " << o.imported->scale << "\n";
@@ -1788,6 +1795,10 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
                 c.inside = 1;  // wird beim Einfügen aus der Form bestimmt
             }
             if (!ss) cur.heat = HeatGrid();
+        } else if (tag == "heatshape") {
+            for (HeatCell& c : cur.heat.cells) ss >> c.shape;
+            if (!ss)
+                for (HeatCell& c : cur.heat.cells) c.shape = 1.0f;
         } else if (tag == "collision") {
             ss >> cur.collision;
         } else if (tag == "prim") {

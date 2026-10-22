@@ -83,6 +83,8 @@ zeigt, welche geladen ist.
 | `heat_of_combustion` | Heizwert | J/kg | 0 |
 | `burn_rate` | Abbrand an der Oberfläche | kg/(m²·s) | 0 |
 | `smoke` | Rauch 0 .. 1 (Holz 0.15, Gummi 1 schwarz) | | 0 |
+| `residue` | Material, das nach dem Abbrennen liegen bleibt (Holz: `charcoal`) | Name oder none | none (Asche) |
+| `residue_share` | Anteil einer abgebrannten Stelle, der als Rest liegen bleibt | 0..1 | 0 |
 
 **Klasse oder Textur?** Die Textur ist nur das Aussehen. Die Klasse bestimmt das Verhalten: Reibungspaare ohne eigenen
 Eintrag, Verschleiß (Stein schleift), Nägel und Schrauben (Holz: Auszug nach Dichte, Stein: Dübel, Metall: Gewinde),

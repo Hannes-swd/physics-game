@@ -232,7 +232,7 @@ mit der Korrektur oben), Dear ImGui 1.91.9.
 
 ## Selbsttest
 
-`Werkstatt.exe --selftest` prüft (116 Prüfungen):
+`Werkstatt.exe --selftest` prüft (118 Prüfungen):
 
 - Geometrie: Volumen, Sägeschnitt, Bohrung (π r² h), Innenflächen, Schnittfuge, Zahnrad, Kugel, Kanten finden,
   Abrunden/Fasen (Volumen nach Formel), Hohlkehle, Drehbank
@@ -248,7 +248,7 @@ mit der Korrektur oben), Dear ImGui 1.91.9.
 - Verbindungen und Bruch: Kleber hält / reißt, Seilpendel, Ziegel zerbricht, Stahl nicht, Verbindungen speichern
 - Luft: Propellerschub (×4 bei doppelter Drehzahl), Vakuum, Propeller-Wagen
 - Wärme und Feuer: Brenner heizt ein Stabende (anderes Ende kühl), Abkühlen, glühender Stahl weich, kalter Stahl zerspringt
-  (warmer nicht), Brett verkohlt, brennt und das Feuer breitet sich aus, Löschen, kein Feuer im Vakuum, Aluminium schmilzt
+  (warmer nicht), Brett verkohlt, brennt und das Feuer breitet sich aus, das Brett wird nach und nach kleiner und Kohle bleibt liegen, Löschen, kein Feuer im Vakuum, Aluminium schmilzt
   zur Pfütze, Holzleim lässt bei 150 °C los, Temperatur bleibt beim Speichern und Laden
 - Materialdatei (mit der eingebetteten Kopie, unabhängig von eigenen Änderungen): Laden, Aliasse, Speichern und Lesen
   ergibt dieselben Werte, kaputte Datei wird abgelehnt (alte Liste bleibt), unbekannte Schlüssel gemeldet, neues Material

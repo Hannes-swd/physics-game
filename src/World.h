@@ -40,6 +40,7 @@ struct HeatCell {
     float area = 0.0f;       // Oberfläche der Zelle zur Luft (m²), berechnet
     uint8_t inside = 0;      // Zelle enthält Material (berechnet)
     uint8_t burning = 0;     // brennt gerade
+    float shape = 1.0f;      // Anteil der Zelle, der in der Form noch da ist (abbrennendes Holz schrumpft in Vierteln)
 };
 
 struct HeatGrid {
@@ -149,6 +150,7 @@ struct Object : ObjectState {
         float chr = 0, melt = 0;    // Mittel über alle Zellen
         int burning = 0;            // brennende Zellen
         bool idle = true;           // im Gleichgewicht mit der Umgebung: nicht rechnen
+        bool keepLayout = false;    // nächstes Anpassen behält das Gitter (die Form wurde aus ihm gebaut)
         double age = 0;             // Tropfen: so lange schon unterwegs (s)
         double cellMass = 0;        // kg je Zelle mit Material
     } heatInfo;
