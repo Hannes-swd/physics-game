@@ -11,6 +11,7 @@
 
 #include "Drawing.h"
 #include "Materials.h"
+#include "Profile.h"
 #include "Script.h"
 #include "World.h"
 
@@ -388,7 +389,7 @@ std::string commandHelp() {
         "  camera x y z [distance] | select <id ...|all> | screenshot <file.png>\n"
         "  drawing [id ...] [file.svg]               three-view drawing (no id: selection)\n"
         "  undo | redo | scene empty|demo|showcase|fire | save <file> | load <file> | quit\n"
-        "  status | wait <seconds>\n"
+        "  status | wait <seconds> | profile [reset|on|off]   time spent per engine section (find slow parts)\n"
         "ONLY IN THE GAME WINDOW\n"
         "  player                                    position, view, what is carried\n"
         "  player position x y z | player look <id | x y z> | player turn <deg> [pitch]\n"
@@ -479,6 +480,17 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         double s = 1.0;
         num(1, s);
         res.text = host.wait(std::clamp(s, 0.0, 600.0));
+    } else if (cmd == "profile") {
+        // Rechenzeit je Abschnitt (Engine): wo bleibt die Zeit?
+        if (word(1) == "reset") {
+            prof::reset();
+            res.text = "profile reset";
+        } else if (word(1) == "off" || word(1) == "on") {
+            prof::setEnabled(word(1) == "on");
+            res.text = std::string("profile ") + (prof::enabled() ? "on" : "off");
+        } else {
+            res.text = prof::report();
+        }
     } else if (cmd == "materials" && t.size() > 1) {
         // Materialdatei: anzeigen, ändern, neu, speichern, neu laden
         const std::string sub = word(1);

@@ -40,6 +40,7 @@
 | `src/Showcase.cpp` | Beispielwelt (`scene showcase`) und Feuerstelle (`scene fire`), aufgebaut als Befehlslisten |
 | `src/Solid.*` | Festkörper-Geometrie (siehe unten), Kanten finden, Werkzeugformen, Berührfläche zweier Teile |
 | `src/Chunks.*` | 3D-Chunks |
+| `src/Jobs.*`, `src/Profile.*` | Hilfs-Threads (Hintergrund-Aufgaben, parallele Schleifen) und Zeitmessung (`profile`) |
 | `src/Physics.*` | Hülle um Jolt: Körper (Grundformen und Hüllen), Reibung je Materialpaar, Rollreibung, Wegprüfung, Abfragen (Sweep, Überlappung), Achsen, Verbindungs-Constraints mit Kraftmessung, Spielfigur, Aufprall-Meldungen |
 | `src/Bench.cpp` | `--bench`: misst Rechenzeit, Eindringtiefe und Rettungen alter und neuer Einstellungen in elf Szenen |
 | `src/Renderer.*`, `shaders/` | Vulkan-Grafik |
@@ -229,6 +230,34 @@ build\Release\Werkstatt.exe --selftest
 
 Abhängigkeiten (werden automatisch geladen): GLFW 3.4, GLM 1.0.1, Jolt Physics 5.3.0 (doppelte Genauigkeit,
 mit der Korrektur oben), Dear ImGui 1.91.9.
+
+## Leistung und Threads
+
+| Was | Wie |
+|---|---|
+| Physik (Jolt) | eigener Thread-Pool mit allen Kernen außer einem |
+| Kollisionsform bearbeiteter Teile | im Fenster **im Hintergrund** (`src/Jobs.*`, Hilfs-Threads mit niedriger Priorität): nach Sägen, Bohren, Zerbrechen, Abdruck, Abbrennen bekommt das Teil sofort eine grobe Form (eine Hülle je Stück, dünne Splitter weggelassen), die genaue (Lücken bleiben offen, Bohrungen exakt) wird nachgereicht (`World::pollCollisionJobs`, jedes Bild). Ohne Fenster und im Selbsttest sofort genau |
+| Hüllen zusammenfassen | die Paarbewertung in `clusterHulls` läuft auf allen Kernen |
+| Wärme je Teil | Zellen, Verbrennen, Schmelzen, Wärmeleitung: jedes Teil auf einem eigenen Kern (`jobs::parallelFor`) |
+| Flamme und Strahlung | je Teil parallel; nahe glühende Teile (30 cm) werden zu einer Strahlungsquelle zusammengefasst |
+| Brennende Stellen | je Teil zu wenigen zusammengefasst (kleine Teile: eine, große: höchstens 48) |
+| Abbrennen, Schmelzen | Formänderungen reihum mit 4 ms Budget je Wärmeschritt; durchgebrannte Teile behalten höchstens 8 Bruchstücke, Krümel werden Asche |
+| Teil zu Physik-Körper | Hash-Tabelle statt Suche |
+
+**Messen:** `profile` zeigt, wo die Zeit bleibt (seit dem letzten `profile reset`): Bilder pro Sekunde, langsamstes
+Bild, Bilder über 50 ms und je Abschnitt Aufrufe, Summe, ms pro Sekunde, ms pro Aufruf und Höchstwert. Wichtige
+Abschnitte: `physics.jolt`, `step.*` (Teile eines Physikschritts), `heat.*` (Wärmeschritt), `shapes.*` (Abbrennen,
+Kohle), `geom.*` (neue Geometrie: Kollisionsform, Grafik, Wärmegitter), `impact.*`, `render.waitGpu` (die Grafikkarte
+ist noch beschäftigt), `render.acquire (vsync)` (Warten auf den Bildschirm-Takt). Eigene Messpunkte: `PROFILE("name");`
+am Anfang eines Blocks (`src/Profile.h`).
+
+Gemessen (RX 6800 XT, 165-Hz-Bildschirm), langsamstes Bild / Bilder über 50 ms in 25 s:
+
+| Szene | vorher | jetzt |
+|---|---|---|
+| Feuerstelle, großes Feuer (`heat speed 8`) | 81 ms / 19 | 12 ms / 0 |
+| Holzstapel mit 30 Scheiten, voller Brand (110 brennende Teile) | 148 ms / 34 | 29 ms / 0 |
+| Bohren eines Bretts (Kollisionsform) | 48 ms | 2 ms (genaue Form im Hintergrund) |
 
 ## Selbsttest
 

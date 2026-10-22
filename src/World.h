@@ -5,6 +5,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -144,6 +145,8 @@ struct Object : ObjectState {
     glm::dquat safeRot{1, 0, 0, 0};
     bool hasSafe = false;
     uint32_t netRev = 0;            // neu bei jeder neuen Geometrie (LAN: Teil neu an die Mitspieler senden)
+    bool collisionPending = false;  // genaue Kollisionsform wird im Hintergrund berechnet (bis dahin eine grobe)
+    std::vector<BoreGeom> collisionOldBores;  // Bohrungen vor der Änderung: der Abrieb wird danach zugeordnet
     // Wärme (Heat.cpp): Zusammenfassung nach jedem Wärmeschritt
     struct HeatInfo {
         float tMin = 20, tMax = 20, tMean = 20;
@@ -151,6 +154,10 @@ struct Object : ObjectState {
         int burning = 0;            // brennende Zellen
         bool idle = true;           // im Gleichgewicht mit der Umgebung: nicht rechnen
         bool keepLayout = false;    // nächstes Anpassen behält das Gitter (die Form wurde aus ihm gebaut)
+        // Merker eines Wärmeschritts (je Teil, damit mehrere Kerne gleichzeitig rechnen können)
+        std::vector<uint8_t> pilot;  // Zellen mit Flamme daran
+        bool hasPilot = false;
+        double boost = 0;            // Strahlung der Flamme auf die eigene Glut
         double age = 0;             // Tropfen: so lange schon unterwegs (s)
         double cellMass = 0;        // kg je Zelle mit Material
     } heatInfo;
@@ -390,6 +397,11 @@ public:
     uint32_t lastCreatedId() const { return lastCreated_; }  // zuletzt erstelltes Teil
     // Nur für Messungen: alte Kollision (keine Grundformen, keine Vereinfachung, CCD nur für dünne Teile)
     void setLegacyCollision(bool on) { legacyCollision_ = on; }
+    // Kollisionsformen bearbeiteter Teile im Hintergrund berechnen (Fenster): sofort eine grobe Form (eine Hülle je Stück),
+    // die genaue kommt nach, ohne dass das Bild wartet. Aus: sofort genau (ohne Fenster, Selbsttest).
+    void setAsyncCollision(bool on) { asyncCollision_ = on; }
+    void pollCollisionJobs();  // fertige Formen übernehmen (jedes Bild)
+    size_t pendingCollisionJobs() const { return collisionJobs_.size(); }
 
     // ---------------------------------------------------------- LAN-Mehrspieler: Mitspieler übernimmt die Welt vom Gastgeber
     // Teil anlegen oder (gleiche Nummer) ersetzen; Verbindungen bleiben bestehen
@@ -420,6 +432,7 @@ private:
     void restore(const Snapshot& s);
     Object* insert(std::unique_ptr<Object> o);
     void rebuildGeometry(Object& o);
+    void remapBoreWear(Object& o, const std::vector<BoreGeom>& oldBores);
     void rebuildBody(Object& o);
     void releaseBody(Object& o);
     void releaseAll(Object& o);
@@ -453,6 +466,7 @@ private:
     GpuMesh groundMesh_, boxMesh_;
     ChunkGrid grid_;
     std::unordered_map<uint32_t, Object*> byId_;
+    std::unordered_map<BodyHandle, Object*> byBody_;  // Physik-Körper -> Teil (Kontakte, Aufpralle)
     uint32_t inspectId_ = 0;
     InspectData inspect_;
     glm::dvec3 velBefore_{0}, extForce_{0}, aeroDrag_{0}, aeroTorque_{0};
@@ -483,12 +497,25 @@ private:
         glm::dvec3 point{0};        // energiegewichtete Summe der Stellen
         BodyHandle a = kNoBody, b = kNoBody;
     };
+    // Kollisionsformen im Hintergrund
+    struct CollisionTask {
+        std::atomic<bool> done{false};
+        CollisionShape result;
+    };
+    struct CollisionJob {
+        uint32_t id = 0, rev = 0;   // Teil und Stand seiner Geometrie (netRev): ändert sie sich, gilt das Ergebnis nicht mehr
+        int mode = 0;
+        std::shared_ptr<CollisionTask> task;
+    };
+    std::vector<CollisionJob> collisionJobs_;
+    bool asyncCollision_ = false;
     std::vector<HeatSource> heatSources_;
     std::vector<Fire> fires_;
     std::unordered_map<uint64_t, FrictionHeat> frictionHeat_;
     bool heatOn_ = true;
     double ambient_ = 20.0, heatSpeed_ = 1.0;
     double heatAccum_ = 0, heatTime_ = 0, heatShapeAccum_ = 0;
+    size_t heatShapeCursor_ = 0;  // abgebrannte/geschmolzene Stellen: reihum, mit Zeitbudget
 };
 
 std::string fmtNum(double v, int decimals = 1);

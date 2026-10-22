@@ -10,6 +10,7 @@
 #include <random>
 
 #include "Materials.h"
+#include "Profile.h"
 #include "World.h"
 
 namespace {
@@ -317,6 +318,7 @@ void World::processImpacts() {
 }
 
 bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA) {
+    PROFILE("impact.tool");
     if (T.kind != ObjKind::Solid || O.kind != ObjKind::Solid || O.unbreakable || simTime_ < O.breakCooldown || O.volume < 2e-6)
         return false;
     // Stark bearbeitete Teile (viele Stücke) bleiben unverändert: ihre Kollision neu zu berechnen dauert dann Sekunden
@@ -512,6 +514,7 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
 // ============================================================================ Zerbrechen
 
 void World::fracture(uint32_t id, const glm::dvec3& worldPoint, double ratio, double energy, double threshold) {
+    PROFILE("impact.fracture");
     static std::mt19937 rng(4711);
     std::uniform_real_distribution<double> uni(-1.0, 1.0);
     Object* o = find(id);

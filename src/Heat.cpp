@@ -25,6 +25,8 @@
 #include <unordered_set>
 
 #include "Materials.h"
+#include "Jobs.h"
+#include "Profile.h"
 #include "World.h"
 
 namespace {
@@ -36,7 +38,6 @@ constexpr double kHeatStep = 0.05;       // Wärmeschritt (s Spielzeit)
 constexpr int kMaxDim = 10;              // Zellen entlang der längsten Achse
 constexpr int kMaxCells = 400;
 constexpr double kMinCell = 0.004;
-constexpr double kShapeEvery = 0.5;      // abgebrannte/geschmolzene Stellen so oft entfernen (s Spielzeit)
 constexpr size_t kMaxMeltObjects = 80;   // mehr Tropfen und Pfützen nicht
 constexpr size_t kMaxResidueObjects = 80;  // mehr Kohlestücke nicht
 const glm::ivec3 kNb[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
@@ -53,20 +54,6 @@ double relax(double T, double Tt, double G, double C, double dt) {
 double radiationH(double eps, double tC, double uC) {
     const double a = kelvin(tC), b = kelvin(uC);
     return eps * kSigma * (a * a + b * b) * (a + b);
-}
-
-bool insideSolid(const solid::Solid& s, const glm::dvec3& p) {
-    for (const auto& pc : s.pieces) {
-        if (pc.faces.empty()) continue;
-        bool in = true;
-        for (const auto& f : pc.faces)
-            if (glm::dot(f.n, p) - f.d > 1e-9) {
-                in = false;
-                break;
-            }
-        if (in) return true;
-    }
-    return false;
 }
 
 glm::ivec3 cellCoord(const HeatGrid& g, int i) { return {i % g.dim.x, (i / g.dim.x) % g.dim.y, i / (g.dim.x * g.dim.y)}; }
@@ -226,13 +213,31 @@ void World::fitHeat(Object& o) {
     g.cells.resize((size_t)dim.x * dim.y * dim.z);
     // Welche Zellen enthalten Material? Mitte und 8 Punkte darum prüfen (dünne Stege)
     const bool exact = o.kind == ObjKind::Solid && !o.solid.pieces.empty();
+    // Begrenzung jedes Stücks vorab: die meisten Stücke sind schnell ausgeschlossen
+    std::vector<std::pair<glm::dvec3, glm::dvec3>> pieceBox(exact ? o.solid.pieces.size() : 0);
+    for (size_t p = 0; p < pieceBox.size(); ++p) solid::bounds(o.solid.pieces[p], pieceBox[p].first, pieceBox[p].second);
+    auto inside = [&](const glm::dvec3& q) {
+        for (size_t p = 0; p < pieceBox.size(); ++p) {
+            const auto& [mn, mx] = pieceBox[p];
+            if (q.x < mn.x - 1e-9 || q.y < mn.y - 1e-9 || q.z < mn.z - 1e-9 || q.x > mx.x + 1e-9 || q.y > mx.y + 1e-9 || q.z > mx.z + 1e-9)
+                continue;
+            bool in = !o.solid.pieces[p].faces.empty();
+            for (const auto& f : o.solid.pieces[p].faces)
+                if (glm::dot(f.n, q) - f.d > 1e-9) {
+                    in = false;
+                    break;
+                }
+            if (in) return true;
+        }
+        return false;
+    };
     int nInside = 0;
     for (int i = 0; i < (int)g.cells.size(); ++i) {
         const glm::dvec3 c = cellCenter(g, i);
-        bool in = !exact || insideSolid(o.solid, c);
+        bool in = !exact || inside(c);
         for (int k = 0; k < 8 && !in; ++k) {
             const glm::dvec3 off((k & 1) ? 0.3 : -0.3, (k & 2) ? 0.3 : -0.3, (k & 4) ? 0.3 : -0.3);
-            in = insideSolid(o.solid, c + off * g.cell);
+            in = inside(c + off * g.cell);
         }
         g.cells[i].inside = in;
         nInside += in;
@@ -473,15 +478,23 @@ void World::stepHeatOnly(double dt) {
 }
 
 void World::stepHeat(double dt) {
+    prof::Lap lap;
     heatTime_ += dt;
     const double Ta = ambient_;
     const double airK = std::clamp(airDensity_ / 1.204, 0.0, 3.0);  // Konvektion und Sauerstoff wachsen mit der Luftdichte
     const bool oxygen = airDensity_ > 0.3;
-    std::unordered_map<Object*, std::vector<uint8_t>> pilot;  // Zellen mit Flamme daran (zündet Brennbares)
+    // Merker dieses Schritts je Teil (jedes Teil hat seine eigenen: die Schleifen laufen auf mehreren Kernen)
+    for (auto& op : objects_) {
+        op->heatInfo.hasPilot = false;
+        op->heatInfo.boost = 0;
+    }
+    // Zellen mit Flamme daran (zündet Brennbares)
     auto pilotOf = [&](Object& o) -> std::vector<uint8_t>& {
-        auto& v = pilot[&o];
-        v.resize(o.heat.cells.size(), 0);
-        return v;
+        if (!o.heatInfo.hasPilot) {
+            o.heatInfo.pilot.assign(o.heat.cells.size(), 0);
+            o.heatInfo.hasPilot = true;
+        }
+        return o.heatInfo.pilot;
     };
     auto capacity = [&](const Object& o) { return std::max(1e-6, o.heatInfo.cellMass * thermal(o.material).specificHeat); };
 
@@ -525,6 +538,7 @@ void World::stepHeat(double dt) {
         o->heatInfo.idle = false;
     }
 
+    lap.mark("heat.tools");
     // ---- Berührung: Wärmeleitung zwischen Teilen und in den Boden (nur wenn die Physik läuft)
     if (simulating_) {
         std::unordered_map<uint64_t, int> points;  // Kontaktpunkte je Paar
@@ -575,6 +589,7 @@ void World::stepHeat(double dt) {
         }
     }
 
+    lap.mark("heat.contacts");
     // ---- Reibungswärme: halb in jedes der beiden Teile
     for (auto& [key, f] : frictionHeat_) {
         const glm::dvec3 p = f.point / std::max(f.energy, 1e-12);
@@ -592,97 +607,143 @@ void World::stepHeat(double dt) {
     }
     frictionHeat_.clear();
 
-    // ---- Feuer (aus dem letzten Schritt): Flamme heizt, was in ihr steckt; Strahlung auf die Umgebung
-    std::unordered_map<Object*, double> boost;  // Strahlung der Flamme auf die eigene Glut (größeres Feuer brennt schneller)
+    lap.mark("heat.friction");
+    // ---- Feuer (aus dem letzten Schritt) und glühende Teile heizen ihre Umgebung
+    // Feuer: Flamme heizt, was in ihr steckt; Strahlung auf die Umgebung
+    struct FireHeat {
+        const Fire* F;
+        double L, R0, Qr, reach, qMax;
+        glm::dvec3 axis, center, lo, hi;
+    };
+    std::vector<FireHeat> fireHeat;
     for (const Fire& F : fires_) {
         // Die Flamme leckt etwas über den Rand der brennenden Fläche: so kriecht das Feuer über das Holz weiter
         double spot = 0;
         for (const Fire::Spot& s : F.spots) spot += s.size;
         spot /= std::max<size_t>(1, F.spots.size());
-        const double L = std::max(F.height, 0.05), R0 = std::max(0.5 * F.diameter + 0.4 * spot, 0.03);
-        const double ub = 2.5 * std::sqrt(L + 0.1);  // Auftrieb der Flamme (m/s): Wind drückt sie zur Seite
-        const glm::dvec3 axis = glm::normalize(glm::dvec3(0, ub, 0) + wind_ * 0.8);
-        const double Qr = 0.3 * F.power;               // abgestrahlter Anteil
-        const double reach = std::sqrt(Qr / (4.0 * kPi * 300.0));  // bis hier kommen noch 300 W/m²
-        const glm::dvec3 center = F.base + axis * (0.4 * L);
-        const double qMax = F.emissivity * kSigma * std::pow(kelvin(F.tempC), 4);
-        for (auto& op : objects_) {
-            Object& o = *op;
-            const glm::dvec3 lo = F.base - glm::dvec3(R0 + reach), hi = F.base + axis * L + glm::dvec3(R0 + reach);
-            if (o.wMax.x < lo.x || o.wMin.x > hi.x || o.wMax.y < std::min(lo.y, F.base.y - 0.2) || o.wMin.y > hi.y || o.wMax.z < lo.z ||
-                o.wMin.z > hi.z)
+        FireHeat h;
+        h.F = &F;
+        h.L = std::max(F.height, 0.05);
+        h.R0 = std::max(0.5 * F.diameter + 0.4 * spot, 0.03);
+        const double ub = 2.5 * std::sqrt(h.L + 0.1);  // Auftrieb der Flamme (m/s): Wind drückt sie zur Seite
+        h.axis = glm::normalize(glm::dvec3(0, ub, 0) + wind_ * 0.8);
+        h.Qr = 0.3 * F.power;                             // abgestrahlter Anteil
+        h.reach = std::sqrt(h.Qr / (4.0 * kPi * 300.0));  // bis hier kommen noch 300 W/m²
+        h.center = F.base + h.axis * (0.4 * h.L);
+        h.qMax = F.emissivity * kSigma * std::pow(kelvin(F.tempC), 4);
+        h.lo = F.base - glm::dvec3(h.R0 + h.reach);
+        h.hi = F.base + h.axis * h.L + glm::dvec3(h.R0 + h.reach);
+        h.lo.y = std::min(h.lo.y, F.base.y - 0.2);
+        fireHeat.push_back(h);
+    }
+    // Glühende Teile (ab 300 °C) strahlen auf ihre Nachbarn. Teile, die nah beieinander liegen (Glutbett), werden zu einer
+    // Strahlungsquelle zusammengefasst: sonst strahlt jedes Kohlestück auf jedes andere (quadratisch viel Arbeit).
+    struct Radiator {
+        double Q = 0, tw = 0;
+        glm::dvec3 c{0};
+    };
+    std::vector<Radiator> own(objects_.size());  // Strahlung jedes Teils (die eigene zählt für es selbst nicht)
+    std::vector<int> groupOf(objects_.size(), -1);
+    std::vector<Radiator> groups;
+    {
+        std::vector<std::pair<int64_t, int>> bins;
+        for (int k = 0; k < (int)objects_.size(); ++k) {
+            const Object& E = *objects_[k];
+            if (E.heat.empty() || E.heatInfo.tMax < 300) continue;
+            Radiator& r = own[k];
+            const double eps = thermal(E.material).emissivity;
+            for (int i = 0; i < (int)E.heat.cells.size(); ++i) {
+                const HeatCell& hc = E.heat.cells[i];
+                if (!hc.inside || hc.area <= 0 || hc.temp < 300) continue;
+                const double q = eps * kSigma * (std::pow(kelvin(hc.temp), 4) - std::pow(kelvin(Ta), 4)) * hc.area;
+                r.Q += q;
+                r.c += (E.pos + E.rot * cellCenter(E.heat, i)) * q;
+                r.tw = std::max<double>(r.tw, hc.temp);
+            }
+            if (r.Q < 50) {
+                r = Radiator();
+                continue;
+            }
+            r.c /= r.Q;
+            const glm::ivec3 b = glm::ivec3(glm::floor(r.c / 0.3));  // 30 cm: ein Glutbett ist eine Quelle
+            bins.push_back({(int64_t(b.x & 0x1fffff) << 42) | (int64_t(b.y & 0x1fffff) << 21) | int64_t(b.z & 0x1fffff), k});
+        }
+        std::sort(bins.begin(), bins.end());
+        for (size_t i = 0; i < bins.size(); ++i) {
+            if (i == 0 || bins[i].first != bins[i - 1].first) groups.emplace_back();
+            Radiator& g = groups.back();
+            const Radiator& r = own[bins[i].second];
+            g.c = (g.c * g.Q + r.c * r.Q) / (g.Q + r.Q);
+            g.Q += r.Q;
+            g.tw = std::max(g.tw, r.tw);
+            groupOf[bins[i].second] = (int)groups.size() - 1;
+        }
+    }
+    // Jedes Teil nimmt Flamme und Strahlung auf: unabhängig voneinander, darum auf alle Kerne verteilt
+    jobs::parallelFor(objects_.size(), [&](size_t k) {
+        Object& o = *objects_[k];
+        bool touched = false;
+        for (const FireHeat& fh : fireHeat) {
+            const Fire& F = *fh.F;
+            if (o.wMax.x < fh.lo.x || o.wMin.x > fh.hi.x || o.wMax.y < fh.lo.y || o.wMin.y > fh.hi.y || o.wMax.z < fh.lo.z || o.wMin.z > fh.hi.z)
                 continue;
             if (!ensureHeat(o)) continue;
             HeatGrid& g = o.heat;
             const Thermal& th = thermal(o.material);
             const double C = capacity(o), half = 0.5 * cellSize(g);
             auto& pl = pilotOf(o);
-            bool touched = false;
             for (int i = 0; i < (int)g.cells.size(); ++i) {
                 HeatCell& c = g.cells[i];
                 if (!c.inside || c.area <= 0) continue;
                 const glm::dvec3 p = o.pos + o.rot * cellCenter(g, i);
                 const glm::dvec3 r = p - F.base;
-                const double z = glm::dot(r, axis);
-                const double radial = glm::length(r - axis * z);
-                const double Rz = std::max(R0 * (1.0 - 0.6 * std::clamp(z / L, 0.0, 1.0)), 0.03);
-                if (z > -half && z < L + half && radial < Rz + half) {  // in der Flamme
-                    const double tl = Ta + (F.tempC - Ta) * (1.0 - 0.55 * std::clamp(z / L, 0.0, 1.0));
+                const double z = glm::dot(r, fh.axis);
+                const double radial = glm::length(r - fh.axis * z);
+                const double Rz = std::max(fh.R0 * (1.0 - 0.6 * std::clamp(z / fh.L, 0.0, 1.0)), 0.03);
+                if (z > -half && z < fh.L + half && radial < Rz + half) {  // in der Flamme
+                    const double tl = Ta + (F.tempC - Ta) * (1.0 - 0.55 * std::clamp(z / fh.L, 0.0, 1.0));
                     const double h = 40.0 + F.emissivity * th.emissivity * (radiationH(1.0, tl, c.temp));
                     c.temp = (float)relax(c.temp, tl, h * c.area, C, dt);
                     pl[i] = 1;
                     touched = true;
-                    if (c.burning) boost[&o] = std::max(boost[&o], F.emissivity);
+                    if (c.burning) o.heatInfo.boost = std::max(o.heatInfo.boost, F.emissivity);
                 } else {
-                    const double d2 = std::max(glm::dot(p - center, p - center), 1e-4);
-                    const double q = std::min(Qr / (4.0 * kPi * d2), qMax) * th.emissivity;
+                    const double d2 = std::max(glm::dot(p - fh.center, p - fh.center), 1e-4);
+                    const double q = std::min(fh.Qr / (4.0 * kPi * d2), fh.qMax) * th.emissivity;
                     if (q < 50.0 || c.temp >= F.tempC) continue;
                     const double G = q * c.area / std::max(F.tempC - c.temp, 1.0);  // bis höchstens Flammentemperatur
                     c.temp = (float)relax(c.temp, F.tempC, G, C, dt);
                     touched = true;
                 }
             }
-            if (touched) o.heatInfo.idle = false;
         }
-    }
-    // Glühende Teile strahlen auf ihre Nachbarn (Wärmestrahlung, ohne Abschattung)
-    for (auto& ep : objects_) {
-        Object& E = *ep;
-        if (E.heat.empty() || E.heatInfo.tMax < 300) continue;
-        double Q = 0, tw = 0;
-        glm::dvec3 c(0);
-        const double eps = thermal(E.material).emissivity;
-        for (int i = 0; i < (int)E.heat.cells.size(); ++i) {
-            const HeatCell& hc = E.heat.cells[i];
-            if (!hc.inside || hc.area <= 0 || hc.temp < 300) continue;
-            const double q = eps * kSigma * (std::pow(kelvin(hc.temp), 4) - std::pow(kelvin(Ta), 4)) * hc.area;
-            Q += q;
-            c += (E.pos + E.rot * cellCenter(E.heat, i)) * q;
-            tw = std::max<double>(tw, hc.temp);
-        }
-        if (Q < 50) continue;
-        c /= Q;
-        const double reach = std::sqrt(Q / (4.0 * kPi * 300.0));
-        const double qMax = eps * kSigma * std::pow(kelvin(tw), 4);
-        for (auto& op : objects_) {
-            Object& o = *op;
-            if (&o == &E) continue;
-            const glm::dvec3 q0 = glm::clamp(c, o.wMin, o.wMax);
-            if (glm::length(q0 - c) > reach) continue;
+        for (int gi = 0; gi < (int)groups.size(); ++gi) {
+            Radiator src = groups[gi];
+            if (groupOf[k] == gi) {  // die eigene Strahlung zählt nicht
+                src.Q = groups[gi].Q - own[k].Q;
+                if (src.Q < 50) continue;
+                src.c = (groups[gi].c * groups[gi].Q - own[k].c * own[k].Q) / src.Q;
+            }
+            const double reach = std::sqrt(src.Q / (4.0 * kPi * 300.0));
+            const glm::dvec3 q0 = glm::clamp(src.c, o.wMin, o.wMax);
+            if (glm::length(q0 - src.c) > reach) continue;
             if (!ensureHeat(o)) continue;
             HeatGrid& g = o.heat;
             const double C = capacity(o), eo = thermal(o.material).emissivity;
+            const double qMax = 0.9 * kSigma * std::pow(kelvin(src.tw), 4);
             for (int i = 0; i < (int)g.cells.size(); ++i) {
                 HeatCell& hc = g.cells[i];
-                if (!hc.inside || hc.area <= 0 || hc.temp >= tw) continue;
+                if (!hc.inside || hc.area <= 0 || hc.temp >= src.tw) continue;
                 const glm::dvec3 p = o.pos + o.rot * cellCenter(g, i);
-                const double q = std::min(Q / (4.0 * kPi * std::max(glm::dot(p - c, p - c), 1e-4)), qMax) * eo;
+                const double q = std::min(src.Q / (4.0 * kPi * std::max(glm::dot(p - src.c, p - src.c), 1e-4)), qMax) * eo;
                 if (q < 50.0) continue;
-                hc.temp = (float)relax(hc.temp, tw, q * hc.area / std::max(tw - hc.temp, 1.0), C, dt);
+                hc.temp = (float)relax(hc.temp, src.tw, q * hc.area / std::max(src.tw - hc.temp, 1.0), C, dt);
+                touched = true;
             }
-            o.heatInfo.idle = false;
         }
-    }
+        if (touched) o.heatInfo.idle = false;
+    });
+    lap.mark("heat.fires+radiators");
 
     // ---- Jedes Teil: Luft, Verbrennung, Schmelzen, Wärmeleitung im Inneren
     struct BurnSpot {
@@ -692,21 +753,28 @@ void World::stepHeat(double dt) {
         uint32_t obj;
         float soot;
     };
-    std::vector<BurnSpot> spots;
-    for (auto& op : objects_) {
-        Object& o = *op;
-        if (o.heat.empty() || o.heatInfo.idle) continue;
+    // Jedes Teil rechnet nur mit seinen eigenen Zellen: auf alle Kerne verteilt
+    std::vector<Object*> active;
+    for (auto& op : objects_)
+        if (!op->heat.empty() && !op->heatInfo.idle) active.push_back(op.get());
+    std::vector<std::vector<BurnSpot>> spotsOf(active.size());
+    std::vector<glm::vec3> velocity(active.size(), glm::vec3(0));  // Fahrtwind: Physik vorher abfragen (Hauptthread)
+    if (simulating_)
+        for (size_t k = 0; k < active.size(); ++k)
+            if (active[k]->body != kNoBody) velocity[k] = physics_.linearVelocity(active[k]->body);
+    jobs::parallelFor(active.size(), [&](size_t k) {
+        Object& o = *active[k];
+        std::vector<BurnSpot>& spots = spotsOf[k];
         HeatGrid& g = o.heat;
         const Thermal& th = thermal(o.material);
         const bool fuelMat = combustible(o.material);
         const double C = capacity(o), m = std::max(o.heatInfo.cellMass, 1e-9);
-        const auto pit = pilot.find(&o);
-        const std::vector<uint8_t>* pl = pit != pilot.end() ? &pit->second : nullptr;
+        const std::vector<uint8_t>* pl = o.heatInfo.hasPilot ? &o.heatInfo.pilot : nullptr;
         // Fahrtwind
         double vrel = glm::length(wind_);
-        if (o.body != kNoBody && simulating_) vrel = glm::length(glm::dvec3(physics_.linearVelocity(o.body)) - wind_);
+        if (o.body != kNoBody && simulating_) vrel = glm::length(glm::dvec3(velocity[k]) - wind_);
         const double forced = 6.0 * std::pow(vrel, 0.8);
-        const double fb = boost.count(&o) ? boost[&o] : 0.0;
+        const double fb = o.heatInfo.boost;
         const glm::dmat3 rot = glm::mat3_cast(o.rot);
         for (int i = 0; i < (int)g.cells.size(); ++i) {
             HeatCell& c = g.cells[i];
@@ -811,11 +879,45 @@ void World::stepHeat(double dt) {
                 for (size_t i = 0; i < g.cells.size(); ++i) g.cells[i].temp += dT[i];
             }
         }
+        // Viele brennende Zellen eines Teils zu wenigen Stellen zusammenfassen (kleine Teile: eine, große: höchstens 48).
+        // Spart Rechenzeit beim Bilden der Feuer und Flammen in der Darstellung.
+        const size_t maxSpots = o.volume < 5e-5 ? 1 : 48;
+        if (spots.size() > maxSpots) {
+            glm::dvec3 lo(1e30), hi(-1e30);
+            for (const BurnSpot& s : spots) lo = glm::min(lo, s.pos), hi = glm::max(hi, s.pos);
+            const double bin = std::max(1e-3, glm::compMax(hi - lo) / std::max(1.0, std::cbrt((double)maxSpots)) * 1.0001);
+            std::vector<std::pair<int64_t, BurnSpot>> merged;
+            for (const BurnSpot& s : spots) {
+                const glm::ivec3 c = maxSpots == 1 ? glm::ivec3(0) : glm::ivec3(glm::floor((s.pos - lo) / bin));
+                const int64_t key = (int64_t(c.x) << 40) | (int64_t(c.y) << 20) | int64_t(c.z);
+                auto it = std::find_if(merged.begin(), merged.end(), [&](const auto& m) { return m.first == key; });
+                if (it == merged.end()) {
+                    merged.push_back({key, s});
+                    merged.back().second.pos *= (double)s.power;
+                    continue;
+                }
+                BurnSpot& m = it->second;
+                m.pos += s.pos * (double)s.power;
+                m.normal += s.normal;
+                m.power += s.power;
+                m.size = std::max(m.size, s.size);
+            }
+            spots.clear();
+            for (auto& [key, m] : merged) {
+                m.pos /= std::max<double>(m.power, 1e-9);
+                m.normal = glm::length(m.normal) > 1e-6f ? glm::normalize(m.normal) : glm::vec3(0, 1, 0);
+                m.size = std::max<float>(m.size, (float)(maxSpots == 1 ? glm::compMax(hi - lo) : bin));
+                spots.push_back(m);
+            }
+        }
         // Zusammenfassung, Ruhe erkennen
         const bool calm = summarizeHeat(o, Ta);
-        o.heatInfo.idle = calm && !(pit != pilot.end());
-    }
+        o.heatInfo.idle = calm && !o.heatInfo.hasPilot;
+    });
+    std::vector<BurnSpot> spots;
+    for (auto& s : spotsOf) spots.insert(spots.end(), s.begin(), s.end());
 
+    lap.mark("heat.cells (all parts)");
     // ---- Feuer: brennende Stellen zu Feuern zusammenfassen (Nachbarn, deren Flammen sich berühren)
     fires_.clear();
     if (!spots.empty()) {
@@ -824,19 +926,31 @@ void World::stepHeat(double dt) {
         for (const BurnSpot& s : spots) link = std::max(link, linkOf(s, s));
         std::vector<int> parent(spots.size());
         std::iota(parent.begin(), parent.end(), 0);
-        std::function<int(int)> root = [&](int i) { return parent[i] == i ? i : parent[i] = root(parent[i]); };
-        std::unordered_map<int64_t, std::vector<int>> bins;
+        auto root = [&](int i) {  // Union-Find mit Pfadhalbierung
+            while (parent[i] != i) i = parent[i] = parent[parent[i]];
+            return i;
+        };
+        // Stellen nach Rasterzelle sortiert: Nachbarn in den 27 Zellen ringsum per Binärsuche
         auto key = [](const glm::ivec3& c) { return (int64_t(c.x & 0x1fffff) << 42) | (int64_t(c.y & 0x1fffff) << 21) | int64_t(c.z & 0x1fffff); };
-        for (int i = 0; i < (int)spots.size(); ++i) bins[key(glm::ivec3(glm::floor(spots[i].pos / link)))].push_back(i);
+        std::vector<std::pair<int64_t, int>> bins(spots.size());
+        for (int i = 0; i < (int)spots.size(); ++i) bins[i] = {key(glm::ivec3(glm::floor(spots[i].pos / link))), i};
+        std::sort(bins.begin(), bins.end());
         for (int i = 0; i < (int)spots.size(); ++i) {
             const glm::ivec3 c = glm::ivec3(glm::floor(spots[i].pos / link));
             for (int dx = -1; dx <= 1; ++dx)
                 for (int dy = -1; dy <= 1; ++dy)
                     for (int dz = -1; dz <= 1; ++dz) {
-                        auto it = bins.find(key(c + glm::ivec3(dx, dy, dz)));
-                        if (it == bins.end()) continue;
-                        for (int j : it->second)
-                            if (j > i && glm::length(spots[i].pos - spots[j].pos) < linkOf(spots[i], spots[j])) parent[root(j)] = root(i);
+                        const int64_t k = key(c + glm::ivec3(dx, dy, dz));
+                        auto it = std::lower_bound(bins.begin(), bins.end(), std::make_pair(k, -1));
+                        for (; it != bins.end() && it->first == k; ++it) {
+                            const int j = it->second;
+                            if (j <= i) continue;
+                            const int ri = root(i), rj = root(j);
+                            if (ri == rj) continue;  // schon im selben Feuer
+                            const glm::dvec3 d = spots[i].pos - spots[j].pos;
+                            const double l = linkOf(spots[i], spots[j]);
+                            if (glm::dot(d, d) < l * l) parent[rj] = ri;
+                        }
                     }
         }
         std::unordered_map<int, size_t> fireOf;
@@ -880,6 +994,7 @@ void World::stepHeat(double dt) {
         }
     }
 
+    lap.mark("heat.fireClusters");
     // ---- Form: Tropfen landen, abgebrannte und geschmolzene Stellen verschwinden (nur wenn die Physik läuft)
     if (simulating_) {
         for (auto& op : objects_) {  // Tropfen
@@ -888,9 +1003,10 @@ void World::stepHeat(double dt) {
             o.heatInfo.age += dt;
         }
         heatShapeAccum_ += dt;
-        const bool cells = heatShapeAccum_ >= kShapeEvery * std::max(1.0, heatSpeed_ * 0.25);
+        const bool cells = heatShapeAccum_ >= 0.1;  // reihum mit Zeitbudget, siehe heatShapes
         if (cells) heatShapeAccum_ = 0;
         heatShapes(cells);
+        lap.mark(cells ? "heat.shapes (cells)" : "heat.shapes (drops)");
     }
 }
 
@@ -1016,7 +1132,12 @@ void World::heatShapes(bool cells) {
         if (residueOf(i) >= 0) isResidue[residueOf(i)] = 1;
     size_t residueCount = 0;
     for (const auto& o : objects_) residueCount += isResidue[std::clamp(o->material, 0, (int)isResidue.size() - 1)];
+    // Reihum und mit Zeitbudget: viele Teile auf einmal ließen das Bild ruckeln, der Rest kommt im nächsten Wärmeschritt
+    if (!ids.empty()) std::rotate(ids.begin(), ids.begin() + heatShapeCursor_ % ids.size(), ids.end());
+    const auto budgetStart = std::chrono::steady_clock::now();
     for (uint32_t id : ids) {
+        if (std::chrono::steady_clock::now() - budgetStart > std::chrono::microseconds(4000)) break;
+        ++heatShapeCursor_;
         Object* o = find(id);
         if (!o || o->heat.empty()) continue;
         HeatGrid& g = o->heat;
@@ -1093,6 +1214,7 @@ void World::heatShapes(bool cells) {
                 const double f = std::cbrt(target / now);
                 g.origin *= f;  // Gitter mitskalieren: jede Zelle behält ihre Werte
                 g.cell *= f;
+                PROFILE("shapes.scaleSmall");
                 if (scalePart(id, glm::dvec3(f), &err)) {
                     for (HeatCell& c : o->heat.cells) c.shape = burnLevel(c.fuel);
                     if (o->body != kNoBody && !o->fixed) {
@@ -1133,6 +1255,7 @@ void World::heatShapes(bool cells) {
                 if (glm::compMin(size) < 0.003 || size.x * size.y * size.z < 2e-7) continue;
                 std::string base = materials()[residue].name;
                 base[0] = (char)std::toupper((unsigned char)base[0]);
+                PROFILE("shapes.coalSpawn");
                 Object* ch = addBox(residue, size, o->pos + o->rot * (0.5 * (mn + mx)), nextName(base));
                 if (!ch) continue;
                 setTransform(*ch, ch->pos, o->rot);
@@ -1213,6 +1336,7 @@ void World::heatShapes(bool cells) {
         bool ok;
         if (!fuelMat && o->solid.pieces.size() + tools.size() <= 12) {
             // wenige geschmolzene Stellen: genau abziehen, die Form bleibt erhalten
+            PROFILE("shapes.subtract");
             ok = removeMaterial(id, tools, &removed, &parts, &err);
         } else {
             // Die Form aus den übrigen Zellen neu bauen (jeder einzelne Schnitt würde das Teil in immer mehr Stücke zerlegen
@@ -1223,6 +1347,7 @@ void World::heatShapes(bool cells) {
             for (int i = 0; i < (int)g.cells.size(); ++i) keep[i] = g.cells[i].inside;
             for (int i : burnt) keep[i] = 0;
             for (int i : molten) keep[i] = 0;
+            PROFILE("shapes.buildBoxes");
             std::vector<float> level(g.cells.size(), 1.0f);
             if (fuelMat)
                 for (int i = 0; i < (int)g.cells.size(); ++i)
@@ -1273,7 +1398,29 @@ void World::heatShapes(bool cells) {
             for (int i = 0; i < (int)g.cells.size(); ++i)
                 if (keep[i]) g.cells[i].shape = level[i];
             o->heatInfo.keepLayout = true;  // die neue Form passt zu diesem Gitter
-            ok = !s.pieces.empty() && applyResult(*o, std::move(s), &parts, &err);
+            if (fuelMat && s.pieces.size() > 1) {
+                // Brennt ein Teil durch, fallen oft viele Krümel ab. Die kleinen sind Asche; höchstens 8 Bruchstücke bleiben
+                // (jedes neue Teil kostet Grafik, Physik und ein Wärmegitter, viele auf einmal ließen das Bild ruckeln)
+                std::vector<solid::Solid> comps = solid::connectedComponents(s);
+                if (comps.size() > 1) {
+                    std::vector<std::pair<double, size_t>> vol;
+                    double total = 0;
+                    for (size_t c = 0; c < comps.size(); ++c) {
+                        vol.push_back({solid::volume(comps[c]), c});
+                        total += vol.back().first;
+                    }
+                    std::sort(vol.rbegin(), vol.rend());
+                    solid::Solid kept;
+                    for (size_t r = 0; r < vol.size(); ++r)
+                        if (r == 0 || (r < 8 && vol[r].first > std::max(1e-6, 0.02 * total)))
+                            for (auto& p : comps[vol[r].second].pieces) kept.pieces.push_back(std::move(p));
+                    s = std::move(kept);
+                }
+            }
+            {
+                PROFILE("shapes.rebuildFromCells");
+                ok = !s.pieces.empty() && applyResult(*o, std::move(s), &parts, &err);
+            }
             if (Object* p = find(id)) p->heatInfo.keepLayout = false;
             if (!ok && err.empty()) err = "nothing would be left";
         }

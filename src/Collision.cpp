@@ -652,3 +652,20 @@ std::vector<std::vector<glm::vec3>> clusterHulls(const std::vector<solid::Piece>
 }
 
 } // namespace
+
+// Schnelle Näherung, solange die genaue Form im Hintergrund entsteht: jedes Stück eine Hülle (nichts zusammengefasst,
+// darum auch keine Lücke zugeschüttet), hauchdünne Splitter weggelassen (an ihnen findet die Physik die falsche Richtung)
+CollisionShape quickCollisionShape(const solid::Solid& s) {
+    CollisionShape out;
+    std::vector<std::vector<glm::vec3>> thin;
+    for (const auto& p : s.pieces) {
+        if (p.faces.empty()) continue;
+        const std::vector<glm::dvec3> pts = uniquePoints(p);
+        if (pts.size() < 4) continue;
+        std::vector<glm::vec3> f(pts.begin(), pts.end());
+        if (thicknessOf(pts) < 0.0015) thin.push_back(std::move(f));
+        else out.hulls.push_back(std::move(f));
+    }
+    if (out.hulls.empty()) out.hulls = std::move(thin);  // nur dünne Stücke (Blech): die nehmen
+    return out;
+}

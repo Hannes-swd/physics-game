@@ -15,6 +15,8 @@
 #include "Collision.h"
 #include "Materials.h"
 #include "ObjLoader.h"
+#include "Jobs.h"
+#include "Profile.h"
 
 namespace {
 
@@ -179,6 +181,7 @@ Object* World::insert(std::unique_ptr<Object> o) {
 }
 
 void World::rebuildGeometry(Object& o) {
+    PROFILE("geom.rebuild (all)");
     std::vector<solid::Vertex> verts;
     o.edges.clear();
     if (o.kind == ObjKind::Solid) {
@@ -202,42 +205,103 @@ void World::rebuildGeometry(Object& o) {
     o.edgesValid = false;
     o.netRev = ++netRevs_;
     if (o.kind == ObjKind::Solid) {
-        const std::vector<BoreGeom> oldBores = o.coll.bores;
+        // Bohrungen vor der Änderung (läuft schon eine Berechnung im Hintergrund, die von davor)
+        const std::vector<BoreGeom> oldBores = o.collisionPending ? o.collisionOldBores : o.coll.bores;
+        o.collisionPending = false;
         if (legacyCollision_) {  // nur für Messungen: jedes Stück eine Hülle
             o.coll = CollisionShape();
             for (const auto& p : o.solid.pieces) o.coll.hulls.push_back(uniquePoints(p));
         } else if (o.hullCache && o.hullCacheMode == o.collision) {
             o.coll = *o.hullCache;  // Form unverändert (Rückgängig, Kopie, Laden mit Cache)
+        } else if (asyncCollision_ && o.solid.pieces.size() > 6) {
+            // Die genaue Form kann bei vielen Stücken Sekunden dauern: im Hintergrund rechnen, bis dahin eine grobe
+            PROFILE("geom.collisionQuick");
+            o.coll = quickCollisionShape(o.solid);
+            o.collisionPending = true;
+            o.collisionOldBores = oldBores;
+            CollisionJob job;
+            job.id = o.id;
+            job.rev = o.netRev;
+            job.mode = o.collision;
+            job.task = std::make_shared<CollisionTask>();
+            auto solid = std::make_shared<const solid::Solid>(o.solid);
+            std::shared_ptr<CollisionTask> task = job.task;
+            const int mode = o.collision;
+            jobs::submit([solid, task, mode] {
+                task->result = buildCollisionShape(*solid, mode);
+                task->done = true;
+            });
+            collisionJobs_.push_back(std::move(job));
         } else {
             // Nachbarstücke zusammenfassen, solange keine Lücke (Loch, Nut) zugeschüttet wird; runde Bohrungen und
             // Zylinder exakt
+            PROFILE("geom.collisionShape");
             o.coll = buildCollisionShape(o.solid, o.collision);
             o.hullCache = std::make_shared<const CollisionShape>(o.coll);
             o.hullCacheMode = o.collision;
         }
-        // Abrieb gehört zur Bohrung: nach einer Bearbeitung der gleichen Bohrung wieder zuordnen
-        if (oldBores.empty()) {  // neu, geladen oder aus Rückgängig: Werte gelten, wenn die Anzahl passt
-            o.boreWear.resize(o.coll.bores.size(), 0.0);
-        } else {
-            std::vector<double> wear(o.coll.bores.size(), 0.0);
-            for (size_t i = 0; i < o.coll.bores.size(); ++i)
-                for (size_t k = 0; k < oldBores.size() && k < o.boreWear.size(); ++k) {
-                    const BoreGeom& a = o.coll.bores[i];
-                    const BoreGeom& b = oldBores[k];
-                    if (glm::length(a.center - b.center) < 0.001 && std::abs(glm::dot(a.axis, b.axis)) > 0.999 &&
-                        std::abs(a.radius - b.radius) < 1e-4)
-                        wear[i] = o.boreWear[k];
-                }
-            o.boreWear = wear;
-        }
+        if (!o.collisionPending) remapBoreWear(o, oldBores);
         o.boreRt.assign(o.coll.bores.size(), Object::BoreRuntime());
     }
     if (renderer_) {
         renderer_->destroyMesh(o.mesh);
+        PROFILE("geom.gpuMesh");
         o.mesh = renderer_->createMesh(verts);
     }
-    if (!o.heat.empty()) fitHeat(o);  // Temperaturgitter an die neue Form anpassen
+    if (!o.heat.empty()) {
+        PROFILE("geom.fitHeat");
+        fitHeat(o);  // Temperaturgitter an die neue Form anpassen
+    }
     refreshPlacement(o);
+}
+
+// Abrieb gehört zur Bohrung: nach einer Bearbeitung der gleichen Bohrung wieder zuordnen
+void World::remapBoreWear(Object& o, const std::vector<BoreGeom>& oldBores) {
+    if (oldBores.empty()) {  // neu, geladen oder aus Rückgängig: Werte gelten, wenn die Anzahl passt
+        o.boreWear.resize(o.coll.bores.size(), 0.0);
+        return;
+    }
+    std::vector<double> wear(o.coll.bores.size(), 0.0);
+    for (size_t i = 0; i < o.coll.bores.size(); ++i)
+        for (size_t k = 0; k < oldBores.size() && k < o.boreWear.size(); ++k) {
+            const BoreGeom& a = o.coll.bores[i];
+            const BoreGeom& b = oldBores[k];
+            if (glm::length(a.center - b.center) < 0.001 && std::abs(glm::dot(a.axis, b.axis)) > 0.999 && std::abs(a.radius - b.radius) < 1e-4)
+                wear[i] = o.boreWear[k];
+        }
+    o.boreWear = wear;
+}
+
+// Fertige Kollisionsformen aus dem Hintergrund übernehmen: Physik-Körper mit der genauen Form, die Bewegung bleibt
+void World::pollCollisionJobs() {
+    for (size_t k = 0; k < collisionJobs_.size();) {
+        CollisionJob& job = collisionJobs_[k];
+        if (!job.task->done) {
+            ++k;
+            continue;
+        }
+        Object* o = find(job.id);
+        if (o && o->collisionPending && o->netRev == job.rev && o->collision == job.mode) {
+            PROFILE("geom.collisionApply");
+            o->coll = std::move(job.task->result);
+            o->hullCache = std::make_shared<const CollisionShape>(o->coll);
+            o->hullCacheMode = job.mode;
+            o->collisionPending = false;
+            remapBoreWear(*o, o->collisionOldBores);
+            o->collisionOldBores.clear();
+            o->boreRt.assign(o->coll.bores.size(), Object::BoreRuntime());
+            const bool moving = o->body != kNoBody && !o->fixed && physics_.isActive(o->body);
+            const glm::vec3 v = moving ? physics_.linearVelocity(o->body) : glm::vec3(0);
+            const glm::vec3 w = moving ? physics_.angularVelocity(o->body) : glm::vec3(0);
+            rebuildBody(*o);
+            if (moving && simulating_ && o->body != kNoBody) {
+                physics_.activate(o->body);
+                physics_.setVelocity(o->body, v, w);
+            }
+        }
+        if (k + 1 < collisionJobs_.size()) collisionJobs_[k] = std::move(collisionJobs_.back());
+        collisionJobs_.pop_back();
+    }
 }
 
 // Außenflächen für die Luftkräfte sammeln. Flächen in derselben Ebene werden zusammengefasst.
@@ -290,7 +354,10 @@ void World::releaseBody(Object& o) {
     releaseJointsOf(o.id);  // Verbindungen zuerst lösen, dann den Körper
     if (o.hinge) physics_.destroyConstraint(o.hinge);
     o.hinge = 0;
-    if (o.body != kNoBody) physics_.destroyBody(o.body);
+    if (o.body != kNoBody) {
+        byBody_.erase(o.body);
+        physics_.destroyBody(o.body);
+    }
     o.body = kNoBody;
 }
 
@@ -300,6 +367,7 @@ void World::releaseAll(Object& o) {
 }
 
 void World::rebuildBody(Object& o) {
+    PROFILE("body.rebuild");
     releaseBody(o);
     o.boreInUse = false;  // neuer Körper: ohne Extra-Durchläufe, bis wieder etwas anliegt
     const Material& m = materials()[o.material];
@@ -336,6 +404,7 @@ void World::rebuildBody(Object& o) {
     o.ccd = false;
     d.userData = o.id;
     o.body = physics_.createBody(d);
+    if (o.body != kNoBody) byBody_[o.body] = &o;
     if (o.body == kNoBody) {
         std::fprintf(stderr, "Warning: no collision shape for '%s'\n", o.name.c_str());
         return;
@@ -579,9 +648,8 @@ Object* World::find(uint32_t id) {
 }
 
 Object* World::fromBody(BodyHandle b) {
-    for (auto& o : objects_)
-        if (o->body == b) return o.get();
-    return nullptr;
+    auto it = byBody_.find(b);
+    return it == byBody_.end() ? nullptr : it->second;
 }
 
 void World::worldBounds(const Object& o, glm::dvec3& mn, glm::dvec3& mx) const {
@@ -618,6 +686,7 @@ void World::clear() {
     objects_.clear();
     grid_.clear();
     byId_.clear();
+    byBody_.clear();
     nextId_ = 1;  // neue Szene: Nummern wieder ab 1 (Laden/Rückgängig setzen sie danach selbst)
     nextJointId_ = 1;
     lastCreated_ = 0;
@@ -735,7 +804,10 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     if (parts.empty()) return false;
     std::sort(parts.begin(), parts.end(),
               [](const solid::Solid& a, const solid::Solid& b) { return solid::volume(a) > solid::volume(b); });
-    for (auto& p : parts) solid::classifyInternalFaces(p);
+    {
+        PROFILE("geom.internalFaces");
+        for (auto& p : parts) solid::classifyInternalFaces(p);
+    }
     const glm::dvec3 framePos = o.pos;
     const glm::dquat frameRot = o.rot;
     const uint32_t id = o.id;
@@ -849,7 +921,11 @@ bool World::drill(uint32_t id, const glm::dvec3& from, const glm::dvec3& dir, do
 }
 
 bool World::applyResult(Object& o, solid::Solid s, std::vector<uint32_t>* resultIds, std::string* err) {
-    auto parts = solid::connectedComponents(s);
+    std::vector<solid::Solid> parts;
+    {
+        PROFILE("geom.connectedParts");
+        parts = solid::connectedComponents(s);
+    }
     if (parts.empty()) {
         if (err) *err = "nothing would be left of the part";
         return false;
@@ -1181,12 +1257,25 @@ void World::handleDeepContacts() {
 
 void World::afterStep(float h) {
     simTime_ += h;
-    syncFromPhysics();  // aktuelle Lage, bevor Verbindungen und Brüche ausgewertet werden
-    handleDeepContacts();
-    checkJoints(h);
-    processImpacts();
-    processBores(h);
+    {
+        PROFILE("step.sync+deepContacts");
+        syncFromPhysics();  // aktuelle Lage, bevor Verbindungen und Brüche ausgewertet werden
+        handleDeepContacts();
+    }
+    {
+        PROFILE("step.joints");
+        checkJoints(h);
+    }
+    {
+        PROFILE("step.impacts");
+        processImpacts();
+    }
+    {
+        PROFILE("step.bores");
+        processBores(h);
+    }
     if (heatOn_) {  // Wärme: 20 Schritte je Sekunde (im Zeitraffer jeweils länger)
+        PROFILE("step.heat");
         collectFrictionHeat(h);
         heatAccum_ += h;
         if (heatAccum_ >= 0.05) {

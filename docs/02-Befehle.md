@@ -27,7 +27,7 @@ Dokumentation sind deutsch.
 
 | Bereich | Befehle |
 |---|---|
-| Hilfe & Status | `help`, `status`, `materials`, `chunks` |
+| Hilfe & Status | `help`, `status`, `profile`, `materials`, `chunks` |
 | Erstellen | `new box`, `new cylinder`, `new tube`, `new sphere`, `new gear`, `new propeller`, `new wedge`, `new spike`, `import`, `copy` |
 | Auslesen | `list`, `info`, `inspect`, `select`, `overlaps`, `edges` |
 | Sägen & Bohren | `cut`, `drill`, `drillat`, `countersink` |
@@ -60,6 +60,11 @@ Zeigt alle Befehle und die Befehlssprache. Anderer Name: `?`.
 Zeigt den aktuellen Zustand: Physik an/aus, Anzahl Teile und Chunks, Auswahl, Rückgängig-Schritte und wie oft
 ein Teil gerettet wurde (siehe [05](05-Physik-und-Materialien.md#ineinanderstecken-und-rettung)).
 Mit Fenster zusätzlich: Modus, Ansicht, Werkzeug, Kamera, Spielfigur, Fenster, laufende Befehle, FPS, Physik, Fernsteuerung.
+
+### `profile [reset|on|off]`
+Wo bleibt die Rechenzeit? Zeigt seit dem letzten `profile reset` die Bilder pro Sekunde, das langsamste Bild, wie viele
+Bilder über 50 ms dauerten (Ruckler) und je Engine-Abschnitt: Aufrufe, Summe, ms pro Sekunde, ms pro Aufruf, Höchstwert.
+Beispiel: `profile reset ; wait 10 ; profile`. Die Abschnitte sind in [07](07-Engine-Aufbau.md#leistung-und-threads) erklärt.
 
 ```
 > status

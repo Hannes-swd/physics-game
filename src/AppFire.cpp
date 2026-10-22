@@ -12,6 +12,7 @@
 #include <random>
 
 #include "Materials.h"
+#include "Profile.h"
 
 namespace {
 
@@ -141,6 +142,7 @@ void App::updateFx(float dt) {
 // ============================================================================ Zeichnen
 
 void App::addFireFx(FrameDesc& fd) {
+    PROFILE("app.fireFx");
     if (views_.empty()) return;
     const glm::dvec3 O = renderOrigin_;
     const glm::dvec3 eye = views_[0].eye;
@@ -237,6 +239,7 @@ void App::addFireFx(FrameDesc& fd) {
 
 // Temperaturgitter eines Teils für den Shader, nur wenn man etwas sieht (Glühen, Kohle, Anlauffarben, Reif, Schmelze)
 void App::addHeatData(FrameDesc& fd, DrawItem& it, const Object& o) {
+    PROFILE("app.heatData");
     const HeatGrid& g = o.heat;
     if (g.empty() || g.cells.empty()) return;
     const bool metal = materials()[o.material].temper != Temper::None;  // Anlauffarben

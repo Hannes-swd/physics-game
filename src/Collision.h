@@ -46,6 +46,9 @@ struct CollisionShape {
 CollisionShape buildCollisionShape(const solid::Solid& s, int mode, CollisionBuildInfo* info = nullptr);
 std::vector<std::vector<glm::vec3>> buildCollisionHulls(const solid::Solid& s, int mode, CollisionBuildInfo* info = nullptr);
 
+// Schnell, aber gröber: jedes Stück eine Hülle (für die Zeit, bis die genaue Form im Hintergrund fertig ist)
+CollisionShape quickCollisionShape(const solid::Solid& s);
+
 // Runde Bohrungen eines Teils (volle 360°, mindestens Ø 2 mm)
 std::vector<BoreGeom> findBores(const solid::Solid& s);
 

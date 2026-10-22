@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "Png.h"
+#include "Profile.h"
 
 namespace {
 
@@ -702,7 +703,10 @@ void Renderer::waitIdle() {
 
 void Renderer::render(const FrameDesc& fd) {
     Frame& fr = frames_[frameIndex_];
-    vkWaitForFences(device_, 1, &fr.fence, VK_TRUE, UINT64_MAX);
+    {
+        PROFILE("render.waitGpu");
+        vkWaitForFences(device_, 1, &fr.fence, VK_TRUE, UINT64_MAX);
+    }
 
     // Netze freigeben, die sicher nicht mehr in Benutzung sind
     for (size_t i = 0; i < pending_.size();) {
@@ -725,7 +729,11 @@ void Renderer::render(const FrameDesc& fd) {
     }
 
     uint32_t imageIndex = 0;
-    VkResult acq = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, fr.imageAvailable, VK_NULL_HANDLE, &imageIndex);
+    VkResult acq;
+    {
+        PROFILE("render.acquire (vsync)");
+        acq = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, fr.imageAvailable, VK_NULL_HANDLE, &imageIndex);
+    }
     if (acq == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain();
         return;

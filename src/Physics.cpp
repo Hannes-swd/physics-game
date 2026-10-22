@@ -48,6 +48,7 @@
 
 #include "BoreShape.h"
 #include "Materials.h"
+#include "Profile.h"
 
 using namespace JPH;
 
@@ -1009,7 +1010,10 @@ void Physics::step(float frameDt, const std::function<void(float)>& preStep, con
                                                        c.GetGroundPosition());
         }
         auto t0 = std::chrono::steady_clock::now();
-        m->system->Update(dt, 1, m->temp.get(), m->jobs.get());
+        {
+            PROFILE("physics.jolt");
+            m->system->Update(dt, 1, m->temp.get(), m->jobs.get());
+        }
         const uint32_t nc = std::min<uint32_t>(m->listener.count.load(), (uint32_t)m->listener.buffer.size());
         m->stepContacts.assign(m->listener.buffer.begin(), m->listener.buffer.begin() + nc);
         const uint32_t ni = std::min<uint32_t>(m->impulses.count.load(), (uint32_t)m->impulses.buffer.size());

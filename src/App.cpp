@@ -17,6 +17,7 @@
 #include <fstream>
 
 #include "Materials.h"
+#include "Profile.h"
 
 namespace {
 
@@ -88,6 +89,7 @@ bool App::init(const AppOptions& opt) {
     if (!renderer_.init(window_, opt.validation)) return false;
     if (!physics_.init()) return false;
     world_ = std::make_unique<World>(physics_, &renderer_);
+    world_->setAsyncCollision(true);  // bearbeitete Teile: genaue Kollisionsform im Hintergrund, das Bild wartet nicht
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -178,25 +180,49 @@ int App::run(const AppOptions& opt) {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        const auto frameStart = std::chrono::steady_clock::now();
         computeViews();
-        handleInput(dt);
-        heatToolInput(dt);
-        if (!netClient()) world_->stepHeatOnly(dt);  // Bau-Modus: Wärme und Feuer laufen weiter, auch wenn die Physik steht
-        if (play_ || peersPlaying()) updatePlay(dt);
-        updateFx(dt);
+        {
+            PROFILE("app.input");
+            handleInput(dt);
+            heatToolInput(dt);
+        }
+        world_->pollCollisionJobs();  // im Hintergrund fertig gewordene Kollisionsformen übernehmen
+        if (!netClient()) {
+            PROFILE("world.heatOnly");
+            world_->stepHeatOnly(dt);  // Bau-Modus: Wärme und Feuer laufen weiter, auch wenn die Physik steht
+        }
+        if (play_ || peersPlaying()) {
+            PROFILE("world.step (play)");
+            updatePlay(dt);
+        }
+        {
+            PROFILE("app.fx");
+            updateFx(dt);
+        }
         computeViews();
         updatePreview();
-        drawUI();
-        ImGui::Render();
+        {
+            PROFILE("app.ui");
+            drawUI();
+            ImGui::Render();
+        }
 
         FrameDesc fd;
-        buildFrame(fd);
+        {
+            PROFILE("app.buildFrame");
+            buildFrame(fd);
+        }
         if (!pendingShot_.empty()) {
             fd.screenshotPath = pendingShot_;
             pendingShot_.clear();
         }
         if (!opt_.screenshotPath.empty() && frame_ + 1 == (uint64_t)opt_.screenshotFrames) fd.screenshotPath = opt_.screenshotPath;
-        renderer_.render(fd);
+        {
+            PROFILE("render (cpu + gpu wait)");
+            renderer_.render(fd);
+        }
+        prof::frame(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart).count());
         ++frame_;
         if (!opt_.screenshotPath.empty() && frame_ >= (uint64_t)opt_.screenshotFrames) quit_ = true;
     }
