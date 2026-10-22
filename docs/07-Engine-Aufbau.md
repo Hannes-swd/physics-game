@@ -33,7 +33,8 @@
 | `src/World.*` | Teile, Erzeugen, Sägen/Bohren, Physik-Körper, Luft je Fläche, Rettung bei tiefem Eindringen, Inspektor-Messung, Rückgängig, Beispiel-Werkstatt, Speichern/Laden |
 | `src/Edit.cpp` | Bearbeitung: Abrunden/Fasen, Fräsen, Hobeln, Drehen, Biegen, Spiegeln, Skalieren, Vereinen, Ausschneiden, Schnittmenge, Verschieben mit Anstoßen |
 | `src/Collision.*` | baut aus den konvexen Stücken eines Teils die Kollisionshüllen (siehe unten) |
-| `src/Joints.cpp` | Verbindungen (Kleber, Nägel, Schrauben, Schweißnaht, Scharnier, Feder, Seil): Tragfähigkeit, Belastung, Bruch; Zerbrechen beim Aufprall |
+| `src/Joints.cpp` | Verbindungen (Kleber, Nägel, Schrauben, Schweißnaht, Scharnier, Feder, Seil): Tragfähigkeit, Belastung, Bruch |
+| `src/Impact.cpp` | Aufprall: Zerbrechen spröder Teile; Form eines härteren Werkzeugs vermessen (Spitze, Schneide, stumpf), Eindringen, Spalten, Abdruck, Steckenbleiben |
 | `src/Showcase.cpp` | Beispielwelt (`scene showcase`), aufgebaut als Befehlsliste |
 | `src/Solid.*` | Festkörper-Geometrie (siehe unten), Kanten finden, Werkzeugformen, Berührfläche zweier Teile |
 | `src/Chunks.*` | 3D-Chunks |

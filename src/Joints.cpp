@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <random>
 #include <sstream>
 
 #include "Commands.h"
@@ -92,6 +91,10 @@ const char* World::jointTypeName(JointType t) {
     case JointType::Rope: return "rope";
     }
     return "joint";
+}
+
+const char* World::jointName(const JointState& j) {
+    return j.type == JointType::Glue && j.preset == kStuckPreset ? "stuck" : jointTypeName(j.type);
 }
 
 bool World::rayToObject(const Object& o, const glm::dvec3& origin, const glm::dvec3& dir, double& t) const {
@@ -480,7 +483,7 @@ void World::checkJoints(float h) {
         if (!j) continue;
         Object* A = find(j->a);
         Object* B = find(j->b);
-        std::string msg = std::string(jointTypeName(j->type)) + " J" + std::to_string(id) + " (" + (A ? A->name : "?") + " - " +
+        std::string msg = std::string(jointName(*j)) + " J" + std::to_string(id) + " (" + (A ? A->name : "?") + " - " +
                           (B ? B->name : "?") + ") broke";
         if (j->type == JointType::Glue || j->type == JointType::Nail || j->type == JointType::Screw || j->type == JointType::Weld)
         {
@@ -499,102 +502,13 @@ void World::checkJoints(float h) {
     }
 }
 
-// ============================================================================ Bruch von Teilen beim Aufprall
-
-// Aufprallenergie gegen Bruchenergie: E > Bruchenergie (J/m²) × Bruchquerschnitt -> das Teil zerbricht.
-// Der Querschnitt ist der kleinste Querschnitt quer zur längsten Achse (dort bricht ein Ziegel oder Brett).
-void World::processImpacts() {
-    std::vector<ImpactInfo> impacts = physics_.takeImpacts();
-    if (!breakage_ || impacts.empty()) return;
-    struct Pending {
-        uint32_t id;
-        glm::dvec3 point;
-        double ratio, energy, threshold;
-    };
-    std::vector<Pending> pending;
-    for (const ImpactInfo& imp : impacts) {
-        if (imp.energy < 0.2) continue;
-        for (BodyHandle bh : {imp.a, imp.b}) {
-            Object* o = fromBody(bh);
-            if (!o || o->fixed || o->unbreakable || o->kind != ObjKind::Solid || simTime_ < o->breakCooldown) continue;
-            glm::dvec3 ext = o->bbMax - o->bbMin;
-            double e[3] = {ext.x, ext.y, ext.z};
-            std::sort(e, e + 3);
-            if (e[0] < 0.008 || o->volume < 2e-6) continue;  // zu klein zum weiteren Zerbrechen
-            const double threshold = materials()[o->material].fractureEnergy * e[0] * e[1];
-            if (imp.energy < threshold) continue;
-            bool dup = false;
-            for (auto& p : pending) dup |= p.id == o->id;
-            if (!dup) pending.push_back({o->id, imp.point, imp.energy / threshold, imp.energy, threshold});
-        }
-    }
-    for (const Pending& p : pending) fracture(p.id, p.point, p.ratio, p.energy, p.threshold);
-}
-
-void World::fracture(uint32_t id, const glm::dvec3& worldPoint, double ratio, double energy, double threshold) {
-    static std::mt19937 rng(4711);
-    std::uniform_real_distribution<double> uni(-1.0, 1.0);
-    Object* o = find(id);
-    if (!o) return;
-    const std::string name = o->name;
-    const glm::dvec3 v = glm::dvec3(physics_.linearVelocity(o->body)), w = glm::dvec3(physics_.angularVelocity(o->body));
-    const glm::dvec3 pos0 = o->pos;
-
-    auto cutAt = [&](Object* t, const glm::dvec3& wp, bool alongLong, std::vector<uint32_t>& out) {
-        glm::dvec3 ext = t->bbMax - t->bbMin;
-        int k = 0;
-        for (int i = 1; i < 3; ++i)
-            if (ext[i] > ext[k]) k = i;
-        glm::dvec3 n(0);
-        if (alongLong) {
-            n[k] = 1;  // Bruch quer zur längsten Achse, leicht schräg
-            glm::dvec3 tilt(uni(rng), uni(rng), uni(rng));
-            tilt[k] = 0;
-            n = glm::normalize(n + tilt * 0.35);
-        } else {
-            n = glm::normalize(glm::dvec3(uni(rng), uni(rng), uni(rng)) + glm::dvec3(1e-3));
-        }
-        glm::dvec3 lp = glm::conjugate(t->rot) * (wp - t->pos);
-        // nicht ganz am Rand brechen (sonst nur ein Splitter)
-        glm::dvec3 lo = t->bbMin + ext * 0.25, hi = t->bbMax - ext * 0.25;
-        lp = glm::clamp(lp, lo, hi);
-        solid::Plane pl;
-        pl.n = n;
-        pl.d = glm::dot(n, lp);
-        std::string err;
-        return cut(t->id, pl, 0.0, &out, &err);
-    };
-
-    std::vector<uint32_t> pieces;
-    if (!cutAt(o, worldPoint, true, pieces)) return;
-    if (ratio > 3.0 && !pieces.empty()) {  // sehr harter Schlag: weiter zersplittern
-        std::vector<uint32_t> more;
-        if (Object* big = find(pieces[0])) {
-            glm::dvec3 ext = big->bbMax - big->bbMin;
-            if (std::min({ext.x, ext.y, ext.z}) > 0.01 && cutAt(big, worldPoint, false, more))
-                for (uint32_t m : more)
-                    if (std::find(pieces.begin(), pieces.end(), m) == pieces.end()) pieces.push_back(m);
-        }
-    }
-    // Bruchstücke fliegen mit der Bewegung des ganzen Teils weiter
-    for (uint32_t pid : pieces)
-        if (Object* p = find(pid)) {
-            physics_.activate(p->body);
-            physics_.setVelocity(p->body, glm::vec3(v + glm::cross(w, p->pos - pos0)), glm::vec3(w));
-            p->breakCooldown = simTime_ + 0.2;
-        }
-    ++brokenCount_;
-    events_.push_back(name + " shattered (" + std::to_string(pieces.size()) + " pieces): impact " + fmtNum(energy, 1) +
-                      " J, breaking limit " + fmtNum(threshold, 1) + " J");
-}
-
 // ============================================================================ Beschreibung
 
 std::string World::jointText(const Joint& j, bool detailed) const {
     const Object* A = const_cast<World*>(this)->find(j.a);
     const Object* B = const_cast<World*>(this)->find(j.b);
     std::ostringstream ss;
-    ss << "J" << j.id << "  " << jointTypeName(j.type) << "  #" << j.a << " " << (A ? A->name : "?") << " <-> #" << j.b << " "
+    ss << "J" << j.id << "  " << jointName(j) << "  #" << j.a << " " << (A ? A->name : "?") << " <-> #" << j.b << " "
        << (B ? B->name : "?") << "  load " << fmtNum(j.load * 100.0, 0) << " %" << (j.unbreakable ? "  (unbreakable)" : "")
        << (j.constraint ? "" : "  (no effect: both fixed)");
     if (!detailed) return ss.str();
@@ -604,6 +518,11 @@ std::string World::jointText(const Joint& j, bool detailed) const {
     case JointType::Glue: {
         const GluePreset* g = findGlue(j.preset);
         auto mpa = [](double v) { return fmtNum(v, v < 0.1 ? 4 : (v < 1 ? 2 : 1)); };
+        if (j.preset == kStuckPreset) {
+            ss << "  stuck         " << fmtNum(j.lengthMm, 0) << " mm deep, held by friction (" << mpa(j.ft) << " MPa on the flanks)\n";
+            ss << "  flanks        " << fmtNum(j.area * 1e4, 2) << " cm²\n";
+            break;
+        }
         ss << "  glue          " << (g ? g->name : j.preset.c_str()) << ", strength " << mpa(j.ft) << " MPa, shear " << mpa(j.fs)
            << " MPa, max. gap " << fmtNum(j.gapMm, 1) << " mm\n";
         ss << "  area          " << fmtNum(j.area * 1e4, 2) << " cm²\n";

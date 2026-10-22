@@ -326,6 +326,8 @@ std::string commandHelp() {
         "  new cylinder <mat> <D> <H> [x y z] | new tube <mat> <D_out> <D_in> <L> [x y z] | new sphere <mat> <D> [x y z]\n"
         "  new gear <mat> <teeth> <module_mm> <width> [bore_mm] [x y z]\n"
         "  new propeller <mat> <D> [blades] [angle] [blade_width] [thickness_mm]   axis y, +rotation = thrust to +y\n"
+        "  new wedge <mat> <edge_L> <H> [angle=25] [x y z]   axe/chisel, edge along x at the bottom\n"
+        "  new spike <mat> <D> <L> [tip_radius_mm=0] [x y z]   cone pointing down (0 = sharp, larger = round tip)\n"
         "  import <file.obj> [mat] [scale] | copy <id> [dx dy dz] | delete <id ...|all>\n"
         "  list | info <id> | inspect <id> | materials | chunks | overlaps <id>\n"
         "PLACE\n"
@@ -510,8 +512,29 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             w.pushUndo();
             o = w.addPropeller(mat, a / 100, (int)blades, pitch, chord / 100, thick / 1000,
                                w.findFreeSpot(glm::dvec3(a / 200, chord / 100, a / 200), host.spawnReference()));
+        } else if (form == "wedge" || form == "axe" || form == "chisel") {
+            if (!num(3, a) || !num(4, b) || a <= 0 || b <= 0) return fail("new wedge <mat> <edge_length> <height> [angle_deg] [x y z]");
+            size_t posIdx = 5;
+            c = 25;
+            if (t.size() == 6 || t.size() == 9) {
+                if (!num(5, c) || c < 2 || c > 120) return fail("wedge angle must be between 2 and 120 degrees");
+                posIdx = 6;
+            }
+            const double back = 2 * b * std::tan(c * 3.14159265358979 / 360.0);
+            w.pushUndo();
+            o = w.addWedge(mat, a / 100, b / 100, c, placeAt(host, t, posIdx, glm::dvec3(a / 100, b / 100, back / 100) * 0.5));
+        } else if (form == "spike" || form == "nail" || form == "point") {
+            if (!num(3, a) || !num(4, b) || a <= 0 || b <= 0) return fail("new spike <mat> <D> <length> [tip_radius_mm] [x y z]");
+            size_t posIdx = 5;
+            c = 0;
+            if (t.size() == 6 || t.size() == 9) {
+                if (!num(5, c) || c < 0) return fail("tip radius must be >= 0 mm");
+                posIdx = 6;
+            }
+            w.pushUndo();
+            o = w.addSpike(mat, a / 100, b / 100, c / 1000, placeAt(host, t, posIdx, glm::dvec3(a, b, a) / 200.0));
         } else {
-            return fail("unknown shape '" + t[1] + "' (box, cylinder, tube, sphere, gear, propeller)");
+            return fail("unknown shape '" + t[1] + "' (box, cylinder, tube, sphere, gear, propeller, wedge, spike)");
         }
         if (!o) return fail("the part could not be created");
         host.select(o->id);

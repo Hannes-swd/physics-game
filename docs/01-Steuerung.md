@@ -138,7 +138,7 @@ Zwei gewählte Teile lassen sich darunter auch zu einem Teil **vereinen**, das z
 |---|---|
 | **Leere Werkstatt** | alles entfernen (`scene empty`) |
 | **Beispiel-Werkstatt** | Werkbank, Rampe, Getriebe (`scene demo`) |
-| **Beispiel-Welt (alles)** | große Welt mit Kugelbahn, Dominos, Pendel, Propellern, Hängebrücke, Feder, Wippe, Werkstücken, Regal, Abrissbirne (`scene showcase`, siehe [02](02-Befehle.md#die-beispielwelt-scene-showcase)) |
+| **Beispiel-Welt (alles)** | große Welt mit Kugelbahn, Dominos, Pendel, Propellern, Hängebrücke, Feder, Wippe, Werkstücken, Regal, Abrissbirne, Axt mit Spaltholz (`scene showcase`, siehe [02](02-Befehle.md#die-beispielwelt-scene-showcase)) |
 | **Speichern / Laden** | Szene als Datei (Strg+S / Strg+O) |
 | **Modell importieren** | Blender-Modell (.obj) |
 | **Foto speichern** | Bild als PNG (F12) |

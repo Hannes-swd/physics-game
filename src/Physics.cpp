@@ -182,6 +182,20 @@ public:
     std::mutex impactMutex;
     std::vector<ImpactInfo> impacts;
 
+    // Teilpaare ohne Kontakt (sortiert), siehe Physics::setNoContactPairs
+    std::mutex noContactMutex;
+    std::vector<uint64_t> noContact;
+    std::atomic<bool> anyNoContact{false};
+
+    ValidateResult OnContactValidate(const Body& b1, const Body& b2, RVec3Arg, const CollideShapeResult&) override {
+        if (!anyNoContact.load(std::memory_order_relaxed)) return ValidateResult::AcceptAllContactsForThisBodyPair;
+        const uint64_t a = uint32_t(b1.GetUserData()), b = uint32_t(b2.GetUserData());
+        const uint64_t key = a < b ? (a << 32) | b : (b << 32) | a;
+        std::lock_guard<std::mutex> lock(noContactMutex);
+        return std::binary_search(noContact.begin(), noContact.end(), key) ? ValidateResult::RejectAllContactsForThisBodyPair
+                                                                           : ValidateResult::AcceptAllContactsForThisBodyPair;
+    }
+
     // Haftreibung im Stillstand, Gleitreibung beim Rutschen; dazwischen weicher Übergang (Stribeck-Kurve)
     float friction(const Body& b1, const Body& b2, const ContactManifold& m, float& slip) const {
         slip = 0;
@@ -259,6 +273,7 @@ public:
         info.a = handleOf(b1);
         info.b = handleOf(b2);
         info.point = fromR(p);
+        info.pointB = fromR(m.GetWorldSpaceContactPointOn2(0));
         info.normal = glm::dvec3(n.GetX(), n.GetY(), n.GetZ());
         info.speed = -vn;
         info.energy = 0.5 * mu * vn * vn;
@@ -1091,6 +1106,15 @@ bool Physics::bodyState(BodyHandle h, BodyState& out) const {
 }
 
 void Physics::watchContacts(BodyHandle h) { m->listener.watch = h; }
+
+void Physics::setNoContactPairs(std::vector<uint64_t> pairs) {
+    std::sort(pairs.begin(), pairs.end());
+    Listener& l = m->listener;
+    std::lock_guard<std::mutex> lock(l.noContactMutex);
+    if (pairs == l.noContact) return;
+    l.noContact = std::move(pairs);
+    l.anyNoContact = !l.noContact.empty();
+}
 
 std::vector<ContactInfo> Physics::watchedContacts() const { return m->lastContacts; }
 

@@ -187,6 +187,91 @@ Die Werte sind auf Alltagserfahrung abgestimmt (echte Bruchmechanik hängt stark
 Feste (fixierte) Teile zerbrechen nicht. `unbreakable <id>` schützt ein Teil (Antwort z. B. `Block never breaks`),
 `breakage off` schaltet jeden Bruch ab.
 
+### Form des Werkzeugs: Spitze, Schneide, stumpf
+
+Trifft ein **deutlich härteres** Teil (Härte mindestens 1,5-fach, z. B. Stahl auf Holz oder Ziegel) auf ein anderes,
+zählt seine Form an der Kontaktstelle. Die Physik misst den Querschnitt des Werkzeugs in zwölf Tiefen von 0,5 bis
+60 mm hinter seiner vordersten Stelle in Stoßrichtung, nur im Umkreis von 10 cm um die Kontaktstelle:
+
+| Form | Erkennung (Querschnitt 5 mm hinter der Spitze) | Beispiel |
+|---|---|---|
+| Schneide | schmaler als 12 mm, mindestens 2,5-mal so lang wie breit, Keilwinkel unter 80° | Axt, Meißel, Spaltkeil |
+| Spitze | kleiner als 2 × 2 cm | Nagel, Dorn, runde Spitze, dünner Stab |
+| stumpf | alles andere | Fläche, Kugel, Hammer |
+
+Der Keilwinkel ergibt sich aus der Zunahme der Breite zwischen 2 und 10 mm hinter der Schneide.
+
+**1. Eindringen.** Die Aufprallenergie drückt das Werkzeug gegen die Härte H des Teils ins Material:
+
+  E = ∫₀ˣ H · A(s) ds  (A(s) = Querschnitt des Werkzeugs in der Tiefe s)
+
+| Werkzeug | Querschnitt A(s) | Folge |
+|---|---|---|
+| spitzer Kegel | wächst mit s² | dringt tief ein (x ∝ E^⅓) |
+| Schneide der Länge L | 2 · L · s · tan θ | mittlere Tiefe (x ∝ √E) |
+| Kugel mit Radius r | ≈ 2π · r · s | flache Delle |
+| ebene Fläche | sofort ganz | praktisch nichts |
+
+Holz ist auf Hirnholz bis 2,5-mal härter (H · (1 + 1,5 · cos²) zum Winkel zwischen Stoß und Faser). Tritt die Spitze
+hinten aus einem dünnen Teil aus, trägt nur der Querschnitt im Material. Ab **2 mm** Tiefe wird der Abdruck aus dem
+Teil herausgenommen: Loch, Kerbe oder Delle. Gummi federt zurück und behält nichts.
+
+Der Abdruck ist vereinfacht: ein konvexes Stück aus dem Umriss des Werkzeugs an der Spitze und knapp über der Oberfläche,
+je als Achteck, das den echten Umriss umschließt. Mit der genauen Werkzeugform zerfiel ein Brett in Hunderte Stücke, und
+das Neuberechnen der Kollision dauerte bei jedem Treffer Sekunden. So kostet ein Treffer auf ein Brett 5–50 ms.
+Teile aus mehr als **40 Stücken** (stark gebohrt, gefräst, abgerundet) bekommen keinen Abdruck und werden von Werkzeugen
+nicht gespalten. Das Werkzeug prallt dort ab wie an jedem anderen Teil.
+
+**2. Spalten (Schneide).** Ein Keil mit halbem Keilwinkel θ öffnet den Spalt nur mit einem Teil der Energie:
+
+  η = tan θ / (tan θ + µ) · cos 2θ
+
+Der erste Faktor ist die Keilmechanik: Den Rest frisst die **Gleitreibung µ** an den Flanken (mit Schmierstoff kleiner).
+Der zweite Faktor: Stumpfe Keile zerdrücken das Material eher, als dass sie es spalten. Am besten spalten deshalb Keile
+mit etwa 25–40° Gesamtwinkel, wie echte Äxte und Spaltkeile. Das Teil spaltet, wenn
+
+  E · η ≥ Spaltenergie · Rissfläche
+
+Die Rissfläche ist der Querschnitt des Teils in der Spaltebene (sie enthält Schneide und Stoßrichtung) durch die Kontaktstelle.
+**Holz** spaltet nur entlang der Faser (lokale x-Achse): Der Riss folgt der Faser, und die Spaltenergie steigt mit dem
+Winkel zwischen Schneide und Faser bis zur Bruchenergie (Spaltenergie + (Bruchenergie − Spaltenergie) · sin²).
+Quer zur Faser schneidet die Axt nur ein. Die Hälften fliegen mit der übrigen Energie auseinander (0,3–2,8 m/s).
+
+| Material | Spaltenergie (J/m²) |
+|---|---|
+| Fichte / Eiche | 600 / 900 (entlang der Faser) |
+| Ziegel / Beton / Granit | 900 / 1 200 / 1 800 |
+| Metall, Gummi | spaltet nicht |
+
+**3. Spitze in Ziegel, Beton, Granit.** Die Spannung sammelt sich an der Spitze: Das Teil bricht schon bei 40 % der
+Energie, die ein stumpfer Schlag braucht.
+
+**4. Steckenbleiben.** Dringt eine Spitze oder Schneide mindestens 4 mm in **Holz** ein (und spaltet es nicht), klemmt
+das Holz sie ein. Das Werkzeug sitzt dann in seinem Abdruck, mit allem, was daran befestigt ist (Stiel). Es entsteht eine
+Verbindung `stuck`, die nur durch Reibung hält:
+
+  Haltekraft = µ_Haft · 0,03 · H · Flankenfläche
+
+Sie bricht wie jede Verbindung bei Überlast. Weil das Moment nur wenig verträgt, löst Hin- und Herbewegen ein festsitzendes
+Werkzeug leichter als gerades Ziehen. Das Werkzeug berührt seinen eigenen Abdruck physikalisch nicht, solange es steckt
+(sonst würde die Kontaktkorrektur es herausdrücken).
+
+Beispiele (`new box spruce 60 10 2 0 1 0`, darüber ein Stahlkeil oder -dorn aus 2–3 m, fällt auf das liegende Brett):
+
+| Werkzeug | Ergebnis |
+|---|---|
+| `new wedge steel 10 8 25 0 300 0` (Schneide entlang der Faser) | `Board split along the grain by Wedge (2 pieces): 11.2 J open the crack (35 % of 31.8 J, edge 25°, friction 0.35), crack 120 cm² needs 7.2 J` |
+| derselbe Keil, `rotate last y 90` (quer zur Faser) | `Wedge sticks in Board: notch 11 mm deep (31.8 J, edge), edge across the grain: cuts in, does not split, held by friction up to 355 N` |
+| derselbe Keil wie oben, `lubricate last oil` | spaltet mit 62 % statt 35 % der Energie (Gleitreibung 0,10 statt 0,35) |
+| `new spike steel 1 8 0 0 200 0` (spitz, 16 g) | `Spike sticks in Board: hole 18 mm deep (0.3 J, point)` |
+| `new spike steel 1 8 5 0 200 0` (runde Spitze r = 5 mm) | `hole in Board from Spike: 2 mm deep (0.8 J, point)` |
+| `new sphere steel 4 0 300 0` | `dent in Board from Sphere: 3 mm deep (5.1 J, blunt face)` |
+| Ziegel `new box brick 24 11.5 7.1 0 3.55 0`, Keil quer darüber | `Block split by Wedge (2 pieces): 9.3 J open the crack (30 % of 31.2 J, edge 25°, friction 0.45), crack 82 cm² needs 7.3 J` |
+
+Liegt das getroffene Teil still auf etwas und wird von oben getroffen, stützt die Unterlage es ab: Dann zählt die ganze
+Bewegungsenergie des Werkzeugs (½ · m · v²), nicht nur der Anteil aus der reduzierten Masse. Feste Teile bekommen
+Löcher und Kerben, spalten aber nicht.
+
 **Noch nicht:** Durchbiegen und Brechen eines Bretts unter ruhender Last (z. B. Brett auf zwei Böcken mit Gewicht).
 Dafür braucht es die genauen Kontaktkräfte der Auflagen. Verbindungen brechen dagegen auch unter ruhender Last.
 

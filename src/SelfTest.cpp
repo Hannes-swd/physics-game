@@ -429,6 +429,23 @@ int runSelfTest() {
             runScriptSync(host, "new box steel 10 10 10 -700 300 0 ; wait 2");
             check(val("broken") == before + 1, "steel does not break when it falls");
 
+            // Form des Werkzeugs: Keil entlang der Faser spaltet, quer dazu bleibt er stecken, runde Spitze macht nur ein Loch
+            double b0 = val("broken"), p0 = val("parts"), j0 = val("joints");
+            runScriptSync(host, "new box spruce 60 10 2 -300 1 -400 ; new wedge steel 10 8 25 -300 300 -400 ; wait 1.5");
+            check(val("broken") == b0 + 1 && val("parts") == p0 + 3, "wedge along the grain splits a board (3 m)",
+                  num(val("parts") - p0) + " new parts");
+            runScriptSync(host, "new box spruce 60 10 2 -100 1 -400 ; new wedge steel 10 8 25 -100 300 -400 ; set wq = last ; "
+                                "rotate $wq y 90 ; wait 1.5");
+            check(val("broken") == b0 + 1 && val("joints") == j0 + 1 && val("wq.y") < 7.5 && val("wq.v") < 0.01,
+                  "wedge across the grain cuts in and sticks", num(val("wq.y")) + " cm");
+            runScriptSync(host, "wait 1");
+            check(val("joints") == j0 + 1 && val("wq.v") < 0.01, "stuck wedge stays in its notch");
+            runScriptSync(host, "new box spruce 60 10 2 100 1 -400 ; set bs = last ; new spike steel 1 8 5 100 200 -400 ; wait 1.5");
+            check(val("bs.volume") < 1199.99 && val("bs.volume") > 1199 && val("joints") == j0 + 1 && val("broken") == b0 + 1,
+                  "round tip: only a small hole, no split", num(val("bs.volume")) + " cm3");
+            runScriptSync(host, "new box brick 24 11.5 7.1 300 3.55 -400 ; new wedge steel 10 8 25 300 300 -400 ; rotate last y 90 ; wait 1.5");
+            check(val("broken") == b0 + 2, "chisel splits a brick");
+
             runScriptSync(host, "new box aluminium 40 20 4 0 8 400 ; set cart = last");
             for (const char* r : {"15 6 412", "-15 6 412", "15 6 388", "-15 6 388"})
                 runScriptSync(host, std::string("new cylinder rubber 12 3 ") + r + " ; rotation last 90 0 0 ; hinge $cart last y");

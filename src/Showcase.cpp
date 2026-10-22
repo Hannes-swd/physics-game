@@ -107,6 +107,12 @@ const char* kShowcase[] = {
     "set sc_y = 3.56 ; set sc_off = 0 ; repeat 4 times { set sc_z = 383 + sc_off ; repeat 3 times { new box brick 11.5 24 7.1 162 $sc_y $sc_z ; "
     "name last 'Wall brick' ; set sc_z = sc_z + 24.5 } ; set sc_y = sc_y + 7.12 ; set sc_off = 12 - sc_off }",
 
+    // ------------------------------------------------ Axt aus einem Teil (Keil-Kopf + Stahlrohr-Stiel vereint) und Spaltholz
+    // Schneide parallel zum Stiel. Mit der Schneide entlang der Faser auf ein Brett geworfen, spaltet sie es, quer bleibt sie stecken.
+    "new wedge steel 10 10 20 -230 50 400 ; set sc_axe = last ; new tube steel 3 2.4 60 -255 53.5 400 ; rotation last 0 0 90 ; "
+    "merge $sc_axe last ; rotation $sc_axe 90 0 0 ; drop $sc_axe ; name $sc_axe 'Axe (one part: wedge head + tube handle, merged)'",
+    "new box spruce 60 10 2 -240 1 440 ; name last 'Firewood board 2 cm' ; new box spruce 60 10 3 -240 1.5 470 ; name last 'Firewood board 3 cm'",
+
     // ------------------------------------------------ Zwei Tore an selbstgebauten Stiftscharnieren (trocken / geölt)
     // Stahlplatte auf den Pfosten geklebt und geschraubt, Stiftlappen (gedreht, Spitze angefast) angeschweißt.
     // Türband mit abgerundetem Auge und Bohrung D10,4 auf die Türfläche geklebt und geschraubt. Anschlagleiste am

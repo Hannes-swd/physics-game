@@ -553,7 +553,7 @@ void App::drawProperties() {
                 if (j.a != o->id && j.b != o->id) continue;
                 Object* p = world_->find(j.a == o->id ? j.b : j.a);
                 ImGui::PushID((int)j.id);
-                ImGui::Text("V%u %s mit %s", j.id, World::jointTypeName(j.type), p ? p->name.c_str() : "?");
+                ImGui::Text("V%u %s mit %s", j.id, World::jointName(j), p ? p->name.c_str() : "?");
                 std::string pct = fmtNum(j.load * 100.0, 0) + " % belastet";
                 ImGui::ProgressBar((float)std::min(j.load, 1.0), ImVec2(170, 0), pct.c_str());
                 ImGui::SameLine();

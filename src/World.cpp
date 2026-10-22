@@ -434,6 +434,43 @@ Object* World::addPropeller(int material, double diameter, int blades, double pi
                     name.empty() ? nextName("Propeller") : name, shape);
 }
 
+Object* World::addWedge(int material, double length, double height, double angleDeg, const glm::dvec3& pos, const std::string& name) {
+    const double back = 2.0 * height * std::tan(glm::radians(std::clamp(angleDeg, 2.0, 120.0)) / 2.0);
+    const double hx = length / 2, hy = height / 2, hz = back / 2;
+    std::vector<glm::dvec3> pts = {{-hx, -hy, 0}, {hx, -hy, 0}, {-hx, hy, -hz}, {hx, hy, -hz}, {-hx, hy, hz}, {hx, hy, hz}};
+    solid::Solid s;
+    s.pieces.push_back(solid::hullPiece(pts));
+    std::string shape = "wedge " + fmtNum(length * 100) + " cm edge, " + fmtNum(height * 100) + " cm high, " + fmtNum(angleDeg, 0) + "°";
+    return addSolid(std::move(s), material, pos, glm::dquat(1, 0, 0, 0), name.empty() ? nextName("Wedge") : name, shape);
+}
+
+Object* World::addSpike(int material, double diameter, double length, double tipRadius, const glm::dvec3& pos, const std::string& name) {
+    const double r = diameter / 2, rt = std::clamp(tipRadius, 0.0, r), hy = length / 2;
+    const int seg = 16;  // hullPiece prüft alle Punkt-Dreiergruppen: wenige Punkte halten das schnell
+    std::vector<glm::dvec3> pts;
+    for (int i = 0; i < seg; ++i) {
+        const double a = 2.0 * 3.14159265358979323846 * i / seg;
+        pts.push_back({r * std::cos(a), hy, r * std::sin(a)});
+    }
+    if (rt < 1e-5) {
+        pts.push_back({0, -hy, 0});
+    } else {  // runde Spitze: untere Halbkugel
+        const glm::dvec3 c(0, -hy + rt, 0);
+        pts.push_back(c - glm::dvec3(0, rt, 0));
+        for (int ring = 1; ring <= 3; ++ring) {
+            const double b = 1.5707963267948966 * ring / 3.0;
+            for (int i = 0; i < seg; ++i) {
+                const double a = 2.0 * 3.14159265358979323846 * i / seg;
+                pts.push_back(c + glm::dvec3(rt * std::sin(b) * std::cos(a), -rt * std::cos(b), rt * std::sin(b) * std::sin(a)));
+            }
+        }
+    }
+    solid::Solid s;
+    s.pieces.push_back(solid::hullPiece(pts));
+    std::string shape = "spike D " + fmtNum(diameter * 100) + " cm, " + fmtNum(length * 100) + " cm long, tip radius " + fmtNum(rt * 1000) + " mm";
+    return addSolid(std::move(s), material, pos, glm::dquat(1, 0, 0, 0), name.empty() ? nextName("Spike") : name, shape);
+}
+
 Object* World::addImported(const std::filesystem::path& file, int material, double scale, const glm::dvec3& pos,
                            std::string* error) {
     ObjModel m;
@@ -940,6 +977,11 @@ void World::setAir(double density, const glm::dvec3& wind) {
 }
 
 void World::beforeStep(float) {
+    std::vector<uint64_t> noContact;  // steckengebliebene Werkzeuge berühren ihren Abdruck nicht
+    for (const auto& j : joints_)
+        if (j->type == JointType::Glue && j->preset == kStuckPreset)
+            noContact.push_back(j->a < j->b ? (uint64_t(j->a) << 32) | j->b : (uint64_t(j->b) << 32) | j->a);
+    physics_.setNoContactPairs(std::move(noContact));
     aeroDrag_ = glm::dvec3(0);
     aeroTorque_ = glm::dvec3(0);
     const double rho = airDensity_;
@@ -1326,7 +1368,7 @@ std::string World::inspectText(uint32_t id) {
         if (j->a != id && j->b != id) continue;
         ++nj;
         const Object* p = find(j->a == id ? j->b : j->a);
-        std::string label = "J" + std::to_string(j->id) + " " + jointTypeName(j->type);
+        std::string label = "J" + std::to_string(j->id) + " " + jointName(*j);
         line(ss, label.c_str(), "with " + (p ? p->name : std::string("?")) + ": " + fmtNum(j->load * 100, 0) + " % loaded (force " +
                                     fmtNum(glm::length(j->lastForce), 1) + " N)" + (j->unbreakable ? ", holds everything" : ""));
     }

@@ -65,7 +65,8 @@ struct BodyState {
 // Aufprall (neuer Kontakt mit Annäherungsgeschwindigkeit)
 struct ImpactInfo {
     BodyHandle a = kNoBody, b = kNoBody;
-    glm::dvec3 point{0}, normal{0};
+    glm::dvec3 point{0}, normal{0};  // Kontaktpunkt auf a, Normale von a nach b
+    glm::dvec3 pointB{0};            // Kontaktpunkt auf b
     double speed = 0;   // Annäherungsgeschwindigkeit m/s
     double energy = 0;  // ½·µ·v² (µ = reduzierte Masse) in J
 };
@@ -174,6 +175,9 @@ public:
     bool bodyState(BodyHandle h, BodyState& out) const;
     // Kontakte eines Körpers mitschreiben (für den Physik-Inspektor)
     void watchContacts(BodyHandle h);
+    // Paare von Teilen (Teilnummern, a < b als (a << 32) | b), die sich nicht berühren: ein steckengebliebenes Werkzeug
+    // sitzt genau in seinem Abdruck, die Verbindung hält es (sonst drückt die Kontaktkorrektur es heraus)
+    void setNoContactPairs(std::vector<uint64_t> pairs);
     void setSpeculativeDistance(float d);  // nur für Messungen
     void setLegacySolver(bool on);         // nur für Messungen: alte Einstellungen (eine Reibungszahl, schnelles Herausdrücken)
     std::vector<ContactInfo> watchedContacts() const;

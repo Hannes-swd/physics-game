@@ -9,17 +9,17 @@
 // Werte: typische Tabellenwerte (Holz entlang der Faser, Raumtemperatur, trocken).
 const std::vector<Material>& materials() {
     static const std::vector<Material> list = {
-        // name       label        shading            color                    color2                   rough metal dichte  haft   gleit  stoß   zug   druck E      Bruch J/m²  roll    biegen
-        {"spruce",    "Fichte",    Shading::Wood,     {0.72f, 0.50f, 0.28f},   {0.50f, 0.30f, 0.13f},   0.70f, 0.0f, 470,   0.50f, 0.35f, 0.35f, 80,   40,   11,    40000,      0.005f, 50},
-        {"oak",       "Eiche",     Shading::Wood,     {0.46f, 0.30f, 0.15f},   {0.26f, 0.15f, 0.06f},   0.60f, 0.0f, 720,   0.55f, 0.40f, 0.30f, 110,  55,   12.5f, 50000,      0.004f, 50},
-        {"brick",     "Ziegel",    Shading::Brick,    {0.50f, 0.15f, 0.07f},   {0.30f, 0.08f, 0.04f},   0.90f, 0.0f, 1800,  0.65f, 0.55f, 0.10f, 3.5f, 20,   15,    3000,       0.008f, -1},
-        {"concrete",  "Beton",     Shading::Concrete, {0.45f, 0.45f, 0.43f},   {0.30f, 0.30f, 0.29f},   0.90f, 0.0f, 2400,  0.65f, 0.55f, 0.10f, 2.6f, 30,   31,    4000,       0.006f, -1},
-        {"granite",   "Granit",    Shading::Stone,    {0.50f, 0.49f, 0.48f},   {0.10f, 0.10f, 0.11f},   0.45f, 0.0f, 2700,  0.60f, 0.50f, 0.15f, 10,   180,  50,    6000,       0.003f, -1},
-        {"steel",     "Stahl",     Shading::Metal,    {0.56f, 0.57f, 0.58f},   {0.45f, 0.46f, 0.47f},   0.35f, 1.0f, 7850,  0.60f, 0.45f, 0.40f, 360,  360,  210,   5e7f,       0.0005f, 1.0f},
-        {"aluminium", "Aluminium", Shading::Metal,    {0.91f, 0.92f, 0.92f},   {0.80f, 0.81f, 0.82f},   0.30f, 1.0f, 2700,  0.60f, 0.45f, 0.35f, 150,  150,  70,    2e7f,       0.001f, 1.0f},
-        {"brass",     "Messing",   Shading::Metal,    {0.91f, 0.74f, 0.38f},   {0.80f, 0.62f, 0.30f},   0.30f, 1.0f, 8500,  0.50f, 0.40f, 0.35f, 350,  350,  100,   5e7f,       0.0008f, 0.5f},
-        {"copper",    "Kupfer",    Shading::Metal,    {0.95f, 0.60f, 0.48f},   {0.85f, 0.50f, 0.40f},   0.30f, 1.0f, 8960,  0.55f, 0.40f, 0.30f, 220,  220,  120,   5e7f,       0.0008f, 0.25f},
-        {"rubber",    "Gummi",     Shading::Rubber,   {0.04f, 0.04f, 0.04f},   {0.02f, 0.02f, 0.02f},   0.90f, 0.0f, 1100,  1.00f, 0.80f, 0.80f, 15,   15,   0.01f, 1e9f,       0.015f, 0},
+        // name       label        shading            color                    color2                   rough metal dichte  haft   gleit  stoß   zug   druck E      Bruch J/m²  roll    biegen  spalten
+        {"spruce",    "Fichte",    Shading::Wood,     {0.72f, 0.50f, 0.28f},   {0.50f, 0.30f, 0.13f},   0.70f, 0.0f, 470,   0.50f, 0.35f, 0.35f, 80,   40,   11,    40000,      0.005f, 50,    600},
+        {"oak",       "Eiche",     Shading::Wood,     {0.46f, 0.30f, 0.15f},   {0.26f, 0.15f, 0.06f},   0.60f, 0.0f, 720,   0.55f, 0.40f, 0.30f, 110,  55,   12.5f, 50000,      0.004f, 50,    900},
+        {"brick",     "Ziegel",    Shading::Brick,    {0.50f, 0.15f, 0.07f},   {0.30f, 0.08f, 0.04f},   0.90f, 0.0f, 1800,  0.65f, 0.55f, 0.10f, 3.5f, 20,   15,    3000,       0.008f, -1,    900},
+        {"concrete",  "Beton",     Shading::Concrete, {0.45f, 0.45f, 0.43f},   {0.30f, 0.30f, 0.29f},   0.90f, 0.0f, 2400,  0.65f, 0.55f, 0.10f, 2.6f, 30,   31,    4000,       0.006f, -1,    1200},
+        {"granite",   "Granit",    Shading::Stone,    {0.50f, 0.49f, 0.48f},   {0.10f, 0.10f, 0.11f},   0.45f, 0.0f, 2700,  0.60f, 0.50f, 0.15f, 10,   180,  50,    6000,       0.003f, -1,    1800},
+        {"steel",     "Stahl",     Shading::Metal,    {0.56f, 0.57f, 0.58f},   {0.45f, 0.46f, 0.47f},   0.35f, 1.0f, 7850,  0.60f, 0.45f, 0.40f, 360,  360,  210,   5e7f,       0.0005f, 1.0f,  0},
+        {"aluminium", "Aluminium", Shading::Metal,    {0.91f, 0.92f, 0.92f},   {0.80f, 0.81f, 0.82f},   0.30f, 1.0f, 2700,  0.60f, 0.45f, 0.35f, 150,  150,  70,    2e7f,       0.001f, 1.0f,  0},
+        {"brass",     "Messing",   Shading::Metal,    {0.91f, 0.74f, 0.38f},   {0.80f, 0.62f, 0.30f},   0.30f, 1.0f, 8500,  0.50f, 0.40f, 0.35f, 350,  350,  100,   5e7f,       0.0008f, 0.5f,  0},
+        {"copper",    "Kupfer",    Shading::Metal,    {0.95f, 0.60f, 0.48f},   {0.85f, 0.50f, 0.40f},   0.30f, 1.0f, 8960,  0.55f, 0.40f, 0.30f, 220,  220,  120,   5e7f,       0.0008f, 0.25f,  0},
+        {"rubber",    "Gummi",     Shading::Rubber,   {0.04f, 0.04f, 0.04f},   {0.02f, 0.02f, 0.02f},   0.90f, 0.0f, 1100,  1.00f, 0.80f, 0.80f, 15,   15,   0.01f, 1e9f,       0.015f, 0,     0},
     };
     return list;
 }

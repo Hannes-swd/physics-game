@@ -23,6 +23,7 @@ struct Material {
     float fractureEnergy;   // Bruchenergie bei Schlag (J/m² Bruchquerschnitt, abgestimmt auf Alltagserfahrung)
     float rolling;          // Rollreibungszahl c_rr (Rollwiderstand = c_rr · Normalkraft)
     float minBendRatio;     // kleinster Biegeradius innen / Dicke (< 0: lässt sich nicht biegen)
+    float splitEnergy;      // Spaltenergie für einen Keil (J/m² Rissfläche, Holz entlang der Faser). 0 = lässt sich nicht spalten
 };
 
 const std::vector<Material>& materials();

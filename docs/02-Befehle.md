@@ -28,7 +28,7 @@ Dokumentation sind deutsch.
 | Bereich | Befehle |
 |---|---|
 | Hilfe & Status | `help`, `status`, `materials`, `chunks` |
-| Erstellen | `new box`, `new cylinder`, `new tube`, `new sphere`, `new gear`, `new propeller`, `import`, `copy` |
+| Erstellen | `new box`, `new cylinder`, `new tube`, `new sphere`, `new gear`, `new propeller`, `new wedge`, `new spike`, `import`, `copy` |
 | Auslesen | `list`, `info`, `inspect`, `select`, `overlaps`, `edges` |
 | Sägen & Bohren | `cut`, `drill`, `drillat`, `countersink` |
 | Fräsen | `pocket`, `groove`, `rebate`, `slot`, `tenon`, `halflap` |
@@ -143,6 +143,25 @@ new propeller aluminium 30 ; axle last y 3000       dreht mit 3000 U/min, schieb
 ```
 Wichtig: Zwischen Nabe und Halter einige Zentimeter Luft lassen. Schleift die Nabe, bremst die Reibung den Motor.
 Mehr in [08-Verbindungen-und-Bruch.md](08-Verbindungen-und-Bruch.md#propeller).
+
+### `new wedge <material> <edge_L> <H> [angle=25] [x y z]`
+Keil wie eine Axt- oder Meißelschneide: Schneide unten entlang der lokalen x-Achse, Länge `edge_L` (cm), Höhe H (cm),
+ganzer Keilwinkel in Grad (Standard 25°, Axt ca. 25°, Spaltkeil 30–35°, Meißel 25–30°). Die Rückseite ist
+2 · H · tan(Winkel/2) dick. Andere Namen: `axe`, `chisel`. Was ein Keil beim Aufprall anrichtet:
+[08-Verbindungen-und-Bruch.md](08-Verbindungen-und-Bruch.md#form-des-werkzeugs-spitze-schneide-stumpf).
+
+```
+new wedge steel 10 8 25 0 300 0                    Axtkopf 10 cm Schneide, fällt aus 3 m
+```
+
+### `new spike <material> <D> <L> [tip_radius_mm=0] [x y z]`
+Kegel mit der Spitze nach unten (Nagel, Dorn, Pfeilspitze): oben Durchmesser D (cm), Länge L (cm). Mit Spitzenradius
+(mm) ist die Spitze rund (0 = spitz). Andere Namen: `nail`, `point`.
+
+```
+new spike steel 1 8 0 0 200 0                      spitz: bleibt in Holz stecken
+new spike steel 1 8 5 0 200 0                      runde Spitze: nur ein kleines Loch
+```
 
 ### `import <file.obj> [material] [scale]`
 Lädt ein 3D-Modell im OBJ-Format (z. B. aus Blender: *Datei → Exportieren → Wavefront (.obj)*, Y oben, Meter).
@@ -679,5 +698,6 @@ Enthält die Beispiel-Werkstatt und rundherum (Menü **Datei → Beispiel-Welt (
 | Werkstücke-Tisch | Alle Bearbeitungen: abgerundet, gefast, Schale, gedrehter Stab, Zapfen und Zapfenloch, gebogener Winkel, Senkungen, T-Stück, Langloch, Kreuzüberblattung, geschliffen, Falz, Gehrung mit Spiegelkopie |
 | Regal | Ein Brett mit schwachem Heißkleber bricht unter dem Stahlklotz, das mit Epoxid hält |
 | Abrissbirne | Eine 14-kg-Stahlkugel am Seil schwingt in eine Ziegelmauer |
+| Axt und Spaltholz | Axt aus **einem** Teil (Keil-Kopf und Stahlrohr-Stiel mit `merge` vereint, 2,4 kg) neben zwei Fichtenbrettern (2 und 3 cm). Mit der Schneide entlang der Faser geworfen spaltet sie ein Brett, quer zur Faser bleibt sie stecken |
 
 Die ganze Welt ist eine Befehlsfolge in `src/Showcase.cpp`. Dort kann man nachlesen, wie jede Station gebaut ist.

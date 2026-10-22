@@ -205,7 +205,9 @@ und das große Rad (30 Zähne) mit 13,34 U/min (Theorie 13,33).
 
 Haft- und Gleitreibung in der Tabelle sind die Werte des Materials; für ein Paar gilt die Paartabelle oben.
 Holzwerte gelten entlang der Faser. Die Zugfestigkeit begrenzt Klebungen und Schweißnähte, die Bruchenergie bestimmt,
-wann ein Teil beim Aufprall zerbricht (siehe [08](08-Verbindungen-und-Bruch.md#bruch-von-teilen-beim-aufprall)).
+wann ein Teil beim Aufprall zerbricht (siehe [08](08-Verbindungen-und-Bruch.md#bruch-von-teilen-beim-aufprall)). Die Spaltenergie
+(Fichte 600, Eiche 900, Ziegel 900, Beton 1 200, Granit 1 800 J/m², Metall und Gummi spalten nicht) und die Härte entscheiden,
+was ein Keil oder eine Spitze anrichtet ([08](08-Verbindungen-und-Bruch.md#form-des-werkzeugs-spitze-schneide-stumpf)).
 Verbiegen und Brechen unter ruhender Last sind noch nicht eingebaut (Biegen mit `bend` ist eine Bearbeitung, siehe
 [09](09-Bearbeitung.md#biegen)).
 Die Holzmaserung liegt entlang der lokalen x-Achse und geht durch das ganze Teil: Schnittflächen zeigen Jahresringe.
@@ -300,8 +302,9 @@ Der Selbsttest (`Werkstatt.exe --selftest`) misst unter anderem:
 | Propeller 30 cm, 3000 → 6000 U/min | Schub 3,3 → 13,3 N (×4 bei doppelter Drehzahl), im Vakuum 0 |
 | Propeller-Wagen | fährt (4,3 m in 3 s) |
 | Ziegel fällt aus 30 cm / 2 m | bleibt ganz / zerbricht; Stahl zerbricht nicht |
+| Stahlkeil aus 3 m auf ein Fichtenbrett | entlang der Faser: spaltet; quer: Kerbe, bleibt stecken und hält still; runde Spitze: nur kleines Loch; Keil auf Ziegel: spaltet |
 | Beispielwelt (132 Teile, 29 Verbindungen) | läuft 5 s, ohne dass etwas wegfliegt (schnellstes Teil 10,9 m/s), tiefstes Eindringen unter 4 mm (schwankt je Lauf zwischen 2,9 und 3,8 mm) |
 
 Dazu Geometrie und Bearbeitung (Abrunden, Fasen, Hohlkehle, Drehen, Fräsen, Hobeln, Biegen mit gleichem Volumen,
 Ziegel nicht biegbar, Vereinen, Ausschneiden, Skalieren, Spiegeln), Befehlssprache, Zeichnung und Speichern.
-Insgesamt 72 Prüfungen, alle bestanden.
+Insgesamt 98 Prüfungen, alle bestanden.

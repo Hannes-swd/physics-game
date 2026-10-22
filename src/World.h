@@ -168,6 +168,10 @@ public:
                     const std::string& name = "");
     Object* addPropeller(int material, double diameter, int blades, double pitchDeg, double chord, double thickness,
                          const glm::dvec3& pos, const std::string& name = "");
+    // Keil (Axt-/Meißelschneide): Schneide entlang x unten, Länge L, Höhe H, Keilwinkel (ganz) angleDeg
+    Object* addWedge(int material, double length, double height, double angleDeg, const glm::dvec3& pos, const std::string& name = "");
+    // Spitze (Kegel nach unten): Durchmesser oben, Länge, Rundung der Spitze (Radius, 0 = spitz)
+    Object* addSpike(int material, double diameter, double length, double tipRadius, const glm::dvec3& pos, const std::string& name = "");
     Object* addImported(const std::filesystem::path& file, int material, double scale, const glm::dvec3& pos,
                         std::string* error);
 
@@ -264,6 +268,7 @@ public:
     void jointPoints(const Joint& j, glm::dvec3& pa, glm::dvec3& pb) const;
     std::string jointText(const Joint& j, bool detailed) const;
     static const char* jointTypeName(JointType t);
+    static const char* jointName(const JointState& j);  // wie jointTypeName, steckengebliebenes Werkzeug = "stuck"
     // Bruch an/aus: aus = alles hält (Engine/Editor), an = realistisch (Spiel)
     void setBreakage(bool on) { breakage_ = on; }
     bool breakage() const { return breakage_; }
@@ -326,6 +331,9 @@ private:
     void checkJoints(float h);
     void processImpacts();
     void fracture(uint32_t id, const glm::dvec3& worldPoint, double ratio, double energy, double threshold);
+    // Aufprall eines deutlich härteren Teils: Form an der Kontaktstelle (Spitze, Schneide, stumpf) entscheidet über
+    // Delle/Loch, Steckenbleiben, Spalten oder Zerbrechen (Impact.cpp). true = das getroffene Teil wurde verändert
+    bool toolImpact(Object& tool, Object& target, const ImpactInfo& imp, bool toolIsA);
     Snapshot capture() const;
     void restore(const Snapshot& s);
     Object* insert(std::unique_ptr<Object> o);
@@ -378,3 +386,5 @@ private:
 std::string fmtNum(double v, int decimals = 1);
 // Kleber-Sorte zu ihrem Schlüssel (woodglue, epoxy ...; alte deutsche Namen werden auch erkannt)
 std::string gluePresetKey(const std::string& name);
+// Kleber-Schlüssel für ein beim Aufprall steckengebliebenes Werkzeug (hält nur durch Reibung)
+inline constexpr const char* kStuckPreset = "stuck";
