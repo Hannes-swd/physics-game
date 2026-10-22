@@ -9,7 +9,8 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 ### Kernfeatures
 
 **Konstruktion & Bearbeitung:**
-- Teile aus verschiedenen Materialien erstellen (Holz, Ziegel, Stein, Metall)
+- Teile aus verschiedenen Materialien erstellen (Holz, Ziegel, Stein, Metall, Gummi, Kunststoff); alle Materialwerte stehen in
+  einer Textdatei (`assets/materials.txt`) und lassen sich im Spiel bearbeiten und erweitern
 - Vollständiges Werkzeug-Set: Sägen, Bohren, Fräsen, Abrunden, Drehen, Biegen
 - Präzise Bearbeitungen mit technischen Zeichnungen (Dreitafelprojektion)
 
@@ -50,6 +51,7 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 | [Stifte & Scharniere](docs/10-Stifte-und-Scharniere.md) | selbstgebaute Scharniere: Stift in Bohrung, Schmieren, Abrieb, Ausreißen |
 | [Mehrspieler](docs/11-Mehrspieler.md) | im LAN zusammen bauen und spielen: Gastgeber rechnet, Mitspieler treten bei |
 | [Wärme & Feuer](docs/12-Waerme-und-Feuer.md) | Temperatur, Wärmeleitung, Feuer, Schmelzen, Kälte, Befehle `heat`, `ignite`, `torch` |
+| [Materialien](docs/13-Materialien.md) | alle Materialwerte in `assets/materials.txt`, neue Materialien anlegen, Material-Editor |
 
 ## Projektstruktur
 

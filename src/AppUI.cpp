@@ -133,6 +133,7 @@ void App::drawUI() {
     drawToasts();
     drawPlayerTags();
     if (showInspector_) drawInspector();
+    if (showMaterials_) drawMaterialEditor();
     if (showDrawing_) drawDrawingWindow();
     if (showConsole_) drawConsole();
     if (showHelp_) drawHelp();
@@ -199,6 +200,7 @@ void App::drawMenuBar() {
         ImGui::MenuItem("Raster", nullptr, &showGrid_);
         ImGui::Separator();
         ImGui::MenuItem("Physik-Inspektor", "F3", &showInspector_);
+        ImGui::MenuItem("Materialien bearbeiten", nullptr, &showMaterials_);
         if (ImGui::MenuItem("Dreitafelprojektion", "F4", false, !selection_.empty())) showDrawing(selection_);
         ImGui::MenuItem("Konsole", "F1", &showConsole_);
         ImGui::EndMenu();
@@ -939,6 +941,159 @@ void App::drawPlayHud() {
         dl->AddRectFilled(ImVec2(c.x - ts.x / 2 - 12, c.y - 60), ImVec2(c.x + ts.x / 2 + 12, c.y - 52 + ts.y), IM_COL32(0, 0, 0, 170), 6);
         dl->AddText(ImVec2(c.x - ts.x / 2, c.y - 56), IM_COL32(255, 220, 160, 255), t);
     }
+}
+
+// ============================================================================ Material-Editor
+
+// Alle Werte kommen aus der Feldtabelle (materialFields): neue Werte erscheinen hier, in der Datei und bei
+// "materials set" automatisch. Änderungen gelten sofort für alle Teile, gespeichert wird mit "Speichern".
+void App::drawMaterialEditor() {
+    ImGui::SetNextWindowSize(ImVec2(760, 640), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Materialien", &showMaterials_)) {
+        ImGui::End();
+        return;
+    }
+    auto& list = editableMaterials();
+    matEdit_ = std::clamp(matEdit_, 0, (int)list.size() - 1);
+    // Liste links
+    ImGui::BeginChild("##matlist", ImVec2(210, 0), ImGuiChildFlags_Borders);
+    for (int i = 0; i < (int)list.size(); ++i) {
+        const std::string item = std::string(list[i].label) + "  (" + list[i].name + ")";
+        if (ImGui::Selectable(item.c_str(), i == matEdit_)) matEdit_ = i;
+    }
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##newmat", "neuer Name, z. B. pine", matNew_, sizeof(matNew_));
+    if (ImGui::Button("Neu (Kopie)", ImVec2(-1, 0))) {
+        std::string err;
+        const int m = addMaterial(matNew_, matEdit_, &err);
+        if (m >= 0) {
+            matEdit_ = m;
+            matNew_[0] = 0;
+            materialsDirty_ = true;
+            matStatus_ = std::string("neu: ") + list[m].name;
+        } else {
+            matStatus_ = err;
+        }
+    }
+    if (ImGui::Button("Speichern", ImVec2(-1, 0))) {
+        const std::string path = materialFile().empty() ? defaultMaterialFile() : materialFile();
+        std::string err;
+        if (saveMaterialFile(path, &err)) {
+            materialsDirty_ = false;
+            matStatus_ = "gespeichert: " + path;
+        } else {
+            matStatus_ = err;
+        }
+    }
+    if (ImGui::Button("Datei neu laden", ImVec2(-1, 0))) {
+        runLine("materials reload", "konsole");
+        materialsDirty_ = false;
+        matBufFor_ = -1;
+        matStatus_ = "neu geladen";
+    }
+    ImGui::TextWrapped("%s", materialFile().empty() ? "(eingebaute Liste)" : materialFile().c_str());
+    if (materialsDirty_) ImGui::TextColored(kAccent, "geändert, noch nicht gespeichert");
+    if (!matStatus_.empty()) ImGui::TextWrapped("%s", matStatus_.c_str());
+    ImGui::EndChild();
+    ImGui::SameLine();
+
+    // Werte rechts
+    ImGui::BeginChild("##matvalues", ImVec2(0, 0));
+    Material& m = list[matEdit_];
+    if (matBufFor_ != matEdit_) {  // Textfelder füllen, wenn ein anderes Material gewählt wurde
+        matBufFor_ = matEdit_;
+        std::snprintf(matName_, sizeof(matName_), "%s", m.name);
+        std::snprintf(matLabel_, sizeof(matLabel_), "%s", m.label);
+        std::snprintf(matAliases_, sizeof(matAliases_), "%s", materialValue(m, *findMaterialField("aliases")).c_str());
+    }
+    bool apply = false;  // Physik der Teile neu (beim Loslassen, nicht bei jedem Zwischenwert)
+    auto changed = [&](bool done) {
+        materialsDirty_ = true;
+        apply |= done;
+    };
+    ImGui::PushItemWidth(260);
+    if (ImGui::InputText("Befehlsname", matName_, sizeof(matName_), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivatedAfterEdit()) {
+        std::string err;
+        if (std::string(matName_) != m.name) {
+            if (renameMaterial(matEdit_, matName_, &err)) changed(true);
+            else matStatus_ = err;
+            std::snprintf(matName_, sizeof(matName_), "%s", m.name);
+        }
+    }
+    const char* group = "";
+    for (const MaterialField& f : materialFields()) {
+        if (std::strcmp(group, f.group) != 0) ImGui::SeparatorText(f.group);
+        group = f.group;
+        const std::string label = std::string(f.label) + (*f.unit ? std::string(" (") + f.unit + ")" : std::string()) + "##" + f.key;
+        switch (f.type) {
+        case MaterialField::Text:
+            ImGui::InputText(label.c_str(), matLabel_, sizeof(matLabel_));
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                setMaterialLabel(matEdit_, matLabel_);
+                changed(false);
+            }
+            break;
+        case MaterialField::Words:
+            ImGui::InputText(label.c_str(), matAliases_, sizeof(matAliases_));
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                setMaterialValue(m, f, matAliases_, nullptr);
+                changed(false);
+            }
+            break;
+        case MaterialField::Choice: {
+            int v = materialChoice(m, f);
+            if (ImGui::BeginCombo(label.c_str(), f.choices[v])) {
+                for (int i = 0; f.choices[i]; ++i)
+                    if (ImGui::Selectable(f.choices[i], i == v)) {
+                        setMaterialChoice(m, f, i);
+                        changed(true);
+                    }
+                ImGui::EndCombo();
+            }
+            break;
+        }
+        case MaterialField::Color: {
+            int n = 0;
+            float* v = materialNumbers(m, f, n);
+            if (ImGui::ColorEdit3(label.c_str(), v, ImGuiColorEditFlags_Float)) changed(false);
+            break;
+        }
+        case MaterialField::Optional: {
+            int n = 0;
+            float* v = materialNumbers(m, f, n);
+            bool on = materialValue(m, f) != "none";
+            if (ImGui::Checkbox(("##on" + std::string(f.key)).c_str(), &on)) {
+                setMaterialValue(m, f, on ? std::to_string(0.5f * (f.lo + f.hi)) : std::string("none"), nullptr);
+                changed(true);
+            }
+            ImGui::SameLine();
+            if (on) {
+                ImGui::SetNextItemWidth(230);
+                if (ImGui::InputFloat(label.c_str(), v, 0, 0, "%.6g")) changed(false);
+                if (ImGui::IsItemDeactivatedAfterEdit()) changed(true);
+            } else {
+                ImGui::TextDisabled("%s: keins", f.label);
+            }
+            break;
+        }
+        default: {  // Zahl oder Zahlenpaar
+            int n = 0;
+            float* v = materialNumbers(m, f, n);
+            if (n == 2 ? ImGui::InputFloat2(label.c_str(), v, "%.6g") : ImGui::InputFloat(label.c_str(), v, 0, 0, "%.6g")) changed(false);
+            if (ImGui::IsItemDeactivatedAfterEdit()) changed(true);
+            if (f.hi > f.lo) v[0] = std::clamp(v[0], std::min(f.lo, 0.0f), f.hi * 10.0f);  // offensichtlich falsche Werte abfangen
+            break;
+        }
+        }
+    }
+    ImGui::PopItemWidth();
+    ImGui::Spacing();
+    ImGui::TextDisabled("Klasse: Verhalten (Reibungspaare, Nägel, Faser, Gummi federt). Textur: nur das Aussehen.");
+    ImGui::TextDisabled("Reibung zwischen zwei Materialien: Abschnitte [pair ...] in der Datei.");
+    ImGui::EndChild();
+    if (apply && !netClient()) world_->applyMaterials({});
+    ImGui::End();
 }
 
 // ============================================================================ Physik-Inspektor (F3)

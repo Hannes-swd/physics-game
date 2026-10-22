@@ -384,7 +384,7 @@ Object* World::addBox(int material, glm::dvec3 size, const glm::dvec3& pos, cons
     s.pieces.push_back(solid::makeBox(size * 0.5));
     std::string shape = "box " + fmtNum(size.x * 100) + " x " + fmtNum(size.z * 100) + " x " + fmtNum(size.y * 100) + " cm";
     const bool thin = size.y < 0.06 && std::max(size.x, size.z) > 0.2;
-    const bool metal = materials()[std::clamp(material, 0, (int)materials().size() - 1)].shading == Shading::Metal;
+    const bool metal = materialClass(material) == MaterialClass::Metal;
     Object* o = addSolid(std::move(s), material, pos, glm::dquat(1, 0, 0, 0),
                          name.empty() ? nextName(thin ? (metal ? "Sheet" : "Board") : "Block") : name, shape);
     return setPrimitive(o, 1, size * 0.5);
@@ -671,6 +671,21 @@ void World::setMaterial(Object& o, int material) {
         fitHeat(o);
     }
     rebuildBody(o);
+}
+
+void World::applyMaterials(const std::vector<int>& remap) {
+    const int n = (int)materials().size();
+    auto map = [&](int m) { return std::clamp(m >= 0 && m < (int)remap.size() ? remap[m] : m, 0, n - 1); };
+    for (auto& op : objects_) {
+        Object& o = *op;
+        o.material = map(o.material);
+        o.mass = o.volume * materials()[o.material].density;
+        if (!o.heat.empty()) fitHeat(o);  // Masse je Zelle
+        rebuildBody(o);                   // Dichte, Reibung, Stoßzahl; Verbindungen neu berechnet
+    }
+    for (std::vector<Snapshot>* list : {&undo_, &redo_})
+        for (Snapshot& s : *list)
+            for (ObjectState& st : s.objects) st.material = map(st.material);
 }
 
 void World::setFixed(Object& o, bool fixed) {

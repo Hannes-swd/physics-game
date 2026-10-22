@@ -49,9 +49,9 @@ const GluePreset* findGlue(const std::string& key) {
     return nullptr;
 }
 
-bool isWood(const Material& m) { return m.shading == Shading::Wood; }
-bool isMetal(const Material& m) { return m.shading == Shading::Metal; }
-bool isMasonry(const Material& m) { return m.shading == Shading::Brick || m.shading == Shading::Concrete || m.shading == Shading::Stone; }
+bool isWood(const Material& m) { return m.cls == MaterialClass::Wood; }
+bool isMetal(const Material& m) { return m.cls == MaterialClass::Metal; }
+bool isMasonry(const Material& m) { return m.cls == MaterialClass::Stone; }
 
 glm::dmat4 frameOf(const Object& o) { return glm::translate(glm::dmat4(1.0), o.pos) * glm::mat4_cast(o.rot); }
 

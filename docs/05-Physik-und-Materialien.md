@@ -190,6 +190,9 @@ und das große Rad (30 Zähne) mit 13,34 U/min (Theorie 13,33).
 
 ## Materialien
 
+Die Werte unten sind die mitgelieferten aus `assets/materials.txt`. Dort (oder im Spiel unter *Ansicht → Materialien
+bearbeiten*) lassen sie sich ändern und neue Materialien anlegen, siehe [13-Materialien.md](13-Materialien.md).
+
 | Material (Befehl) | Menü | Dichte kg/m³ | Haft-/Gleitreibung | Rollreibung | Stoßzahl | Zug MPa | Druck MPa | E-Modul GPa | Bruchenergie J/m² | biegbar ab Radius |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `spruce` | Fichte | 470 | 0,50 / 0,35 | 0,005 | 0,35 | 80 | 40 | 11 | 40 000 | 50 × Dicke |

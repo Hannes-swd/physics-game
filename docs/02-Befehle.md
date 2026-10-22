@@ -82,8 +82,12 @@ remote        active, port 7777
 ### `materials`
 Listet alle Materialien mit Dichte, Haft- und Gleitreibung, Rollreibung, Stoßzahl, Zugfestigkeit, E-Modul und Biegbarkeit.
 Verfügbar: **spruce** (Fichte), **oak** (Eiche), **brick** (Ziegel), **concrete** (Beton), **granite** (Granit),
-**steel** (Stahl), **aluminium**, **brass** (Messing), **copper** (Kupfer), **rubber** (Gummi).
+**steel** (Stahl), **aluminium**, **brass** (Messing), **copper** (Kupfer), **rubber** (Gummi), **plastic** (Kunststoff ABS).
 Bei Befehlen reichen die ersten drei Buchstaben (`spr`, `ste`, `alu`).
+
+Alle Werte stehen in `assets/materials.txt`. Ändern, neu anlegen, speichern und neu laden:
+`materials keys | show <m> | set <m> <key> <value...> | new <name> [copy_of] | save [file] | reload [file] | file`
+(siehe [13-Materialien.md](13-Materialien.md#befehle)).
 
 ```
 > materials

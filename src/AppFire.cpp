@@ -239,7 +239,7 @@ void App::addFireFx(FrameDesc& fd) {
 void App::addHeatData(FrameDesc& fd, DrawItem& it, const Object& o) {
     const HeatGrid& g = o.heat;
     if (g.empty() || g.cells.empty()) return;
-    const bool metal = materials()[o.material].shading == Shading::Metal;
+    const bool metal = materials()[o.material].temper != Temper::None;  // Anlauffarben
     float peak = -1e9f, chr = 0, melt = 0, tMin = 1e9f, tMax = -1e9f;
     for (const HeatCell& c : g.cells) {
         if (!c.inside) continue;

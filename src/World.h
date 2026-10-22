@@ -248,6 +248,9 @@ public:
     void setHinge(Object& o, int axis, float rpm, float torque);
     void setCollisionMode(Object& o, int mode);  // 0 automatisch, 1 genau, 2 eine Hülle
     void setLubricant(Object& o, int lubricant);  // 0 = trocken
+    // Materialliste wurde bearbeitet oder neu geladen: remap[alter Index] = neuer Index (leer: gleich geblieben).
+    // Masse, Reibung, Wärmekapazität und Physik-Körper aller Teile neu, auch in Rückgängig-Schritten
+    void applyMaterials(const std::vector<int>& remap);
     // Bohrungen und Stifte eines Teils als Text (Maße, Passung, Last, Pressung, Abrieb)
     std::string boresText(Object& o);
     // Tragfähigkeit einer Bohrung bis zum Ausreißen für eine Lastrichtung (lokal, quer zur Achse), N

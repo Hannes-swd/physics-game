@@ -21,6 +21,7 @@ Anleitung sind deutsch.
 | [10-Stifte-und-Scharniere.md](10-Stifte-und-Scharniere.md) | Stift in Bohrung: selbstgebaute Scharniere und Achsen, Passung, Schmieren, Abrieb, Ausreißen, Tragen mit R |
 | [11-Mehrspieler.md](11-Mehrspieler.md) | Mehrspieler im LAN: Spiel öffnen, Mitspieler zulassen, beitreten, wer was rechnet, Ports |
 | [12-Waerme-und-Feuer.md](12-Waerme-und-Feuer.md) | Wärme, Feuer und Kälte: Temperatur in jedem Teil, Wärmeleitung, Brenner und Kältespray, Holz verkohlt und brennt, Feuer breitet sich aus, Metall wird weich und schmilzt, Kälte macht spröde, Darstellung |
+| [13-Materialien.md](13-Materialien.md) | Alle Materialien in der Datei `assets/materials.txt`: jeder Wert erklärt, neue Materialien anlegen (Datei, Fenster, Befehle), Reibungspaare |
 
 ## Schnellstart
 

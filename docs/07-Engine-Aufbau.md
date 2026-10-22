@@ -44,7 +44,7 @@
 | `src/Bench.cpp` | `--bench`: misst Rechenzeit, Eindringtiefe und Rettungen alter und neuer Einstellungen in elf Szenen |
 | `src/Renderer.*`, `shaders/` | Vulkan-Grafik |
 | `src/Drawing.*` | Dreitafelprojektion, Blatt, SVG |
-| `src/Materials.*` | Materialtabelle, Reibung je Materialpaar, Wärmewerte (`thermal`), Festigkeit je Temperatur, Kälte-Sprödigkeit, Wärme-Werkzeuge |
+| `src/Materials.*` | Materialliste aus `assets/materials.txt` (eingebettete Kopie als Rückfall), Feldtabelle (Laden, Speichern, `materials set`, Editor), Reibungspaare, Festigkeit je Temperatur, Kälte-Sprödigkeit, Wärme-Werkzeuge, Schmierstoffe |
 | `src/ObjLoader.*` | OBJ-Import |
 | `src/Png.*` | PNG-Schreiber für Fotos |
 | `src/SelfTest.cpp` | automatische Prüfungen |
@@ -232,7 +232,7 @@ mit der Korrektur oben), Dear ImGui 1.91.9.
 
 ## Selbsttest
 
-`Werkstatt.exe --selftest` prüft (109 Prüfungen):
+`Werkstatt.exe --selftest` prüft (116 Prüfungen):
 
 - Geometrie: Volumen, Sägeschnitt, Bohrung (π r² h), Innenflächen, Schnittfuge, Zahnrad, Kugel, Kanten finden,
   Abrunden/Fasen (Volumen nach Formel), Hohlkehle, Drehbank
@@ -250,6 +250,9 @@ mit der Korrektur oben), Dear ImGui 1.91.9.
 - Wärme und Feuer: Brenner heizt ein Stabende (anderes Ende kühl), Abkühlen, glühender Stahl weich, kalter Stahl zerspringt
   (warmer nicht), Brett verkohlt, brennt und das Feuer breitet sich aus, Löschen, kein Feuer im Vakuum, Aluminium schmilzt
   zur Pfütze, Holzleim lässt bei 150 °C los, Temperatur bleibt beim Speichern und Laden
+- Materialdatei (mit der eingebetteten Kopie, unabhängig von eigenen Änderungen): Laden, Aliasse, Speichern und Lesen
+  ergibt dieselben Werte, kaputte Datei wird abgelehnt (alte Liste bleibt), unbekannte Schlüssel gemeldet, neues Material
+  per Befehl sofort benutzbar, Dichte ändern ändert vorhandene Teile, Neuladen behält das Material über den Namen
 - Speichern und Laden, Beispiel-Werkstatt, Getriebe-Übersetzung, Beispielwelt (132 Teile, läuft 5 s ohne Ausreißer)
 
 `Werkstatt.exe --bench [szene]` misst Rechenzeit, Eindringtiefe und Rettungen in elf Physik-Szenen, jeweils mit den alten
@@ -260,7 +263,7 @@ Mit einem Wort dahinter laufen nur die Szenen, deren Name es enthält (z. B. `--
 
 | Vorhaben | Wo |
 |---|---|
-| neues Material | `src/Materials.cpp` (Liste mit englischem Namen und deutschem Anzeigenamen; Paar-Reibung in `frictionPair`; Härte in `hardnessMPa`; Wärmewerte in `thermal`), ggf. neue Darstellung in `shaders/mesh.frag` |
+| neues Material | nur `assets/materials.txt` (Abschnitt `[material <name>]`, siehe [13](13-Materialien.md)) oder im Spiel: Menü Ansicht → Materialien bearbeiten. Neue Werte für alle Materialien: Feld in `Material` (`Materials.h`) und eine Zeile in der Feldtabelle `fieldDefs()` (`Materials.cpp`) – Datei, Befehle und Editor kennen ihn dann automatisch. Neue Darstellung: `shaders/mesh.frag` |
 | neuer Befehl | `src/Commands.cpp` (`runCommand`), Hilfe-Text in `commandHelp()` |
 | neue Bearbeitung | `src/Edit.cpp` (Werkzeug als Liste konvexer Ebenen-Körper, dann `removeMaterial` oder `applyResult`) + Befehl in `Commands.cpp` |
 | neuer Fenster-Befehl | `src/AppCommands.cpp` (`appCommand`) |

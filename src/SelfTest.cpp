@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 #include "Avatar.h"
@@ -58,6 +59,7 @@ private:
 
 int runSelfTest() {
     const double pi = 3.14159265358979323846;
+    loadBuiltinMaterials();  // die mitgelieferten Werte, unabhängig von Änderungen an assets/materials.txt
     std::printf("== Geometry ==\n");
     {
         solid::Solid box;
@@ -568,6 +570,57 @@ int runSelfTest() {
             if (materials()[o->material].name == std::string("copper") && !o->heat.empty()) tCu = o->heatInfo.tMax;
         check(approx(tCu, 400, 1), "save and load keep the temperature", num(tCu) + " °C");
         std::filesystem::remove(file);
+    }
+
+    std::printf("== Material file ==\n");
+    {
+        loadBuiltinMaterials();
+        const std::string text = materialsText();
+        const size_t count = materials().size();
+        const Material steel = materials()[materialIndex("steel")];
+        check(count >= 11 && materialFile().empty() && findMaterialIndex("stahl") == findMaterialIndex("steel"),
+              "built-in materials load, aliases (old German names) work", std::to_string(count) + " materials");
+        std::string report;
+        const bool again = loadMaterialText(text, "saved", &report);
+        const Material& s2 = materials()[materialIndex("steel")];
+        float mu = 0, muK = 0;
+        frictionPair(materialIndex("steel"), materialIndex("steel"), mu, muK);
+        check(again && report.empty() && materials().size() == count && s2.density == steel.density && s2.heat.meltC == steel.heat.meltC &&
+                  s2.temper == Temper::Steel && s2.cls == MaterialClass::Metal && approx(mu, 0.74, 1e-6),
+              "saving and reading the material file gives the same values", report);
+        check(!loadMaterialText("[material x]\ndensity = abc\n[material y\n", "broken", &report) && materials().size() == count,
+              "a broken material file is rejected, the old list stays", report.substr(0, report.find('\n')));
+        loadMaterialText("[material soft]\nclass = metal\ndensity = 1000\nwobble = 3\n", "partial", &report);
+        check(materials().size() == 1 && report.find("unknown key 'wobble'") != std::string::npos && materials()[0].heat.meltC <= 0,
+              "unknown keys are reported, missing values take the defaults", report.substr(0, report.find('\n')));
+        loadBuiltinMaterials();
+
+        World w(physics, nullptr);
+        w.setSimulating(true);
+        TestHost host(w);
+        auto val = [&](const std::string& expr) {
+            std::string o = runScriptSync(host, "print " + expr);
+            size_t p = o.rfind("= ");
+            return p == std::string::npos ? -1e30 : std::atof(o.c_str() + p + 2);
+        };
+        runScriptSync(host, "materials new pine spruce ; materials set pine density 520 ; materials set pine ignites_at 280");
+        runScriptSync(host, "new box pine 10 10 10 0 5 0 ; set p = last");
+        check(approx(val("p.mass"), 0.52, 1e-6) && runScriptSync(host, "print p.material").find("pine") != std::string::npos,
+              "a new material can be made by command and used right away", num(val("p.mass")) + " kg");
+        runScriptSync(host, "materials set pine density 600");
+        check(approx(val("p.mass"), 0.6, 1e-6), "changing the density updates existing parts", num(val("p.mass")) + " kg");
+        // neu laden ohne "pine": das Teil bekommt das erste Material, die anderen behalten ihres über den Namen
+        runScriptSync(host, "new box steel 5 5 5 50 2.5 0 ; set s = last");
+        const std::string file = (std::filesystem::temp_directory_path() / "werkstatt_materials_test.txt").string();
+        {
+            std::ofstream f(file);
+            f << "[material concrete]\ndensity = 2400\n[material steel]\nclass = metal\ndensity = 7850\n";
+        }
+        runScriptSync(host, "materials reload \"" + file + "\"");
+        check(materials().size() == 2 && runScriptSync(host, "print s.material").find("steel") != std::string::npos,
+              "reloading keeps each part's material by name", runScriptSync(host, "print s.material"));
+        std::filesystem::remove(file);
+        loadBuiltinMaterials();
     }
 
     std::printf("== Player ==\n");

@@ -16,8 +16,8 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 
-bool isWood(const Material& m) { return m.shading == Shading::Wood; }
-bool isRubber(const Material& m) { return m.shading == Shading::Rubber; }
+bool isWood(const Material& m) { return m.cls == MaterialClass::Wood; }
+bool isRubber(const Material& m) { return m.cls == MaterialClass::Rubber; }
 bool isBrittle(const Material& m) { return m.minBendRatio < 0; }  // Ziegel, Beton, Granit
 
 glm::dmat4 frameOf(const Object& o) { return glm::translate(glm::dmat4(1.0), o.pos) * glm::mat4_cast(o.rot); }

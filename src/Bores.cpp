@@ -70,7 +70,7 @@ double World::boreCapacity(const Object& o, size_t i, const glm::dvec3& dirLocal
     const double f = s - std::floor(s);
     const double e = b.edge[k0] * (1.0 - f) + b.edge[k1] * f;
     double tau = shearMPa(o.material);
-    if (materials()[o.material].shading == Shading::Wood) tau *= cosGrain * cosGrain + 0.25 * (1.0 - cosGrain * cosGrain);  // quer zur Faser spaltet Holz leichter
+    if (materials()[o.material].cls == MaterialClass::Wood) tau *= cosGrain * cosGrain + 0.25 * (1.0 - cosGrain * cosGrain);  // quer zur Faser spaltet Holz leichter
     const double fTear = 2.0 * e * L * tau * 1e6;
     return std::max(1.0, std::min(fEmb, fTear));
 }

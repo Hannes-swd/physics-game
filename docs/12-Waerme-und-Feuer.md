@@ -146,6 +146,8 @@ Stahl hat bei 600 °C noch knapp die Hälfte, bei 1000 °C etwa 5 %. Das wirkt s
 
 ### Materialwerte
 
+Mitgeliefert in `assets/materials.txt` (dort ändern oder neue Materialien anlegen, siehe [13-Materialien.md](13-Materialien.md)):
+
 | Material | λ W/(m·K) | c J/(kg·K) | ε | schmilzt | weich ab / halb | spröde unter | verkohlt / zündet | Heizwert | Abbrand kg/(m²·s) |
 |---|---|---|---|---|---|---|---|---|---|
 | Fichte | 0,12 | 1700 | 0,9 | – | 60 / 250 °C | – | 200 / 300 °C | 15 MJ/kg | 0,011 |

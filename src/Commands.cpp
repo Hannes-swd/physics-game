@@ -338,6 +338,9 @@ std::string commandHelp() {
         "  new spike <mat> <D> <L> [tip_radius_mm=0] [x y z]   cone pointing down (0 = sharp, larger = round tip)\n"
         "  import <file.obj> [mat] [scale] | copy <id> [dx dy dz] | delete <id ...|all>\n"
         "  list | info <id> | inspect <id> | materials | chunks | overlaps <id>\n"
+        "MATERIALS (all values in assets/materials.txt, see docs/13-Materialien.md)\n"
+        "  materials keys | materials show <m> | materials set <m> <key> <value...> | materials new <name> [copy_of]\n"
+        "  materials save [file] | materials reload [file] | materials file\n"
         "PLACE\n"
         "  position <id> x y z                       teleport (warns when it overlaps something)\n"
         "  move <id> dx dy dz [through]              stops at the first part in the way (through = ignore)\n"
@@ -393,7 +396,7 @@ std::string commandHelp() {
         "  player grab [id] | player release | player throw [N·s] | player rotate <deg> [tilt]   (carried part, like R)\n"
         "  tool select|saw [x|y|z] [angle] [kerf_mm]|drill [D_mm] [depth_mm]|round [r_mm] [chamfer]|mill [L W depth]|plane [mm]\n"
         "  tool heat [lighter|gas|welding|spray|nitrogen]   hold the mouse on a part (build) or F (play) to heat/cool it\n"
-        "  window inspector|drawing|console|help [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"
+        "  window inspector|drawing|console|help|materials [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"
         "  lan [status] | lan host | lan join <address> | lan leave       multiplayer in the local network\n"
         "  lan accept [name|all] | lan decline <name> | lan kick <name> | lan confirm on|off | lan name <text>\n";
 }
@@ -476,7 +479,87 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         double s = 1.0;
         num(1, s);
         res.text = host.wait(std::clamp(s, 0.0, 600.0));
+    } else if (cmd == "materials" && t.size() > 1) {
+        // Materialdatei: anzeigen, ändern, neu, speichern, neu laden
+        const std::string sub = word(1);
+        const std::string file = materialFile().empty() ? std::string("(built-in list)") : materialFile();
+        if (sub == "file") {
+            res.text = "materials file: " + file + (materialFile().empty() ? "\nsaving writes " + defaultMaterialFile() : std::string());
+        } else if (sub == "keys") {
+            const char* group = "";
+            for (const MaterialField& f : materialFields()) {
+                if (std::strcmp(group, f.group) != 0) out << (*group ? "\n" : "") << f.group << "\n";
+                group = f.group;
+                std::string key = f.key;
+                key.resize(std::max<size_t>(key.size(), 20), ' ');
+                out << "  " << key << f.label << (*f.unit ? std::string(" (") + f.unit + ")" : std::string());
+                if (f.type == MaterialField::Choice) {
+                    out << ":";
+                    for (int i = 0; f.choices[i]; ++i) out << " " << f.choices[i];
+                }
+                if (f.type == MaterialField::Optional) out << ", or none";
+                out << "\n";
+            }
+            res.text = out.str();
+        } else if (sub == "show") {
+            const int m = t.size() > 2 ? findMaterial(t[2]) : -1;
+            if (m < 0) return fail("materials show <material>   (" + materialNames() + ")");
+            res.text = materialText(m);
+        } else if (sub == "set") {
+            const int m = t.size() > 2 ? findMaterial(t[2]) : -1;
+            if (m < 0 || t.size() < 5) return fail("materials set <material> <key> <value...>   ('materials keys' lists the keys)");
+            const std::string key = normalizeWord(t[3]);
+            std::string value;
+            for (size_t i = 4; i < t.size(); ++i) value += (i > 4 ? " " : "") + t[i];
+            std::string err;
+            if (key == "name") {
+                if (!renameMaterial(m, value, &err)) return fail(err);
+            } else {
+                const MaterialField* f = findMaterialField(key);
+                if (!f) return fail("unknown key '" + key + "' ('materials keys' lists them)");
+                Material copy = materials()[m];
+                if (!setMaterialValue(copy, *f, value, &err)) return fail(err);
+                editableMaterials()[m] = copy;
+            }
+            w.applyMaterials({});
+            res.text = std::string(materials()[m].name) + ": " + key + " = " +
+                       (key == "name" ? std::string(materials()[m].name) : materialValue(materials()[m], *findMaterialField(key))) +
+                       "   ('materials save' writes the file)";
+        } else if (sub == "new") {
+            const int base = t.size() > 3 ? findMaterial(t[3]) : (int)materials().size() - 1;
+            if (t.size() < 3 || base < 0) return fail("materials new <name> [copy_of]   e.g. materials new pine spruce");
+            std::string err;
+            const int m = addMaterial(t[2], base, &err);
+            if (m < 0) return fail(err);
+            res.text = "new material '" + std::string(materials()[m].name) + "' (copy of " + materials()[base].name +
+                       "). Change it with 'materials set " + materials()[m].name + " <key> <value>' or in the window, then 'materials save'.\n" +
+                       materialText(m);
+        } else if (sub == "save") {
+            const std::string path = t.size() > 2 ? t[2] : (materialFile().empty() ? defaultMaterialFile() : materialFile());
+            std::string err;
+            if (!saveMaterialFile(path, &err)) return fail(err);
+            res.text = std::to_string(materials().size()) + " materials saved to " + path;
+        } else if (sub == "reload" || sub == "load") {
+            const std::string path = t.size() > 2 ? t[2] : (materialFile().empty() ? defaultMaterialFile() : materialFile());
+            std::vector<std::string> before;
+            for (const Material& m : materials()) before.push_back(m.name);
+            std::string report;
+            if (!loadMaterialFile(path, &report)) return fail("not loaded, the old list stays:\n" + report);
+            std::vector<int> remap;
+            std::string lost;
+            for (const std::string& n : before) {
+                const int i = findMaterialIndex(n.c_str());
+                remap.push_back(std::max(i, 0));
+                if (i < 0) lost += " " + n;
+            }
+            w.applyMaterials(remap);
+            res.text = std::to_string(materials().size()) + " materials loaded from " + path + (report.empty() ? "" : "\n" + report) +
+                       (lost.empty() ? "" : "\nmissing now (parts use " + std::string(materials()[0].name) + "):" + lost);
+        } else {
+            return fail("materials [file | keys | show <m> | set <m> <key> <value> | new <name> [copy_of] | save [file] | reload [file]]");
+        }
     } else if (cmd == "materials") {
+        out << "file: " << (materialFile().empty() ? std::string("(built-in list)") : materialFile()) << "\n";
         for (size_t i = 0; i < materials().size(); ++i) {
             const Material& m = materials()[i];
             out << m.name << ": " << m.density << " kg/m3, friction static " << fmtNum(m.frictionStatic, 2) << " sliding "

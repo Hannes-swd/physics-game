@@ -843,12 +843,10 @@ void World::stepHeat(double dt) {
 
 void World::makePuddle(Object& o, double floorY) {
     const Thermal& th = thermal(o.material);
-    const Material& mat = materials()[o.material];
-    double h = mat.shading == Shading::Metal ? 0.005 : (mat.shading == Shading::Plastic ? 0.006 : 0.012);  // Oberflächenspannung
+    double h = std::max(0.001, th.puddleMm / 1000.0);  // Oberflächenspannung: Höhe laut Materialdatei
     const double V = std::max(o.volume, 1e-9);
     double R = std::sqrt(V / (kPi * h));
     if (R < h) R = h = std::cbrt(V / kPi);
-    (void)th;
     solid::Solid s = solid::makeCylinder(R, h, std::clamp(int(R * 400), 16, 48));
     glm::dvec3 com;
     solid::volume(s, &com);

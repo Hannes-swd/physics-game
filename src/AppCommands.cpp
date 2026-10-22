@@ -434,11 +434,12 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         std::string w = arg(t, 1);
         bool* flag = nullptr;
         if (w == "inspector" || w == "physics") flag = &showInspector_;
+        else if (w == "materials") flag = &showMaterials_;
         else if (w == "drawing") flag = &showDrawing_;
         else if (w == "console") flag = &showConsole_;
         else if (w == "help" || w == "controls") flag = &showHelp_;
         if (!flag) {
-            out = "Error: window inspector|drawing|console|help [on|off]";
+            out = "Error: window inspector|drawing|console|help|materials [on|off]";
             return true;
         }
         *flag = onOff(t, 2, *flag);

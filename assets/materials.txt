@@ -1,0 +1,487 @@
+# Werkstatt – Materialien
+#
+# Jedes Material ist ein Abschnitt [material <name>]. Der Name ist der Befehlsname (englisch, klein, ohne Leerzeichen),
+# z. B. "new box steel 10 10 10". Neue Materialien einfach unten anhängen; fehlende Werte nehmen den Standard
+# (siehe docs/13-Materialien.md). Zahlen mit Punkt. "none" schaltet etwas ab (schmilzt nicht, brennt nicht ...).
+# Im Spiel: Menü Ansicht -> Materialien (bearbeiten, neu, speichern) oder Befehle "materials ...".
+#
+# ALLGEMEIN
+#   label               Name in den Menüs (deutsch)
+#   aliases             weitere Namen für Befehle und alte Szenen
+#   class               wood | metal | stone | rubber | plastic   Verhalten: Reibung, Verschleiß, Nägel/Dübel,
+#                       Faser (Holz spaltet), Gummi federt zurück, Pfützenhöhe ...
+# AUSSEHEN
+#   texture             wood | brick | metal | stone | rubber | concrete | plastic | plain   Muster im Shader
+#   color, color2       Grundfarbe und zweite Farbe (Maserung, Sprenkel), r g b linear 0..1
+#   roughness           0 spiegelglatt .. 1 matt
+#   metallic            0 Nichtmetall .. 1 Metall
+#   temper              none | steel | copper   Anlauffarben nach dem Erhitzen
+# MECHANIK
+#   density             kg/m³
+#   friction            Haft- und Gleitreibung (gegen gleiches Material, Paare unten)
+#   rolling             Rollreibungszahl c_rr
+#   restitution         Stoßzahl: 0 plastisch .. 1 elastisch
+#   tensile             Zugfestigkeit MPa
+#   compressive         Druckfestigkeit MPa
+#   young               E-Modul GPa
+#   hardness            Brinell-Härte MPa (Holz quer zur Faser): Abrieb, Dellen, Werkzeug-Aufprall
+#   fracture_energy     Bruchenergie beim Aufprall J/m² Bruchquerschnitt (spröde ~3000, Holz 40000, Metall 5e7)
+#   split_energy        Spaltenergie für einen Keil J/m², none = spaltet nicht
+#   bend_radius         kleinster Biegeradius innen in Vielfachen der Dicke, none = nicht biegbar (spröde)
+# WÄRME
+#   conductivity        Wärmeleitfähigkeit W/(m·K)
+#   specific_heat       spezifische Wärmekapazität J/(kg·K)
+#   emissivity          Emissionsgrad 0..1 (Wärmestrahlung)
+#   melts_at            Schmelzpunkt °C, none = schmilzt nicht
+#   latent_heat         Schmelzwärme J/kg
+#   puddle_height       Höhe einer Pfütze aus der Schmelze, mm
+#   soft_from           ab hier sinken Festigkeit und Härte, °C
+#   half_strength_at    hier ist nur noch die halbe Festigkeit übrig, °C
+#   brittle_below       darunter spröde (Kälte), °C, none = wird nie spröde
+#   chars_from          ab hier verkohlt/zersetzt es sich (wird schwarz), °C, none = nie
+#   ignites_at          Zündtemperatur mit Flamme in der Nähe, °C, none = brennt nicht
+#   heat_of_combustion  Heizwert J/kg
+#   burn_rate           Abbrand an der Oberfläche kg/(m²·s)
+#   smoke               Rauch 0..1 (Holz wenig, Gummi viel und schwarz)
+#
+# REIBUNGSPAARE
+#   [pair <a> <b>]  friction = Haft Gleit. a und b sind Materialnamen oder Klassen (wood, metal ...).
+#   Zuerst gilt das Paar mit beiden Namen, dann eins mit Klassen, sonst der Mittelwert der Materialien.
+
+[material spruce]
+label              = Fichte
+aliases            = fichte
+class              = wood
+texture            = wood
+color              = 0.72 0.5 0.28
+color2             = 0.5 0.3 0.13
+roughness          = 0.7
+metallic           = 0
+temper             = none
+density            = 470
+friction           = 0.5 0.35
+rolling            = 0.005
+restitution        = 0.35
+tensile            = 80
+compressive        = 40
+young              = 11
+hardness           = 12
+fracture_energy    = 40000
+split_energy       = 600
+bend_radius        = 50
+conductivity       = 0.12
+specific_heat      = 1700
+emissivity         = 0.9
+melts_at           = none
+latent_heat        = 0
+puddle_height      = 12
+soft_from          = 60
+half_strength_at   = 250
+brittle_below      = none
+chars_from         = 200
+ignites_at         = 300
+heat_of_combustion = 15000000
+burn_rate          = 0.011
+smoke              = 0.15
+
+[material oak]
+label              = Eiche
+aliases            = eiche
+class              = wood
+texture            = wood
+color              = 0.46 0.3 0.15
+color2             = 0.26 0.15 0.06
+roughness          = 0.6
+metallic           = 0
+temper             = none
+density            = 720
+friction           = 0.55 0.4
+rolling            = 0.004
+restitution        = 0.3
+tensile            = 110
+compressive        = 55
+young              = 12.5
+hardness           = 35
+fracture_energy    = 50000
+split_energy       = 900
+bend_radius        = 50
+conductivity       = 0.17
+specific_heat      = 1700
+emissivity         = 0.9
+melts_at           = none
+latent_heat        = 0
+puddle_height      = 12
+soft_from          = 60
+half_strength_at   = 250
+brittle_below      = none
+chars_from         = 220
+ignites_at         = 320
+heat_of_combustion = 15000000
+burn_rate          = 0.009
+smoke              = 0.15
+
+[material brick]
+label              = Ziegel
+aliases            = ziegel
+class              = stone
+texture            = brick
+color              = 0.5 0.15 0.07
+color2             = 0.3 0.08 0.04
+roughness          = 0.9
+metallic           = 0
+temper             = none
+density            = 1800
+friction           = 0.65 0.55
+rolling            = 0.008
+restitution        = 0.1
+tensile            = 3.5
+compressive        = 20
+young              = 15
+hardness           = 500
+fracture_energy    = 3000
+split_energy       = 900
+bend_radius        = none
+conductivity       = 0.7
+specific_heat      = 840
+emissivity         = 0.93
+melts_at           = 1600
+latent_heat        = 400000
+puddle_height      = 12
+soft_from          = 1000
+half_strength_at   = 1300
+brittle_below      = none
+chars_from         = none
+ignites_at         = none
+heat_of_combustion = 0
+burn_rate          = 0
+smoke              = 0
+
+[material concrete]
+label              = Beton
+aliases            = beton
+class              = stone
+texture            = concrete
+color              = 0.45 0.45 0.43
+color2             = 0.3 0.3 0.29
+roughness          = 0.9
+metallic           = 0
+temper             = none
+density            = 2400
+friction           = 0.65 0.55
+rolling            = 0.006
+restitution        = 0.1
+tensile            = 2.6
+compressive        = 30
+young              = 31
+hardness           = 400
+fracture_energy    = 4000
+split_energy       = 1200
+bend_radius        = none
+conductivity       = 1.7
+specific_heat      = 880
+emissivity         = 0.94
+melts_at           = 1350
+latent_heat        = 400000
+puddle_height      = 12
+soft_from          = 300
+half_strength_at   = 600
+brittle_below      = none
+chars_from         = none
+ignites_at         = none
+heat_of_combustion = 0
+burn_rate          = 0
+smoke              = 0
+
+[material granite]
+label              = Granit
+aliases            = granit
+class              = stone
+texture            = stone
+color              = 0.5 0.49 0.48
+color2             = 0.1 0.1 0.11
+roughness          = 0.45
+metallic           = 0
+temper             = none
+density            = 2700
+friction           = 0.6 0.5
+rolling            = 0.003
+restitution        = 0.15
+tensile            = 10
+compressive        = 180
+young              = 50
+hardness           = 2500
+fracture_energy    = 6000
+split_energy       = 1800
+bend_radius        = none
+conductivity       = 2.8
+specific_heat      = 790
+emissivity         = 0.9
+melts_at           = 1240
+latent_heat        = 400000
+puddle_height      = 12
+soft_from          = 500
+half_strength_at   = 800
+brittle_below      = none
+chars_from         = none
+ignites_at         = none
+heat_of_combustion = 0
+burn_rate          = 0
+smoke              = 0
+
+[material steel]
+label              = Stahl
+aliases            = stahl
+class              = metal
+texture            = metal
+color              = 0.56 0.57 0.58
+color2             = 0.45 0.46 0.47
+roughness          = 0.35
+metallic           = 1
+temper             = steel
+density            = 7850
+friction           = 0.6 0.45
+rolling            = 0.0005
+restitution        = 0.4
+tensile            = 360
+compressive        = 360
+young              = 210
+hardness           = 1400
+fracture_energy    = 50000000
+split_energy       = none
+bend_radius        = 1
+conductivity       = 50
+specific_heat      = 490
+emissivity         = 0.7
+melts_at           = 1510
+latent_heat        = 270000
+puddle_height      = 5
+soft_from          = 350
+half_strength_at   = 600
+brittle_below      = -20
+chars_from         = none
+ignites_at         = none
+heat_of_combustion = 0
+burn_rate          = 0
+smoke              = 0
+
+[material aluminium]
+label              = Aluminium
+aliases            = aluminum
+class              = metal
+texture            = metal
+color              = 0.91 0.92 0.92
+color2             = 0.8 0.81 0.82
+roughness          = 0.3
+metallic           = 1
+temper             = none
+density            = 2700
+friction           = 0.6 0.45
+rolling            = 0.001
+restitution        = 0.35
+tensile            = 150
+compressive        = 150
+young              = 70
+hardness           = 600
+fracture_energy    = 20000000
+split_energy       = none
+bend_radius        = 1
+conductivity       = 200
+specific_heat      = 900
+emissivity         = 0.2
+melts_at           = 660
+latent_heat        = 397000
+puddle_height      = 5
+soft_from          = 120
+half_strength_at   = 260
+brittle_below      = none
+chars_from         = none
+ignites_at         = none
+heat_of_combustion = 0
+burn_rate          = 0
+smoke              = 0
+
+[material brass]
+label              = Messing
+aliases            = messing
+class              = metal
+texture            = metal
+color              = 0.91 0.74 0.38
+color2             = 0.8 0.62 0.3
+roughness          = 0.3
+metallic           = 1
+temper             = copper
+density            = 8500
+friction           = 0.5 0.4
+rolling            = 0.0008
+restitution        = 0.35
+tensile            = 350
+compressive        = 350
+young              = 100
+hardness           = 1000
+fracture_energy    = 50000000
+split_energy       = none
+bend_radius        = 0.5
+conductivity       = 110
+specific_heat      = 380
+emissivity         = 0.3
+melts_at           = 920
+latent_heat        = 168000
+puddle_height      = 5
+soft_from          = 250
+half_strength_at   = 450
+brittle_below      = none
+chars_from         = none
+ignites_at         = none
+heat_of_combustion = 0
+burn_rate          = 0
+smoke              = 0
+
+[material copper]
+label              = Kupfer
+aliases            = kupfer
+class              = metal
+texture            = metal
+color              = 0.95 0.6 0.48
+color2             = 0.85 0.5 0.4
+roughness          = 0.3
+metallic           = 1
+temper             = copper
+density            = 8960
+friction           = 0.55 0.4
+rolling            = 0.0008
+restitution        = 0.3
+tensile            = 220
+compressive        = 220
+young              = 120
+hardness           = 400
+fracture_energy    = 50000000
+split_energy       = none
+bend_radius        = 0.25
+conductivity       = 390
+specific_heat      = 385
+emissivity         = 0.5
+melts_at           = 1085
+latent_heat        = 205000
+puddle_height      = 5
+soft_from          = 200
+half_strength_at   = 450
+brittle_below      = none
+chars_from         = none
+ignites_at         = none
+heat_of_combustion = 0
+burn_rate          = 0
+smoke              = 0
+
+[material rubber]
+label              = Gummi
+aliases            = gummi
+class              = rubber
+texture            = rubber
+color              = 0.04 0.04 0.04
+color2             = 0.02 0.02 0.02
+roughness          = 0.9
+metallic           = 0
+temper             = none
+density            = 1100
+friction           = 1 0.8
+rolling            = 0.015
+restitution        = 0.8
+tensile            = 15
+compressive        = 15
+young              = 0.01
+hardness           = 5
+fracture_energy    = 1000000000
+split_energy       = none
+bend_radius        = 0
+conductivity       = 0.16
+specific_heat      = 2000
+emissivity         = 0.9
+melts_at           = none
+latent_heat        = 0
+puddle_height      = 12
+soft_from          = 120
+half_strength_at   = 250
+brittle_below      = -60
+chars_from         = 250
+ignites_at         = 350
+heat_of_combustion = 32000000
+burn_rate          = 0.015
+smoke              = 1
+
+[material plastic]
+label              = Kunststoff (ABS)
+aliases            = kunststoff abs
+class              = plastic
+texture            = plastic
+color              = 0.7 0.1 0.06
+color2             = 0.55 0.07 0.04
+roughness          = 0.35
+metallic           = 0
+temper             = none
+density            = 1050
+friction           = 0.5 0.35
+rolling            = 0.006
+restitution        = 0.45
+tensile            = 40
+compressive        = 65
+young              = 2.3
+hardness           = 100
+fracture_energy    = 20000
+split_energy       = none
+bend_radius        = 3
+conductivity       = 0.17
+specific_heat      = 1400
+emissivity         = 0.9
+melts_at           = 230
+latent_heat        = 100000
+puddle_height      = 6
+soft_from          = 80
+half_strength_at   = 105
+brittle_below      = -40
+chars_from         = 300
+ignites_at         = 390
+heat_of_combustion = 35000000
+burn_rate          = 0.02
+smoke              = 0.85
+
+# ---------------------------------------------------------------- Reibung je Paar (trocken, Tabellenbuch, gerundet)
+[pair steel steel]
+friction = 0.74 0.57
+[pair aluminium steel]
+friction = 0.61 0.47
+[pair brass steel]
+friction = 0.51 0.44
+[pair copper steel]
+friction = 0.53 0.36
+[pair aluminium aluminium]
+friction = 1.05 1
+[pair copper copper]
+friction = 1 0.8
+[pair rubber rubber]
+friction = 1.15 1
+[pair rubber stone]
+friction = 1 0.8
+[pair rubber wood]
+friction = 0.8 0.6
+[pair rubber metal]
+friction = 0.8 0.6
+[pair rubber plastic]
+friction = 0.9 0.7
+[pair plastic plastic]
+friction = 0.5 0.4
+[pair plastic metal]
+friction = 0.35 0.3
+[pair plastic wood]
+friction = 0.45 0.35
+[pair plastic stone]
+friction = 0.55 0.45
+[pair wood wood]
+friction = 0.5 0.3
+[pair wood metal]
+friction = 0.45 0.35
+[pair wood stone]
+friction = 0.6 0.5
+[pair metal stone]
+friction = 0.57 0.45
+[pair stone stone]
+friction = 0.65 0.55

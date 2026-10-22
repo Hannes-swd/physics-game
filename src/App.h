@@ -223,6 +223,7 @@ private:
     void drawToasts();
     void drawDrawingWindow();
     void drawInspector();
+    void drawMaterialEditor();
     void refreshDrawing();
     void log(const std::string& text, int kind = 0);  // 0 normal, 1 Befehl, 2 Fehler, 3 Info
     void openImportDialog();
@@ -426,6 +427,12 @@ private:
     uint32_t nameBufFor_ = 0;
     bool showInspector_ = false;
     uint32_t inspectTarget_ = 0;
+    // Material-Editor
+    bool showMaterials_ = false, materialsDirty_ = false;
+    int matEdit_ = 0;
+    char matName_[40] = {}, matLabel_[80] = {}, matAliases_[160] = {}, matNew_[40] = {};
+    int matBufFor_ = -1;
+    std::string matStatus_;
     bool showDrawing_ = false;
     std::vector<uint32_t> drawingIds_;
     TechDrawing drawing_;
