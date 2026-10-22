@@ -142,7 +142,41 @@ const char* kShowcase[] = {
     "new cylinder steel 1.05 8 500 8.01 -150 ; name last 'Pin D10.5 (too big, stays on top)'",
 };
 
+// Feuerstelle ("scene fire"): Lagerfeuer mit Stahlstab darüber, Aluminium, Kunststoff, Gummi, ein geleimtes Holzgestell
+// und ein tiefgekühlter Stahlstab daneben
+const char* kFireScene[] = {
+    // Lagerfeuer: zwei Scheite unten, zwei quer darüber, Anzündholz in der Mitte
+    "new box spruce 50 8 8 0 4 -12 ; name last 'Log' ; new box spruce 50 8 8 0 4 12 ; name last 'Log'",
+    "new box spruce 50 8 8 -12 12.01 0 ; rotate last y 90 ; name last 'Log' ; new box spruce 50 8 8 12 12.01 0 ; rotate last y 90 ; name last 'Log'",
+    "new box spruce 30 3 3 -3 9.51 0 ; rotate last y 90 ; name last 'Kindling' ; set fs_k = last ; "
+    "new box spruce 30 3 3 3 9.51 0 ; rotate last y 70 ; name last 'Kindling'",
+    // Stahlstab auf zwei Betonsteinen über dem Feuer: wird heiß, glüht, läuft blau an
+    "new box concrete 12 12 22 -45 11 0 ; new box concrete 12 12 22 45 11 0",
+    "new box steel 110 2 2 0 23.01 0 ; name last 'Steel bar over the fire'",
+    // Aluminiumblock und Kunststoffbecher am Rand: schmelzen, wenn das Feuer groß wird
+    "new box aluminium 6 6 6 0 3 30 ; name last 'Aluminium block' ; new cylinder plastic 7 9 22 4.5 -24 ; name last 'Plastic cup'",
+    "new tube rubber 30 18 8 40 4 -45 ; name last 'Rubber ring'",
+    // geleimtes Brett an einem Pfosten nah am Feuer: der Leim wird weich
+    "new box oak 4 4 40 -40 20 40 ; fix last ; set fs_post = last ; new box oak 30 2 10 -23 30 40 ; set fs_shelf = last ; "
+    "name $fs_shelf 'Glued shelf' ; glue $fs_post $fs_shelf woodglue",
+    // Kälte: Stahlstab auf -60 °C (spröde) und einer bei Raumtemperatur zum Vergleich
+    "new box steel 40 3 3 80 40 30 ; heat last -60 ; name last 'Frozen steel bar (-60 °C)' ; new box steel 40 3 3 80 40 50 ; name last 'Steel bar (20 °C)'",
+    "ignite $fs_k ; ignite 1 ; ignite 2",
+};
+
 } // namespace
+
+void World::fireScene() {
+    clear();
+    undo_.clear();
+    redo_.clear();
+    BuildHost host(*this);
+    for (const char* line : kFireScene) {
+        bool ok = true;
+        std::string out = runScriptSync(host, line, &ok);
+        if (!ok) std::fprintf(stderr, "fire scene: %s\n%s\n", line, out.c_str());
+    }
+}
 
 void World::showcaseScene() {
     demoScene();  // Werkbank, Rampe, Getriebe in der Mitte

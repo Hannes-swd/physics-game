@@ -39,6 +39,7 @@ Dokumentation sind deutsch.
 | Verbindungen | `glue`, `nail`, `screw`, `weld`, `hinge`, `spring`, `rope`, `joints`, `joint`, `detach` |
 | Löschen & Verlauf | `delete`, `undo`, `redo` |
 | Physik | `sim`, `impulse`, `mode`, `breakage`, `air`, `wind` |
+| Wärme & Feuer | `heat`, `ignite`, `extinguish`, `torch`, `tool heat` (siehe [12](12-Waerme-und-Feuer.md)) |
 | Ansicht & Bild | `view`, `camera`, `screenshot`, `window`, `display`, `tool` |
 | Spielfigur | `player ...` |
 | Zeichnung | `drawing` |
@@ -582,6 +583,61 @@ air: density 0.000 kg/m3 (vacuum), wind 5.00 0.00 0.00 m/s (5.00 m/s = 18.0 km/h
 
 ---
 
+## Wärme & Feuer
+
+Das Modell (Wärmeleitung, Brennen, Schmelzen, Kälte) steht in [12-Waerme-und-Feuer.md](12-Waerme-und-Feuer.md).
+
+### `heat`
+Überblick:
+```
+heat          on, air 20.0 °C, time x5.0
+parts         18 warmer or colder than the air, 6 burning
+fires         1 (70.2 kW)
+  at -4.6 -0.0 1.1 cm: 70.2 kW, flames 95 cm high, 1039 °C
+hottest       #6 Kindling 821 °C
+```
+
+### `heat <id> [°C]`
+Ohne Zahl: Temperatur, Zustand und Kennwerte. Mit Zahl: das ganze Teil auf diese Temperatur setzen (über dem
+Schmelzpunkt: flüssig).
+```
+> heat 9
+#9 Steel bar over the fire
+temperature   mean 220 °C, min 46 °C, max 452 °C  (air 20 °C)
+state         softened: 94 % strength at the hottest spot
+material      λ 50.00 W/mK, c 490 J/kgK, ε 0.70, melts at 1510 °C, soft from 350 °C (half strength at 600 °C), brittle below -20 °C
+```
+`info <id>` zeigt dieselben Zeilen am Ende.
+
+### `heat <id> map`
+Das Temperaturgitter des Teils Schicht für Schicht (y von oben nach unten), °C je Zelle. `*` brennt, `~` flüssig,
+`#` verkohlt, `.` kein Material:
+```
+Board: 10 x 1 x 2 cells of 6.0 x 2.0 x 5.0 cm (local x right, z down per layer)
+layer y0
+     .#   636*   438*   162     43     35     31     28     26     25
+   641*   604*   435*   161     43     35     31     28     26     25
+```
+
+### `heat on|off`, `heat ambient <°C>`, `heat speed <x>`
+Wärme rechnen oder alle Temperaturen einfrieren; Luft- und Bodentemperatur; Zeitraffer nur für die Wärme (0,1 … 100).
+
+### `ignite <id> [face]`
+Holz, Gummi oder Kunststoff anzünden, ohne Fläche an der untersten Stelle. Stahl, Stein und Co. brennen nicht
+(Fehlermeldung), ohne Luft (`air vacuum`) auch nichts.
+
+### `extinguish <id|all>`
+Wasser: brennende Stellen gehen aus und haben danach höchstens 100 °C.
+
+### `torch <id> [tool] [seconds=5] [face=top]`
+Eine Flamme oder Kälte auf die Mitte einer Fläche richten. `tool`: `lighter` (Feuerzeug, 1000 °C), `gas` (Gasbrenner,
+1900 °C), `welding` (Schweißbrenner, 3100 °C), `spray` (Kältespray, −55 °C), `nitrogen` (Flüssigstickstoff, −196 °C).
+```
+torch 3 welding 60 right ; wait 60 ; heat 3
+```
+
+---
+
 ## Ansicht & Bild (nur mit Fenster)
 
 | Befehl | Wirkung |
@@ -597,6 +653,7 @@ air: density 0.000 kg/m3 (vacuum), wind 5.00 0.00 0.00 m/s (5.00 m/s = 18.0 km/h
 | `tool round [radius_mm] [chamfer]` | Abrunden (mit `chamfer`: Fasen) per Mausklick auf eine Kante. `tool chamfer [mm]` geht auch |
 | `tool mill [L W depth]` | Tasche fräsen per Mausklick auf eine Fläche (mm) |
 | `tool plane [mm]` | Hobeln per Mausklick auf eine Fläche |
+| `tool heat [lighter\|gas\|welding\|spray\|nitrogen]` | Wärme-Werkzeug: im Bau-Modus Maustaste auf einem Teil halten, im Spiel-Modus F halten (der Modus bleibt) |
 
 ---
 
@@ -661,6 +718,7 @@ SVG saved: board.svg
 | `scene empty` | alle Teile entfernen (Nummern beginnen wieder bei 1) |
 | `scene demo` | Beispiel-Werkstatt laden (Werkbank, Bretter, Rampe, Getriebe …) |
 | `scene showcase` | große Beispielwelt mit allem (siehe unten) |
+| `scene fire` | Feuerstelle: Lagerfeuer, Stahlstab darüber, Aluminium, Kunststoff, Gummi, geleimtes Brett, gefrorener Stahl ([12](12-Waerme-und-Feuer.md)) |
 | `save <file>` | Szene speichern (Textformat `.werkstatt`) |
 | `load <file>` | Szene laden (auch Dateien aus der Zeit vor den englischen Befehlen) |
 | `quit` | Programm beenden. Anderer Name: `exit` |

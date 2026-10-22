@@ -24,8 +24,12 @@ struct ObjectGpuData {
     glm::mat4 model{1.0f};
     glm::vec4 color{1.0f};   // rgb, a = Rauheit
     glm::vec4 color2{1.0f};  // rgb, a = metallisch
-    glm::vec4 params{0.0f};  // x = Shading, y = Zufall, z = Hervorhebung
+    glm::vec4 params{0.0f};  // x = Shading, y = Zufall, z = Hervorhebung, w = Anlauffarben (0 keine, 1 Stahl, 2 Kupfer/Messing)
+    glm::vec4 heat0{0.0f, 0.0f, 0.0f, -1.0f};  // xyz = Ecke des Temperaturgitters (lokal), w = erste Zelle in heatCells (-1: keins)
+    glm::vec4 heat1{1.0f};   // xyz = Zellgröße (m), w = Zellen je Achse gepackt: x + 64·y + 4096·z
 };
+
+constexpr int kMaxLights = 8;  // Feuerschein (Punktlichter)
 
 struct DrawItem {
     const GpuMesh* mesh = nullptr;
@@ -54,6 +58,13 @@ struct FrameDesc {
     std::vector<LineVertex> overlayLines;  // immer sichtbar (Auswahl, Hilfslinien)
     std::vector<LineVertex> translucent;   // durchsichtige Dreiecke (Vorschau Säge/Bohrer)
     std::vector<solid::Vertex> frameVertices;  // Dreiecke nur für dieses Bild (DrawItem::frameFirst/frameCount)
+    // Wärme: je Zelle (Temperatur °C, Höchsttemperatur, Verkohlung 0..1, Schmelze 0..1), siehe ObjectGpuData::heat0
+    std::vector<glm::vec4> heatCells;
+    // Flammen, Rauch, Funken: Dreiecke, color = (u, v, Stärke, Art·10 + Zufall); Art 0 Flamme, 1 Rauch, 2 Funke,
+    // 3 Kältenebel, 4 Brennerflamme
+    std::vector<LineVertex> fire;
+    // Feuerschein: Position (relativ zum Ursprung) und Farbe·Stärke
+    std::vector<glm::vec3> lightPos, lightColor;
     glm::dvec3 origin{0.0};  // Darstellungsursprung: alle Positionen im Bild sind relativ dazu
     float fogDensity = 0.00035f;
     glm::mat4 lightViewProj{1.0f};
@@ -98,7 +109,7 @@ private:
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         VkSemaphore imageAvailable = VK_NULL_HANDLE;
         VkFence fence = VK_NULL_HANDLE;
-        Buffer objects, ubo, vertices, meshVertices;
+        Buffer objects, ubo, vertices, meshVertices, heat;
         VkDescriptorSet set = VK_NULL_HANDLE;
     };
     struct Pending {
@@ -153,7 +164,7 @@ private:
     VkDescriptorPool imguiPool_ = VK_NULL_HANDLE;
     VkPipelineLayout pipeLayout_ = VK_NULL_HANDLE;
     VkPipeline meshPipe_ = VK_NULL_HANDLE, shadowPipe_ = VK_NULL_HANDLE, skyPipe_ = VK_NULL_HANDLE;
-    VkPipeline linePipe_ = VK_NULL_HANDLE, transPipe_ = VK_NULL_HANDLE;
+    VkPipeline linePipe_ = VK_NULL_HANDLE, transPipe_ = VK_NULL_HANDLE, firePipe_ = VK_NULL_HANDLE;
 
     static constexpr int kFrames = 2;
     static constexpr uint32_t kMaxObjects = 8192;

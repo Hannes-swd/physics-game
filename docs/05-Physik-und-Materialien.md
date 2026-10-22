@@ -202,12 +202,15 @@ und das große Rad (30 Zähne) mit 13,34 U/min (Theorie 13,33).
 | `brass` | Messing | 8500 | 0,50 / 0,40 | 0,0008 | 0,35 | 350 | 350 | 100 | 5·10⁷ | 0,5 × Dicke |
 | `copper` | Kupfer | 8960 | 0,55 / 0,40 | 0,0008 | 0,30 | 220 | 220 | 120 | 5·10⁷ | 0,25 × Dicke |
 | `rubber` | Gummi | 1100 | 1,00 / 0,80 | 0,015 | 0,80 | 15 | 15 | 0,01 | 10⁹ | beliebig |
+| `plastic` | Kunststoff (ABS) | 1050 | 0,50 / 0,35 | 0,006 | 0,45 | 40 | 65 | 2,3 | 20 000 | 3 × Dicke |
 
 Haft- und Gleitreibung in der Tabelle sind die Werte des Materials; für ein Paar gilt die Paartabelle oben.
 Holzwerte gelten entlang der Faser. Die Zugfestigkeit begrenzt Klebungen und Schweißnähte, die Bruchenergie bestimmt,
 wann ein Teil beim Aufprall zerbricht (siehe [08](08-Verbindungen-und-Bruch.md#bruch-von-teilen-beim-aufprall)). Die Spaltenergie
 (Fichte 600, Eiche 900, Ziegel 900, Beton 1 200, Granit 1 800 J/m², Metall und Gummi spalten nicht) und die Härte entscheiden,
 was ein Keil oder eine Spitze anrichtet ([08](08-Verbindungen-und-Bruch.md#form-des-werkzeugs-spitze-schneide-stumpf)).
+Festigkeit, Härte und Bruchenergie hängen von der Temperatur ab: warm weicher, kalt spröde (Wärmewerte und Modell in
+[12-Waerme-und-Feuer.md](12-Waerme-und-Feuer.md)).
 Verbiegen und Brechen unter ruhender Last sind noch nicht eingebaut (Biegen mit `bend` ist eine Bearbeitung, siehe
 [09](09-Bearbeitung.md#biegen)).
 Die Holzmaserung liegt entlang der lokalen x-Achse und geht durch das ganze Teil: Schnittflächen zeigen Jahresringe.

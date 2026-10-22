@@ -23,7 +23,7 @@
 struct GLFWwindow;
 
 enum class ViewMode { Perspective = 0, Top = 1, Front = 2, Side = 3, Quad = 4 };
-enum class Tool { Select = 0, Saw = 1, Drill = 2, Round = 3, Mill = 4, Plane = 5 };
+enum class Tool { Select = 0, Saw = 1, Drill = 2, Round = 3, Mill = 4, Plane = 5, Heat = 6 };
 enum class NetRole { Off = 0, Host = 1, Client = 2 };
 
 // Was eine Spielfigur in der Hand hält (eigene Figur und die der Mitspieler)
@@ -203,6 +203,12 @@ private:
     glm::dvec3 selectionCenter() const;
     glm::dvec3 orbitEye() const;
 
+    // AppFire.cpp (Wärme und Feuer: Werkzeug, Flammen, Rauch, Feuerschein, Temperatur für den Shader)
+    void heatToolInput(float dt);
+    void updateFx(float dt);
+    void addFireFx(FrameDesc& fd);
+    void addHeatData(FrameDesc& fd, DrawItem& it, const Object& o);
+
     // AppUI.cpp
     void setupStyle();
     void drawUI();
@@ -311,6 +317,22 @@ private:
     float planeMm_ = 1.0f;                 // Hobeln: Abnahme je Klick
     Preview preview_;
     bool showEdges_ = true, showShadows_ = true, showGrid_ = true;
+
+    // Wärme-Werkzeug (Bau-Modus: Werkzeug H, Spiel-Modus: F halten) und Effekte
+    int heatTool_ = 1;                     // Index in heatTools()
+    float heatSet_ = 800.0f;               // Eigenschaften: Temperatur zum Setzen
+    bool heatActive_ = false;              // gerade auf ein Teil gerichtet
+    uint32_t heatTarget_ = 0;
+    glm::dvec3 heatPoint_{0}, heatNormal_{0, 1, 0}, heatFrom_{0};
+    struct FxParticle {
+        glm::dvec3 pos{0};
+        glm::vec3 vel{0};
+        float age = 0, life = 1, size = 0.1f, grow = 1, strength = 1, seed = 0;
+        int kind = 1;                      // 1 Rauch, 2 Funke, 3 Kältenebel
+    };
+    std::vector<FxParticle> fx_;
+    double fxSmokeAccum_ = 0;
+    RayHit lookHit_;                       // Spiel-Modus: was vor der Figur liegt
 
     // Spielen
     bool play_ = false;

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 
@@ -179,7 +180,10 @@ int App::run(const AppOptions& opt) {
 
         computeViews();
         handleInput(dt);
+        heatToolInput(dt);
+        if (!netClient()) world_->stepHeatOnly(dt);  // Bau-Modus: Wärme und Feuer laufen weiter, auch wenn die Physik steht
         if (play_ || peersPlaying()) updatePlay(dt);
+        updateFx(dt);
         computeViews();
         updatePreview();
         drawUI();
@@ -471,7 +475,10 @@ void App::buildFrame(FrameDesc& fd) {
             if (preview_.valid && preview_.objId == o->id) hl = 3;
             else if (sel || o->id == hand_.grabbed) hl = 2;
             else if (o->id == hovered_ || (play_ && o->id == lookAt_)) hl = 1;
-            it.data.params = glm::vec4((float)m.shading, o->seed * 10.0f, hl, 0);
+            // Anlauffarben: Stahl bunt, Kupfer/Messing dunkel, Aluminium bleibt blank
+            const float temper = std::strcmp(m.name, "steel") == 0 ? 1.0f : (std::strcmp(m.name, "copper") == 0 || std::strcmp(m.name, "brass") == 0) ? 2.0f : 0.0f;
+            it.data.params = glm::vec4((float)m.shading, o->seed * 10.0f, hl, temper);
+            if (lod < 2) addHeatData(fd, it, *o);
             glm::dvec3 ctr = (o->wMin + o->wMax) * 0.5;
             it.castShadow = lod < 2 && glm::length(ctr - shadowCenter) < R * 1.6;
             fd.items.push_back(it);
@@ -487,6 +494,7 @@ void App::buildFrame(FrameDesc& fd) {
     });
 
     addAvatars(fd);  // andere Spieler im LAN
+    addFireFx(fd);   // Flammen, Rauch, Feuerschein
 
     // Auswahl: Hüllquader + lokale Achsen
     if (!play_) {

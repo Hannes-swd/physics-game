@@ -10,7 +10,9 @@ struct ObjectData {
     mat4 model;
     vec4 color;    // rgb Grundfarbe, a = Rauheit
     vec4 color2;   // rgb zweite Farbe, a = metallisch
-    vec4 params;   // x = Shading-Art, y = Zufallswert, z = Hervorhebung, w = -
+    vec4 params;   // x = Shading-Art, y = Zufallswert, z = Hervorhebung, w = Anlauffarben (0 keine, 1 Stahl, 2 Kupfer/Messing)
+    vec4 heat0;    // xyz = Ecke des Temperaturgitters (lokal), w = erste Zelle in heatCells (< 0: kein Gitter)
+    vec4 heat1;    // xyz = Zellgröße, w = Zellen je Achse (x + 64·y + 4096·z)
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer Objects { ObjectData objs[]; };
@@ -24,6 +26,9 @@ layout(set = 0, binding = 2) uniform Frame {
     vec4 misc;         // x = Schatten-Texel in m, y = Belichtung, z = Nebel, w = Schatten an
     vec4 originMod;    // Weltursprung der Darstellung modulo 200 m (für Muster)
     vec4 originF;      // Weltursprung der Darstellung (float, für Achsenlinien)
+    vec4 lightPos[8];  // Feuerschein: Position (relativ zum Ursprung)
+    vec4 lightColor[8];  // Farbe · Stärke
+    vec4 lightInfo;    // x = Anzahl
 } frame;
 // Hinweis: Alle Positionen in den Shadern sind relativ zum Darstellungsursprung (nahe der Kamera),
 // damit die Genauigkeit auch Kilometer vom Weltursprung entfernt erhalten bleibt.

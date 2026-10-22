@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -27,6 +28,47 @@ struct ImportedMesh {
     double volume = 0;
     std::string file;
     double scale = 1.0;
+};
+
+// Wärme im Inneren eines Teils: ein grobes Gitter aus Zellen über die lokale Begrenzung (Heat.cpp)
+struct HeatCell {
+    float temp = 20.0f;      // °C
+    float peak = 20.0f;      // höchste erreichte Temperatur (Anlauffarben, Zunder)
+    float chr = 0.0f;        // Verkohlung/Zersetzung 0..1 (Holz wird schwarz)
+    float fuel = 0.0f;       // brennbarer Anteil, der noch übrig ist 0..1
+    float melt = 0.0f;       // geschmolzener Anteil 0..1
+    float area = 0.0f;       // Oberfläche der Zelle zur Luft (m²), berechnet
+    uint8_t inside = 0;      // Zelle enthält Material (berechnet)
+    uint8_t burning = 0;     // brennt gerade
+};
+
+struct HeatGrid {
+    glm::ivec3 dim{0};              // 0: noch nicht angelegt, das ganze Teil hat Umgebungstemperatur
+    glm::dvec3 origin{0}, cell{0};  // Ecke (lokal) und Zellgröße je Achse (m)
+    std::vector<HeatCell> cells;    // x schnell, dann y, dann z
+    bool empty() const { return dim.x <= 0; }
+    int index(int x, int y, int z) const { return x + dim.x * (y + dim.y * z); }
+};
+
+// Zustand einer Schmelze: Tropfen fällt, Pfütze liegt (fest oder flüssig)
+enum class MeltForm : int { None = 0, Drop = 1, Puddle = 2 };
+
+// Ein Feuer: zusammenhängende brennende Stellen (auch über mehrere Teile)
+struct Fire {
+    glm::dvec3 base{0};          // Mitte des Flammenfußes (Welt)
+    double power = 0;            // freigesetzte Wärme (W)
+    double diameter = 0;         // Flammenfuß (m)
+    double height = 0;           // Flammenhöhe (m, Heskestad)
+    double tempC = 0;            // mittlere Flammentemperatur
+    double emissivity = 0;       // Strahlung der Flamme (dicke Flammen strahlen mehr)
+    double soot = 0;             // Rauch 0..1
+    struct Spot {
+        glm::dvec3 pos{0};       // brennende Oberfläche (Welt)
+        glm::vec3 normal{0, 1, 0};
+        float size = 0.05f;      // Zellgröße (m)
+        float power = 0;         // W
+    };
+    std::vector<Spot> spots;
 };
 
 // Alles, was ein Teil ausmacht (wird für Rückgängig und Speichern kopiert)
@@ -55,6 +97,8 @@ struct ObjectState {
     int hullCacheMode = -1;
     int lubricant = 0;                                // Schmierstoff (Index in lubricants())
     std::vector<double> boreWear;                     // Abrieb je Bohrung: Wand weicht so weit zurück (m)
+    HeatGrid heat;                                    // Temperatur, Verkohlung, Schmelze
+    MeltForm meltForm = MeltForm::None;
 };
 
 struct Object : ObjectState {
@@ -99,6 +143,15 @@ struct Object : ObjectState {
     glm::dquat safeRot{1, 0, 0, 0};
     bool hasSafe = false;
     uint32_t netRev = 0;            // neu bei jeder neuen Geometrie (LAN: Teil neu an die Mitspieler senden)
+    // Wärme (Heat.cpp): Zusammenfassung nach jedem Wärmeschritt
+    struct HeatInfo {
+        float tMin = 20, tMax = 20, tMean = 20;
+        float chr = 0, melt = 0;    // Mittel über alle Zellen
+        int burning = 0;            // brennende Zellen
+        bool idle = true;           // im Gleichgewicht mit der Umgebung: nicht rechnen
+        double age = 0;             // Tropfen: so lange schon unterwegs (s)
+        double cellMass = 0;        // kg je Zelle mit Material
+    } heatInfo;
 };
 
 // Verbindungen zwischen zwei Teilen
@@ -276,6 +329,29 @@ public:
     std::vector<std::string> takeEvents();
     bool rayToObject(const Object& o, const glm::dvec3& origin, const glm::dvec3& dir, double& t) const;
 
+    // ---------------------------------------------------------- Wärme und Feuer (Heat.cpp)
+    // Wärme an/aus: aus = alles behält seine Temperatur (keine Wärmeleitung, kein Feuer, kein Schmelzen)
+    void setHeat(bool on) { heatOn_ = on; }
+    bool heat() const { return heatOn_; }
+    void setAmbient(double tempC);                      // Luft, Boden und unberührte Teile
+    double ambient() const { return ambient_; }
+    void setHeatSpeed(double f) { heatSpeed_ = std::clamp(f, 0.1, 100.0); }  // Zeitraffer nur für die Wärme
+    double heatSpeed() const { return heatSpeed_; }
+    // Nur die Wärme weiterrechnen (Bau-Modus, die Physik steht). Im Spiel-Modus läuft sie mit den Physikschritten.
+    void stepHeatOnly(double dt);
+    void setTemperature(Object& o, double tempC);
+    // Anzünden an einer Stelle (lokal, nullptr = unterste Stelle). false, wenn das Material nicht brennt
+    bool ignite(Object& o, const glm::dvec3* localPoint, std::string* err);
+    int extinguish(Object* o);                          // nullptr = alles. Anzahl gelöschter Stellen
+    // Wärmequelle (heatTools()) auf eine Stelle (lokal) richten, für "seconds" Sekunden
+    void addHeatSource(uint32_t id, const glm::dvec3& localPoint, int tool, double seconds);
+    double temperatureAt(const Object& o, const glm::dvec3& worldPoint) const;
+    double charAt(const Object& o, const glm::dvec3& worldPoint) const;
+    double hardnessAt(const Object& o, const glm::dvec3& worldPoint) const;  // Härte bei der Temperatur dort (MPa)
+    std::string heatText(Object& o);
+    const std::vector<Fire>& fires() const { return fires_; }
+    int burningParts() const;
+
     // ---------------------------------------------------------- Physik-Inspektor
     void setInspect(uint32_t id);
     uint32_t inspectId() const { return inspectId_; }
@@ -297,6 +373,7 @@ public:
     // ---------------------------------------------------------- Szene
     void demoScene();
     void showcaseScene();  // große Beispielwelt mit allem (Showcase.cpp)
+    void fireScene();      // Feuerstelle: Wärme, Feuer, Schmelzen, Kälte (Showcase.cpp)
     bool save(const std::filesystem::path& file, std::string* err) const;
     bool load(const std::filesystem::path& file, std::string* err);
 
@@ -352,6 +429,14 @@ private:
     bool replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::vector<uint32_t>* resultIds);
     // neue Geometrie, in Teile zerfallen lassen (wenn getrennt), Kollision/Masse neu
     bool applyResult(Object& o, solid::Solid s, std::vector<uint32_t>* resultIds, std::string* err);
+    // Wärme (Heat.cpp)
+    void stepHeat(double dt);
+    bool ensureHeat(Object& o);   // Gitter anlegen (mit Umgebungstemperatur)
+    void fitHeat(Object& o);      // Gitter an eine neue Form anpassen, Werte übernehmen
+    void heatShapes(bool cells);  // Tropfen landen als Pfütze; cells: abgebrannte und geschmolzene Stellen entfernen
+    void collectFrictionHeat(float h);
+    double jointHeatFactor(const Joint& j) const;
+    void makePuddle(Object& o, double floorY);
 
     Physics& physics_;
     Renderer* renderer_;
@@ -381,6 +466,24 @@ private:
     int rescues_ = 0;                                   // so oft wurde ein Teil an seine letzte freie Stelle zurückgesetzt
     std::unordered_map<uint64_t, std::pair<double, int>> rescueLog_;  // Paar -> (Beginn, Anzahl) im Zeitfenster
     std::unordered_map<uint64_t, double> stuckPairs_;   // Paar steckt dauerhaft: bis zu dieser Zeit nur sanft trennen
+    // Wärme
+    struct HeatSource {
+        uint32_t id = 0;
+        glm::dvec3 local{0};
+        int tool = 0;
+        double until = 0;   // Wärmezeit
+    };
+    struct FrictionHeat {
+        double energy = 0;          // J seit dem letzten Wärmeschritt
+        glm::dvec3 point{0};        // energiegewichtete Summe der Stellen
+        BodyHandle a = kNoBody, b = kNoBody;
+    };
+    std::vector<HeatSource> heatSources_;
+    std::vector<Fire> fires_;
+    std::unordered_map<uint64_t, FrictionHeat> frictionHeat_;
+    bool heatOn_ = true;
+    double ambient_ = 20.0, heatSpeed_ = 1.0;
+    double heatAccum_ = 0, heatTime_ = 0, heatShapeAccum_ = 0;
 };
 
 std::string fmtNum(double v, int decimals = 1);

@@ -19,6 +19,8 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 - Bruchverhalten: Verbindungen und spröde Teile brechen bei Überlast
 - Aerodynamik: Propeller erzeugen Schub und Luftwiderstand
 - Materialspezifische Reibung: Jedes Materialpaar hat eigene Haft- und Gleitreibung
+- Wärme, Feuer und Kälte: Temperatur an jeder Stelle eines Teils, Wärmeleitung, Brenner und Kältespray; Holz verkohlt,
+  brennt und das Feuer breitet sich aus; Metall glüht, wird weich und schmilzt; Kälte macht Stahl, Gummi und Kunststoff spröde
 
 **Steuerung & Automatisierung:**
 - Intuitive Maus-Steuerung **und** englische Textbefehle
@@ -47,6 +49,7 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 | [Bearbeitung](docs/09-Bearbeitung.md) | Abrunden, Fasen, Fräsen, Hobeln, Drehbank, Biegen, Spiegeln, Skalieren, Formen kombinieren |
 | [Stifte & Scharniere](docs/10-Stifte-und-Scharniere.md) | selbstgebaute Scharniere: Stift in Bohrung, Schmieren, Abrieb, Ausreißen |
 | [Mehrspieler](docs/11-Mehrspieler.md) | im LAN zusammen bauen und spielen: Gastgeber rechnet, Mitspieler treten bei |
+| [Wärme & Feuer](docs/12-Waerme-und-Feuer.md) | Temperatur, Wärmeleitung, Feuer, Schmelzen, Kälte, Befehle `heat`, `ignite`, `torch` |
 
 ## Projektstruktur
 

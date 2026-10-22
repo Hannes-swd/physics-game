@@ -51,6 +51,7 @@ const char* App::toolName(Tool t) {
     case Tool::Round: return "round";
     case Tool::Mill: return "mill";
     case Tool::Plane: return "plane";
+    case Tool::Heat: return "heat";
     default: return "select";
     }
 }
@@ -359,6 +360,23 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
     }
     if (cmd == "tool") {
         std::string w = arg(t, 1);
+        if (w == "heat" || w == "h") {  // Wärme-Werkzeug: im Spiel-Modus mit F, darum bleibt der Modus
+            if (t.size() > 2) {
+                const int k = findHeatTool(arg(t, 2).c_str());
+                if (k < 0) {
+                    std::string names;
+                    for (const auto& h : heatTools()) names += std::string(names.empty() ? "" : " ") + h.name;
+                    out = "Error: tool heat [" + names + "]";
+                    return true;
+                }
+                heatTool_ = k;
+            }
+            if (!play_) tool_ = Tool::Heat;
+            const HeatTool& h = heatTools()[heatTool_];
+            out = std::string("Tool: heat (") + h.name + ", " + fmtNum(h.tempC, 0) + " °C) - " +
+                  (play_ ? "hold F and look at a part" : "hold the left mouse button on a part");
+            return true;
+        }
         if (play_) leavePlay();
         double v;
         if (w == "select" || w == "move" || w == "v") {
@@ -388,7 +406,8 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
             tool_ = Tool::Plane;
             if (parseNum(t, 2, v)) planeMm_ = (float)std::clamp(v, 0.05, 500.0);
         } else {
-            out = "Error: tool select | saw [x|y|z] [angle] [kerf_mm] | drill [D_mm] [depth_mm] | round [r_mm] [chamfer] | mill [L W depth] | plane [mm]";
+            out = "Error: tool select | saw [x|y|z] [angle] [kerf_mm] | drill [D_mm] [depth_mm] | round [r_mm] [chamfer] | mill [L W depth] | plane [mm]"
+                  " | heat [lighter|gas|welding|spray|nitrogen]";
             return true;
         }
         out = std::string("Tool: ") + toolName(tool_);

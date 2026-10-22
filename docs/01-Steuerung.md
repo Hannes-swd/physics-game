@@ -39,6 +39,7 @@ Die Ansichten 2–4 sind orthografisch (ohne Perspektive), wie in CAD-Programmen
 | **E** | Abrunden / Fasen | Die Kante unter der Maus leuchtet (gelb = außen, blau = Innenkante), klicken = abrunden. Radius und „Fase statt Rundung“ im Werkzeug-Fenster. |
 | **M** | Fräsen | Auf eine ebene Fläche zeigen (grünes Rechteck), klicken = Tasche fräsen. Länge, Breite, Tiefe, Eckradius im Werkzeug-Fenster. |
 | **P** | Hobeln | Auf eine Fläche klicken = die eingestellte Dicke abnehmen. |
+| **H** | Wärme / Kälte | Maustaste auf einem Teil **halten**: Feuerzeug, Gasbrenner, Schweißbrenner, Kältespray oder Flüssigstickstoff trifft diese Stelle. Das Fenster zeigt die Temperatur unter der Maus. Siehe [12-Waerme-und-Feuer.md](12-Waerme-und-Feuer.md). |
 | **Esc** | | Werkzeug zurück auf Auswahl, nochmal: Auswahl aufheben |
 
 Die neuen Werkzeuge (Abrunden, Fräsen, Hobeln) führen einen Befehl aus. Er steht danach in der Konsole (F1),
@@ -77,6 +78,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **E** | Teil aufnehmen / ablegen, ohne die Taste zu halten |
 | Rechte Maustaste | getragenes Teil werfen |
 | Mausrad | Abstand des getragenen Teils ändern |
+| **F** halten | Wärme-Werkzeug (Brenner, Kälte; Auswahl im Bau-Modus unter H) auf das angeschaute Teil richten |
 | **F5** | Ansicht wechseln: durch die Augen der Figur / von hinten über die Schulter |
 | **Esc** | Maus freigeben (Pause). Klick ins Bild: weiterspielen |
 
@@ -105,8 +107,8 @@ Die Figur schiebt beim Laufen auch lose Teile weg (mit bis zu 350 N).
 
 | Fenster | Inhalt |
 |---|---|
-| **Werkzeuge** (links, Bau-Modus) | Werkzeugwahl, Einstellungen von Säge, Bohrer, Abrunden, Fräsen, Hobeln, Einrasten, **Neues Teil** (Quader, Zylinder, Rohr, Kugel, Zahnrad, Propeller; Material, Maße), Blender-Import |
-| **Eigenschaften** (rechts, Bau-Modus) | Name, Material, Größe, Volumen, Masse, Haft-/Gleitreibung, Position und Drehung zum Eintippen, Lagerung (fest / Drehachse mit Motor), **Bearbeiten** (alle Kanten abrunden/fasen/schleifen, Drehbank, Biegen, Spiegeln, Skalieren), Verbindungen, Unzerbrechlich. Bei zwei gewählten Teilen: **Verbinden** und **Formen kombinieren** (Vereinen, Ausschneiden, Schnittmenge) |
+| **Werkzeuge** (links, Bau-Modus) | Werkzeugwahl, Einstellungen von Säge, Bohrer, Abrunden, Fräsen, Hobeln, Wärme/Kälte, Einrasten, **Neues Teil** (Quader, Zylinder, Rohr, Kugel, Zahnrad, Propeller; Material, Maße), Blender-Import |
+| **Eigenschaften** (rechts, Bau-Modus) | Name, Material, Größe, Volumen, Masse, Haft-/Gleitreibung, Position und Drehung zum Eintippen, Lagerung (fest / Drehachse mit Motor), **Bearbeiten** (alle Kanten abrunden/fasen/schleifen, Drehbank, Biegen, Spiegeln, Skalieren), **Temperatur** (anzeigen, setzen, anzünden, löschen), Verbindungen, Unzerbrechlich. Bei zwei gewählten Teilen: **Verbinden** und **Formen kombinieren** (Vereinen, Ausschneiden, Schnittmenge) |
 | **Konsole** (F1) | Befehle und alle Meldungen |
 | **Physik-Inspektor** (F3) | Live-Werte, siehe [05-Physik-und-Materialien.md](05-Physik-und-Materialien.md) |
 | **Dreitafelprojektion** (F4) | Technische Zeichnung, siehe [06-Dreitafelprojektion.md](06-Dreitafelprojektion.md) |
@@ -139,6 +141,7 @@ Zwei gewählte Teile lassen sich darunter auch zu einem Teil **vereinen**, das z
 | **Leere Werkstatt** | alles entfernen (`scene empty`) |
 | **Beispiel-Werkstatt** | Werkbank, Rampe, Getriebe (`scene demo`) |
 | **Beispiel-Welt (alles)** | große Welt mit Kugelbahn, Dominos, Pendel, Propellern, Hängebrücke, Feder, Wippe, Werkstücken, Regal, Abrissbirne, Axt mit Spaltholz (`scene showcase`, siehe [02](02-Befehle.md#die-beispielwelt-scene-showcase)) |
+| **Feuerstelle (Wärme, Feuer, Kälte)** | Lagerfeuer mit Stahlstab, Aluminium, Kunststoff, Gummi, geleimtem Brett und gefrorenem Stahl (`scene fire`, siehe [12](12-Waerme-und-Feuer.md)) |
 | **Speichern / Laden** | Szene als Datei (Strg+S / Strg+O) |
 | **Modell importieren** | Blender-Modell (.obj) |
 | **Foto speichern** | Bild als PNG (F12) |
@@ -151,3 +154,7 @@ Zwei gewählte Teile lassen sich darunter auch zu einem Teil **vereinen**, das z
 | **Vakuum (keine Luft)** | ohne Luft: kein Luftwiderstand, kein Propellerschub (wie `air vacuum`) |
 | **Bau-Modus: Teile stoßen an** | an: beim Verschieben im Bau-Modus halten Teile an anderen an (wie `buildcollision on/off`) |
 | **Wind** | kein / leicht 3 m/s / stark 10 m/s / Sturm 25 m/s (wie `wind x y z`) |
+| **Wärme und Feuer** | an: Wärmeleitung, Abkühlen, Feuer, Schmelzen; aus: jede Temperatur bleibt stehen (wie `heat on/off`) |
+| **Lufttemperatur** | −40 … 35 °C (wie `heat ambient`) |
+| **Wärme-Zeitraffer** | 1× bis 60× (wie `heat speed`), nur für die Wärme |
+| **Alle Feuer löschen** | wie `extinguish all` |

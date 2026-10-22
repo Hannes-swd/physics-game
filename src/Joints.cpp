@@ -470,6 +470,10 @@ void World::checkJoints(float h) {
             const double a = tension / j.rT + moment / j.rM, b = shear / j.rS;
             u = std::sqrt(a * a + b * b);
         }
+        // Wärme: Kleber erweicht, Holz verkohlt um Nägel, Stahl verliert Festigkeit
+        const double hf = heatOn_ ? jointHeatFactor(j) : 1.0;
+        u /= hf;
+        if (hf <= 2e-3 && u < 1.5 && breakage_ && !j.unbreakable) u = 1.5;  // durchgeschmolzen/durchgebrannt: hält nichts mehr
         j.loadPrev = j.load;
         j.load = u;
         // Bruch erst, wenn die Überlast etwa 15 ms anhält. Starre Körper stoßen in der Rechnung in Millisekunden
@@ -496,9 +500,15 @@ void World::checkJoints(float h) {
         else
             msg += ": " + fmtNum(j->type == JointType::Hinge ? glm::length(j->lastForce) : j->lastForce.x, 0) + " N > " +
                    fmtNum(j->rMax, 0) + " N";
+        if (heatOn_) {
+            const double hf = jointHeatFactor(*j);
+            if (hf < 0.9) msg += " - weakened by heat to " + fmtNum(hf * 100, hf < 0.1 ? 1 : 0) + " %";
+        }
         events_.push_back(msg);
         ++brokenCount_;
         removeJoint(id);
+        for (Object* o : {A, B})  // ruhende Teile fallen jetzt
+            if (o && o->body != kNoBody && !o->fixed) physics_.activate(o->body);
     }
 }
 

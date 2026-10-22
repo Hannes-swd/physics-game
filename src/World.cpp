@@ -3,6 +3,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -235,6 +236,7 @@ void World::rebuildGeometry(Object& o) {
         renderer_->destroyMesh(o.mesh);
         o.mesh = renderer_->createMesh(verts);
     }
+    if (!o.heat.empty()) fitHeat(o);  // Temperaturgitter an die neue Form anpassen
     refreshPlacement(o);
 }
 
@@ -623,6 +625,9 @@ void World::clear() {
     rescues_ = 0;
     rescueLog_.clear();
     stuckPairs_.clear();
+    fires_.clear();
+    heatSources_.clear();
+    frictionHeat_.clear();
 }
 
 Object* World::duplicate(uint32_t id, const glm::dvec3& offset) {
@@ -657,6 +662,14 @@ void World::setTransform(Object& o, const glm::dvec3& pos, const glm::dquat& rot
 void World::setMaterial(Object& o, int material) {
     o.material = std::clamp(material, 0, (int)materials().size() - 1);
     o.mass = o.volume * materials()[o.material].density;
+    if (!o.heat.empty()) {  // neues Material: unverbrannt, Wärmekapazität neu
+        for (HeatCell& c : o.heat.cells) {
+            c.fuel = combustible(o.material) ? 1.0f : 0.0f;
+            c.chr = c.melt = 0.0f;
+            c.burning = 0;
+        }
+        fitHeat(o);
+    }
     rebuildBody(o);
 }
 
@@ -717,6 +730,8 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     const std::string shape = o.shape;
     const int edits = o.edits + 1;
     const float seed = o.seed;
+    const HeatGrid heat = o.heat;  // Temperatur gilt im alten Koordinatensystem des Teils
+    const MeltForm meltForm = o.meltForm;
 
     // größtes Stück bleibt das ursprüngliche Teil
     glm::dvec3 com;
@@ -726,6 +741,7 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     o.hullCache.reset();
     o.pos = framePos + frameRot * com;
     o.edits = edits;
+    o.heat.origin -= com;
     for (auto& j : joints_) {  // Anker liegen relativ zum (verschobenen) Schwerpunkt
         if (j->a == id) j->anchorA -= com;
         if (j->b == id) j->anchorB -= com;
@@ -741,6 +757,12 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
         if (!n) continue;
         n->edits = edits;
         n->seed = seed;  // gleiche Maserung wie das Original
+        n->meltForm = meltForm;
+        if (!heat.empty()) {  // Stücke behalten die Temperatur der Stelle, an der sie waren
+            n->heat = heat;
+            n->heat.origin -= glm::conjugate(frameRot) * (n->pos - framePos);
+            fitHeat(*n);
+        }
         if (fixed) setFixed(*n, true);
         if (lub) setLubricant(*n, lub);
         if (resultIds) resultIds->push_back(n->id);
@@ -1123,8 +1145,10 @@ void World::handleDeepContacts() {
             if (++log.second > 4) {  // klemmt immer wieder: dann nur noch sanft auseinanderschieben
                 stuckPairs_[key] = simTime_ + 3.0;
                 log = {simTime_, 0};
-                events_.push_back("note: " + (A ? A->name : std::string("floor")) + " and " + (B ? B->name : std::string("floor")) +
-                                  " keep getting stuck - pushing them apart slowly");
+                const bool melt = (A && A->meltForm != MeltForm::None) || (B && B->meltForm != MeltForm::None);  // Schmelze fließt an
+                if (!melt)
+                    events_.push_back("note: " + (A ? A->name : std::string("floor")) + " and " + (B ? B->name : std::string("floor")) +
+                                      " keep getting stuck - pushing them apart slowly");
             }
         }
     }
@@ -1147,6 +1171,14 @@ void World::afterStep(float h) {
     checkJoints(h);
     processImpacts();
     processBores(h);
+    if (heatOn_) {  // Wärme: 20 Schritte je Sekunde (im Zeitraffer jeweils länger)
+        collectFrictionHeat(h);
+        heatAccum_ += h;
+        if (heatAccum_ >= 0.05) {
+            heatAccum_ -= 0.05;
+            stepHeat(0.05 * heatSpeed_);
+        }
+    }
     Object* o = find(inspectId_);
     if (!o || o->body == kNoBody) return;
     BodyState s;
@@ -1374,6 +1406,15 @@ std::string World::inspectText(uint32_t id) {
     }
     if (!nj) line(ss, "Joints", "none");
     line(ss, "Breaking", o->unbreakable ? "never (unbreakable)" : (breakage_ ? "possible (breakage on)" : "off (breakage off)"));
+    ss << "HEAT\n";
+    std::istringstream heat(heatText(*o));
+    for (std::string l; std::getline(heat, l);) {
+        const size_t sp = l.find("  ");
+        if (sp == std::string::npos) continue;
+        std::string key = l.substr(0, sp), val = l.substr(l.find_first_not_of(' ', sp));
+        key[0] = (char)std::toupper((unsigned char)key[0]);
+        line(ss, key.c_str(), val);
+    }
     return ss.str();
 }
 
@@ -1595,6 +1636,16 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
         if (o.lubricant > 0) out << "lubricant " << lubricants()[std::clamp(o.lubricant, 0, (int)lubricants().size() - 1)].name << "\n";
         for (size_t i = 0; i < o.boreWear.size(); ++i)
             if (o.boreWear[i] > 0) out << "wear " << i << " " << o.boreWear[i] << "\n";
+        if (o.meltForm != MeltForm::None) out << "meltform " << (int)o.meltForm << "\n";
+        if (!o.heat.empty()) {  // Temperaturgitter: Maße, dann je Zelle Temperatur, Höchstwert, Verkohlung, Brennstoff, Schmelze, brennt
+            const HeatGrid& g = o.heat;
+            out << "heat " << g.dim.x << " " << g.dim.y << " " << g.dim.z << " " << g.origin.x << " " << g.origin.y << " " << g.origin.z << " "
+                << g.cell.x << " " << g.cell.y << " " << g.cell.z << "\n";
+            out << "heatcells";
+            for (const HeatCell& c : g.cells)
+                out << " " << c.temp << " " << c.peak << " " << c.chr << " " << c.fuel << " " << c.melt << " " << (int)c.burning;
+            out << "\n";
+        }
         if (o.kind == ObjKind::Mesh && o.imported) {
             out << "scale " << o.imported->scale << "\n";
             out << "file " << o.imported->file << "\n";
@@ -1703,6 +1754,25 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
                 if (cur.boreWear.size() <= i) cur.boreWear.resize(i + 1, 0.0);
                 cur.boreWear[i] = v;
             }
+        } else if (tag == "meltform") {
+            int f = 0;
+            ss >> f;
+            cur.meltForm = (MeltForm)std::clamp(f, 0, 2);
+        } else if (tag == "heat") {
+            HeatGrid& g = cur.heat;
+            ss >> g.dim.x >> g.dim.y >> g.dim.z >> g.origin.x >> g.origin.y >> g.origin.z >> g.cell.x >> g.cell.y >> g.cell.z;
+            if (!ss || g.dim.x <= 0 || g.dim.y <= 0 || g.dim.z <= 0 || (size_t)g.dim.x * g.dim.y * g.dim.z > 100000) cur.heat = HeatGrid();
+        } else if (tag == "heatcells") {
+            HeatGrid& g = cur.heat;
+            if (g.empty()) continue;
+            g.cells.resize((size_t)g.dim.x * g.dim.y * g.dim.z);
+            for (HeatCell& c : g.cells) {
+                int b = 0;
+                ss >> c.temp >> c.peak >> c.chr >> c.fuel >> c.melt >> b;
+                c.burning = b != 0;
+                c.inside = 1;  // wird beim Einfügen aus der Form bestimmt
+            }
+            if (!ss) cur.heat = HeatGrid();
         } else if (tag == "collision") {
             ss >> cur.collision;
         } else if (tag == "prim") {

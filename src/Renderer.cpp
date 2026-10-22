@@ -36,6 +36,12 @@ const uint32_t kSkyVert[] =
 const uint32_t kSkyFrag[] =
 #include "sky.frag.inc"
     ;
+const uint32_t kFireVert[] =
+#include "fire.vert.inc"
+    ;
+const uint32_t kFireFrag[] =
+#include "fire.frag.inc"
+    ;
 
 struct Push {
     glm::mat4 viewProj;
@@ -52,7 +58,12 @@ struct FrameUbo {
     glm::vec4 misc;
     glm::vec4 originMod;
     glm::vec4 originF;
+    glm::vec4 lightPos[kMaxLights];
+    glm::vec4 lightColor[kMaxLights];
+    glm::vec4 lightInfo;  // x = Anzahl
 };
+
+constexpr VkDeviceSize kHeatBytes = 64 * 1024 * sizeof(glm::vec4);  // Anfangsgröße des Wärme-Puffers
 
 #define VK_CHECK(x)                                                                     \
     do {                                                                                \
@@ -121,16 +132,17 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
     VK_CHECK(vkCreateSampler(device_, &si, nullptr, &shadowSampler_));
 
     // Deskriptoren
-    VkDescriptorSetLayoutBinding binds[3] = {};
+    VkDescriptorSetLayoutBinding binds[4] = {};
     binds[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     binds[1] = {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     binds[2] = {2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    binds[3] = {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};  // Temperaturgitter
     VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dli.bindingCount = 3;
+    dli.bindingCount = 4;
     dli.pBindings = binds;
     VK_CHECK(vkCreateDescriptorSetLayout(device_, &dli, nullptr, &setLayout_));
 
-    VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFrames},
+    VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * kFrames},
                                      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFrames},
                                      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFrames}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -163,6 +175,7 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
         f.ubo = createBuffer(sizeof(FrameUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
         f.vertices = createBuffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
         f.meshVertices = createBuffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+        f.heat = createBuffer(kHeatBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
 
         VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         dai.descriptorPool = descPool_;
@@ -173,8 +186,9 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
         VkDescriptorBufferInfo objInfo{f.objects.buffer, 0, VK_WHOLE_SIZE};
         VkDescriptorImageInfo shInfo{shadowSampler_, shadow_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorBufferInfo uboInfo{f.ubo.buffer, 0, sizeof(FrameUbo)};
-        VkWriteDescriptorSet w[3] = {};
-        for (int i = 0; i < 3; ++i) {
+        VkDescriptorBufferInfo heatInfo{f.heat.buffer, 0, VK_WHOLE_SIZE};
+        VkWriteDescriptorSet w[4] = {};
+        for (int i = 0; i < 4; ++i) {
             w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             w[i].dstSet = f.set;
             w[i].dstBinding = i;
@@ -186,7 +200,9 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
         w[1].pImageInfo = &shInfo;
         w[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         w[2].pBufferInfo = &uboInfo;
-        vkUpdateDescriptorSets(device_, 3, w, 0, nullptr);
+        w[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        w[3].pBufferInfo = &heatInfo;
+        vkUpdateDescriptorSets(device_, 4, w, 0, nullptr);
     }
 
     return createPipelines();
@@ -431,21 +447,26 @@ bool Renderer::createPipelines() {
     VkShaderModule lineF = shaderModule(kLineFrag, sizeof(kLineFrag));
     VkShaderModule skyV = shaderModule(kSkyVert, sizeof(kSkyVert));
     VkShaderModule skyF = shaderModule(kSkyFrag, sizeof(kSkyFrag));
+    VkShaderModule fireV = shaderModule(kFireVert, sizeof(kFireVert));
+    VkShaderModule fireF = shaderModule(kFireFrag, sizeof(kFireFrag));
 
     struct Cfg {
         VkShaderModule vs, fs;
         bool meshInput, lineInput;
         VkPrimitiveTopology topo;
         VkCullModeFlags cull;
-        bool depthTest, depthWrite, blend, shadowPass;
+        bool depthTest, depthWrite;
+        int blend;  // 0 aus, 1 durchsichtig (Alpha), 2 vormultipliziert (Flammen leuchten additiv, Rauch deckt ab)
+        bool shadowPass;
         VkPipeline* out;
     };
     const Cfg cfgs[] = {
-        {meshV, meshF, true, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_BACK_BIT, true, true, false, false, &meshPipe_},
-        {shadowV, VK_NULL_HANDLE, true, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, true, false, true, &shadowPipe_},
-        {skyV, skyF, false, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, false, false, false, false, &skyPipe_},
-        {lineV, lineF, false, true, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_CULL_MODE_NONE, true, false, true, false, &linePipe_},
-        {lineV, lineF, false, true, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, false, true, false, &transPipe_},
+        {meshV, meshF, true, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_BACK_BIT, true, true, 0, false, &meshPipe_},
+        {shadowV, VK_NULL_HANDLE, true, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, true, 0, true, &shadowPipe_},
+        {skyV, skyF, false, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, false, false, 0, false, &skyPipe_},
+        {lineV, lineF, false, true, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_CULL_MODE_NONE, true, false, 1, false, &linePipe_},
+        {lineV, lineF, false, true, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, false, 1, false, &transPipe_},
+        {fireV, fireF, false, true, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, false, 2, false, &firePipe_},
     };
 
     for (const Cfg& c : cfgs) {
@@ -510,7 +531,7 @@ bool Renderer::createPipelines() {
         cba.colorWriteMask = 0xF;
         if (c.blend) {
             cba.blendEnable = VK_TRUE;
-            cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            cba.srcColorBlendFactor = c.blend == 2 ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA;
             cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             cba.colorBlendOp = VK_BLEND_OP_ADD;
             cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -550,7 +571,7 @@ bool Renderer::createPipelines() {
             return false;
         }
     }
-    for (VkShaderModule m : {meshV, meshF, shadowV, lineV, lineF, skyV, skyF}) vkDestroyShaderModule(device_, m, nullptr);
+    for (VkShaderModule m : {meshV, meshF, shadowV, lineV, lineF, skyV, skyF, fireV, fireF}) vkDestroyShaderModule(device_, m, nullptr);
     return true;
 }
 
@@ -725,10 +746,32 @@ void Renderer::render(const FrameDesc& fd) {
     ubo.misc = glm::vec4(fd.shadowTexelWorld, 1.0f, fd.fogDensity, fd.shadows ? 1.0f : 0.0f);
     ubo.originMod = glm::vec4(std::fmod(fd.origin.x, 200.0), std::fmod(fd.origin.y, 200.0), std::fmod(fd.origin.z, 200.0), 0.0f);
     ubo.originF = glm::vec4(glm::vec3(fd.origin), 0.0f);
+    const size_t nLights = std::min<size_t>({fd.lightPos.size(), fd.lightColor.size(), (size_t)kMaxLights});
+    for (size_t i = 0; i < nLights; ++i) {
+        ubo.lightPos[i] = glm::vec4(fd.lightPos[i], 0.0f);
+        ubo.lightColor[i] = glm::vec4(fd.lightColor[i], 0.0f);
+    }
+    ubo.lightInfo = glm::vec4((float)nLights, 0, 0, 0);
     std::memcpy(fr.ubo.mapped, &ubo, sizeof(ubo));
 
-    const size_t nLines = fd.lines.size(), nOverlay = fd.overlayLines.size(), nTrans = fd.translucent.size();
-    const size_t vbBytes = (nLines + nOverlay + nTrans) * sizeof(LineVertex);
+    // Temperaturgitter (wächst bei Bedarf; der Deskriptor dieses Bilds zeigt dann auf den neuen Puffer)
+    const VkDeviceSize heatBytes = fd.heatCells.size() * sizeof(glm::vec4);
+    if (heatBytes > fr.heat.size) {
+        destroyBuffer(fr.heat);
+        fr.heat = createBuffer(std::max(heatBytes * 2, kHeatBytes), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        VkDescriptorBufferInfo hi{fr.heat.buffer, 0, VK_WHOLE_SIZE};
+        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w.dstSet = fr.set;
+        w.dstBinding = 3;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        w.pBufferInfo = &hi;
+        vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
+    }
+    if (heatBytes) std::memcpy(fr.heat.mapped, fd.heatCells.data(), heatBytes);
+
+    const size_t nLines = fd.lines.size(), nOverlay = fd.overlayLines.size(), nTrans = fd.translucent.size(), nFire = fd.fire.size();
+    const size_t vbBytes = (nLines + nOverlay + nTrans + nFire) * sizeof(LineVertex);
     if (vbBytes > fr.vertices.size) {
         destroyBuffer(fr.vertices);
         fr.vertices = createBuffer(std::max<VkDeviceSize>(vbBytes * 2, 256 * 1024), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
@@ -737,6 +780,7 @@ void Renderer::render(const FrameDesc& fd) {
     if (nLines) std::memcpy(lv, fd.lines.data(), nLines * sizeof(LineVertex));
     if (nOverlay) std::memcpy(lv + nLines, fd.overlayLines.data(), nOverlay * sizeof(LineVertex));
     if (nTrans) std::memcpy(lv + nLines + nOverlay, fd.translucent.data(), nTrans * sizeof(LineVertex));
+    if (nFire) std::memcpy(lv + nLines + nOverlay + nTrans, fd.fire.data(), nFire * sizeof(LineVertex));
 
     const size_t mvBytes = fd.frameVertices.size() * sizeof(solid::Vertex);
     if (mvBytes > fr.meshVertices.size) {
@@ -863,7 +907,12 @@ void Renderer::render(const FrameDesc& fd) {
             for (uint32_t i = 0; i < objCount; ++i) drawItem(cmd, fd.items[i], i);
 
             VkDeviceSize off = 0;
-            if (nLines + nOverlay + nTrans > 0) vkCmdBindVertexBuffers(cmd, 0, 1, &fr.vertices.buffer, &off);
+            if (nLines + nOverlay + nTrans + nFire > 0) vkCmdBindVertexBuffers(cmd, 0, 1, &fr.vertices.buffer, &off);
+            if (nFire) {  // Flammen und Rauch: nach den Körpern, schreiben keine Tiefe
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, firePipe_);
+                vkCmdSetDepthTestEnable(cmd, VK_TRUE);
+                vkCmdDraw(cmd, (uint32_t)nFire, 1, (uint32_t)(nLines + nOverlay + nTrans), 0);
+            }
             if (nTrans) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, transPipe_);
                 vkCmdSetDepthTestEnable(cmd, VK_TRUE);
@@ -991,10 +1040,11 @@ void Renderer::shutdown() {
         destroyBuffer(f.ubo);
         destroyBuffer(f.vertices);
         destroyBuffer(f.meshVertices);
+        destroyBuffer(f.heat);
         vkDestroySemaphore(device_, f.imageAvailable, nullptr);
         vkDestroyFence(device_, f.fence, nullptr);
     }
-    for (VkPipeline p : {meshPipe_, shadowPipe_, skyPipe_, linePipe_, transPipe_})
+    for (VkPipeline p : {meshPipe_, shadowPipe_, skyPipe_, linePipe_, transPipe_, firePipe_})
         if (p) vkDestroyPipeline(device_, p, nullptr);
     vkDestroyPipelineLayout(device_, pipeLayout_, nullptr);
     vkDestroyDescriptorPool(device_, descPool_, nullptr);

@@ -359,6 +359,13 @@ bool World::bendPart(uint32_t id, int a, double at, double angleDeg, double radi
         if (err) *err = std::string(mat.name) + " is brittle and cannot be bent - it would break";
         return false;
     }
+    // Temperatur: kalt spröde (Stahl unter etwa -20 °C, Kunststoff, Gummi) bricht, warm lässt es sich viel enger biegen
+    const double tempC = o->heat.empty() ? ambient() : o->heatInfo.tMean;
+    if (brittleness(o->material, tempC) > 0.5) {
+        if (err) *err = std::string(mat.name) + " is brittle at " + fmtNum(tempC, 0) + " °C and would crack - warm it up first";
+        return false;
+    }
+    const double bendRatio = mat.minBendRatio * std::clamp((double)strengthFactor(o->material, tempC), 0.05, 1.0);
     if (a < 0 || a > 2 || std::abs(angleDeg) < 0.01 || std::abs(angleDeg) > 180) {
         if (err) *err = "angle must be between -180 and 180 degrees (not 0)";
         return false;
@@ -383,11 +390,11 @@ bool World::bendPart(uint32_t id, int a, double at, double angleDeg, double radi
     int t = (a + 1) % 3, w = (a + 2) % 3;
     if (cext[w] < cext[t]) std::swap(t, w);
     const double T = cext[t];
-    const double minR = std::max(0.0, (double)mat.minBendRatio * T);
+    const double minR = std::max(0.0, bendRatio * T);
     if (radius <= 0) radius = std::max(minR, 0.25 * T);
     if (radius + 1e-9 < minR) {
         if (err) *err = std::string(mat.name) + " " + fmtNum(T * 1000, 1) + " mm thick cracks below an inner radius of " + fmtNum(minR * 1000, 1) +
-                        " mm (" + fmtNum(mat.minBendRatio, 2) + " x thickness)";
+                        " mm (" + fmtNum(bendRatio, 2) + " x thickness at " + fmtNum(tempC, 0) + " °C)";
         return false;
     }
     radius = std::max(radius, 0.05 * T);  // ganz scharf geht nicht (Material muss irgendwo hin)

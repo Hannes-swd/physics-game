@@ -215,6 +215,7 @@ void App::buildInput(float) {
             if (ImGui::IsKeyPressed(ImGuiKey_E, false)) tool_ = Tool::Round;
             if (ImGui::IsKeyPressed(ImGuiKey_M, false)) tool_ = Tool::Mill;
             if (ImGui::IsKeyPressed(ImGuiKey_P, false)) tool_ = Tool::Plane;
+            if (ImGui::IsKeyPressed(ImGuiKey_H, false)) tool_ = Tool::Heat;
             if (tool_ == Tool::Saw) {
                 if (ImGui::IsKeyPressed(ImGuiKey_X, false)) sawAxis_ = 0;
                 if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) sawAxis_ = 1;
@@ -559,9 +560,11 @@ void App::playInput(float) {
     const glm::dvec3 eye = playerEye(), fwd = aimForward();
     RayHit h;
     lookAt_ = 0;
+    lookHit_ = RayHit();
     if (world_->raycast(eye, fwd, h, hand_.grabbed) && h.obj && h.t < 4.0) {
         lookAt_ = h.obj->id;
         lookDist_ = h.t;
+        lookHit_ = h;
     }
 
     // Maustasten direkt von GLFW (ImGui ignoriert die Maus, solange sie gefangen ist)

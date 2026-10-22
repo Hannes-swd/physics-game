@@ -508,6 +508,68 @@ int runSelfTest() {
         check(fastest < 20, "showcase runs 5 s without anything exploding", "fastest " + num(fastest) + " m/s, deepest " + num(worst * 1000) + " mm");
     }
 
+    std::printf("== Heat and fire ==\n");
+    {
+        World w(physics, nullptr);
+        w.setSimulating(true);
+        TestHost host(w);
+        auto run = [&](const std::string& line) { return runScriptSync(host, line); };
+        auto val = [&](const std::string& expr) {
+            std::string o = runScriptSync(host, "print " + expr);
+            size_t p = o.rfind("= ");
+            return p == std::string::npos ? -1e30 : std::atof(o.c_str() + p + 2);
+        };
+        // Wärmeleitung: Gasbrenner 30 s auf ein Ende eines Stahlstabs
+        run("new box steel 50 2 2 0 1 0 ; set bar = last ; torch $bar gas 30 right ; wait 30");
+        const double hot = val("bar.tempmax"), cold = val("bar.tempmin");
+        check(hot > 250 && hot < 900 && cold < 60, "gas torch heats the end of a steel bar, the other end stays cool",
+              num(hot) + " / " + num(cold) + " °C");
+        run("wait 120");
+        check(val("bar.tempmax") < hot && val("bar.temp") > 25, "the bar cools in the air and the heat spreads", num(val("bar.tempmax")) + " °C");
+        // Festigkeit: glühender Stahl ist weich, kalter spröde
+        Object* bar = w.find((uint32_t)val("bar.id"));
+        w.setTemperature(*bar, 1000);
+        const double hHot = w.hardnessAt(*bar, bar->pos);
+        w.setTemperature(*bar, 20);
+        check(hHot < 0.1 * w.hardnessAt(*bar, bar->pos), "steel at 1000 °C has less than 10 % of its hardness", num(hHot) + " MPa");
+        double b0 = val("broken");
+        run("new box steel 30 3 3 100 200 0 ; heat last -80 ; wait 2");
+        check(val("broken") >= b0 + 1, "steel at -80 °C shatters when it falls 2 m");
+        b0 = val("broken");
+        run("new box steel 30 3 3 200 200 0 ; wait 2");
+        check(val("broken") == b0, "the same steel bar at 20 °C survives the fall");
+        // Holz: verkohlt, brennt und das Feuer breitet sich aus
+        run("new box spruce 60 10 2 0 1 100 ; set board = last ; ignite $board ; wait 240");
+        check(val("board.burning") >= 3 && val("board.charred") > 5 && val("fires") >= 1, "a lit board chars, burns and the fire spreads",
+              num(val("board.burning")) + " spots, " + num(val("board.charred")) + " % charred");
+        run("extinguish all ; wait 5");
+        check(val("board.burning") == 0, "water puts the fire out");
+        run("air vacuum");
+        check(runScriptSync(host, "ignite $board").find("oxygen") != std::string::npos, "no fire in a vacuum");
+        run("air normal");
+        // Schmelzen: Aluminium über dem Schmelzpunkt wird zu einer Pfütze
+        const double p0 = val("parts");
+        run("new box aluminium 4 4 4 300 2 0 ; set alu = last ; heat $alu 700 ; wait 3");
+        bool puddle = false;
+        for (const auto& o : w.objects()) puddle |= o->meltForm == MeltForm::Puddle && materials()[o->material].name == std::string("aluminium");
+        check(puddle && val("parts") == p0 + 1, "aluminium at 700 °C melts and lands as a puddle");
+        // Leim wird warm weich: hängender Block reißt ab
+        run("new box oak 40 10 4 0 100 -100 ; fix last ; set beam = last ; new box oak 10 10 10 0 93 -100 ; set blk = last ; "
+            "glue $beam $blk woodglue ; wait 1");
+        const double j0 = val("joints");
+        run("heat $beam 150 ; heat $blk 150 ; wait 1");
+        check(val("joints") == j0 - 1 && val("blk.y") < 50, "wood glue lets go at 150 °C");
+        // Speichern und Laden behält die Temperatur
+        run("new box copper 10 2 2 0 1 -200 ; set cu = last ; heat $cu 400");
+        const std::string file = (std::filesystem::temp_directory_path() / "werkstatt_heat_test.werkstatt").string();
+        run("save \"" + file + "\" ; load \"" + file + "\"");
+        double tCu = -1;
+        for (const auto& o : w.objects())
+            if (materials()[o->material].name == std::string("copper") && !o->heat.empty()) tCu = o->heatInfo.tMax;
+        check(approx(tCu, 400, 1), "save and load keep the temperature", num(tCu) + " °C");
+        std::filesystem::remove(file);
+    }
+
     std::printf("== Player ==\n");
     {
         World w(physics, nullptr);

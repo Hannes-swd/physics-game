@@ -7,6 +7,8 @@ layout(location = 2) in vec3 vLocalPos;
 layout(location = 3) flat in uint vObj;
 
 layout(set = 0, binding = 1) uniform sampler2DShadow shadowMap;
+// Temperaturgitter aller warmen/kalten Teile: je Zelle (Temperatur °C, Höchsttemperatur, Verkohlung, Schmelze)
+layout(std430, set = 0, binding = 3) readonly buffer HeatCells { vec4 heatCells[]; };
 
 layout(location = 0) out vec4 outColor;
 
@@ -128,6 +130,77 @@ vec3 ground(vec3 rel, inout float rough) {
     return col;
 }
 
+// ------------------------------------------------------------------ Wärme
+// Gitterwerte an einem lokalen Punkt (trilinear zwischen den Zellmitten)
+vec4 heatAt(ObjectData o, vec3 p) {
+    int base = int(o.heat0.w + 0.5);
+    float packed = o.heat1.w;
+    ivec3 dim = ivec3(int(mod(packed, 64.0)), int(mod(floor(packed / 64.0), 64.0)), int(floor(packed / 4096.0)));
+    vec3 g = clamp((p - o.heat0.xyz) / o.heat1.xyz - 0.5, vec3(0.0), vec3(dim - 1));
+    ivec3 a = ivec3(floor(g));
+    ivec3 b = min(a + 1, dim - 1);
+    vec3 f = g - vec3(a);
+    #define CELL(I, J, K) heatCells[base + (I) + dim.x * ((J) + dim.y * (K))]
+    vec4 c00 = mix(CELL(a.x, a.y, a.z), CELL(b.x, a.y, a.z), f.x);
+    vec4 c10 = mix(CELL(a.x, b.y, a.z), CELL(b.x, b.y, a.z), f.x);
+    vec4 c01 = mix(CELL(a.x, a.y, b.z), CELL(b.x, a.y, b.z), f.x);
+    vec4 c11 = mix(CELL(a.x, b.y, b.z), CELL(b.x, b.y, b.z), f.x);
+    #undef CELL
+    return mix(mix(c00, c10, f.y), mix(c01, c11, f.y), f.z);
+}
+
+// Glühfarbe (Schwarzer Strahler, vereinfacht): ab ca. 500 °C dunkelrot, 900 °C orange, 1300 °C gelb-weiß
+vec3 glowColor(float c) {
+    float t = clamp((c - 450.0) / 1100.0, 0.0, 1.0);
+    vec3 col = mix(vec3(0.55, 0.02, 0.0), vec3(1.0, 0.22, 0.02), smoothstep(0.0, 0.3, t));
+    col = mix(col, vec3(1.0, 0.55, 0.12), smoothstep(0.25, 0.6, t));
+    return mix(col, vec3(1.0, 0.88, 0.68), smoothstep(0.6, 1.0, t));
+}
+float glowAmount(float c) {
+    float x = max(c - 450.0, 0.0) / 1000.0;
+    return x * x * 6.0 + x * 0.6;
+}
+
+// Anlauffarben von Stahl nach der höchsten erreichten Temperatur (Oxidschicht bleibt nach dem Abkühlen)
+vec3 temperSteel(vec3 base, float peak, inout float rough) {
+    if (peak < 190.0) return base;
+    vec3 c = mix(vec3(0.85, 0.76, 0.48), vec3(0.78, 0.58, 0.28), smoothstep(210.0, 245.0, peak));  // Strohgelb
+    c = mix(c, vec3(0.55, 0.32, 0.18), smoothstep(245.0, 262.0, peak));                            // Braun
+    c = mix(c, vec3(0.42, 0.22, 0.42), smoothstep(262.0, 278.0, peak));                            // Purpur
+    c = mix(c, vec3(0.16, 0.26, 0.58), smoothstep(278.0, 300.0, peak));                            // Blau
+    c = mix(c, vec3(0.42, 0.52, 0.62), smoothstep(300.0, 340.0, peak));                            // Hellblau
+    c = mix(c, vec3(0.38, 0.38, 0.40), smoothstep(340.0, 450.0, peak));                            // Grau
+    c = mix(c, vec3(0.10, 0.095, 0.09), smoothstep(550.0, 750.0, peak));                           // Zunder
+    rough = mix(rough, 0.75, smoothstep(550.0, 750.0, peak));
+    return mix(base, base * 0.3 + c * 0.75, smoothstep(190.0, 215.0, peak));
+}
+vec3 temperCopper(vec3 base, float peak, inout float rough) {
+    vec3 c = mix(base, vec3(0.55, 0.22, 0.14), smoothstep(150.0, 300.0, peak));  // rötlich angelaufen
+    c = mix(c, vec3(0.12, 0.07, 0.05), smoothstep(350.0, 600.0, peak));          // schwarzes Oxid
+    rough = mix(rough, 0.7, smoothstep(350.0, 600.0, peak));
+    return c;
+}
+
+// Risse in der Holzkohle (Zellen wie Krokodilhaut): 1 im Riss, 0 auf den Schollen
+float charCracks(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    float d1 = 8.0, d2 = 8.0;
+    for (int z = -1; z <= 1; ++z)
+        for (int y = -1; y <= 1; ++y)
+            for (int x = -1; x <= 1; ++x) {
+                vec3 o = vec3(x, y, z);
+                vec3 r = o + vec3(hash13(i + o), hash13(i + o + 7.1), hash13(i + o + 3.7)) - f;
+                float d = dot(r, r);
+                if (d < d1) {
+                    d2 = d1;
+                    d1 = d;
+                } else if (d < d2) {
+                    d2 = d;
+                }
+            }
+    return 1.0 - smoothstep(0.0, 0.12, sqrt(d2) - sqrt(d1));
+}
+
 // ------------------------------------------------------------------ Licht
 float shadowFactor(vec3 wp, vec3 N) {
     if (frame.misc.w < 0.5) return 1.0;
@@ -157,8 +230,41 @@ void main() {
     else if (shading == 3) albedo = stone(p, o.color.rgb, o.color2.rgb, rough);
     else if (shading == 4) albedo = o.color.rgb * (0.85 + 0.3 * fbm(p * 60.0));
     else if (shading == 5) albedo = concrete(p, o.color.rgb, o.color2.rgb);
+    else if (shading == 7) albedo = o.color.rgb * (0.93 + 0.07 * vnoise(p * 50.0));  // Kunststoff: glatt, leicht fleckig
     else if (shading == 10) albedo = ground(vWorldPos, rough);
     else albedo = o.color.rgb;
+
+    // Wärme: Anlauffarben, Verkohlung, Glühen, Schmelze, Reif
+    vec3 emissive = vec3(0.0);
+    if (o.heat0.w >= 0.0) {
+        vec4 h = heatAt(o, p);
+        float T = h.x, peak = h.y, chr = h.z, melt = h.w;
+        if (o.params.w > 1.5) albedo = temperCopper(albedo, peak, rough);
+        else if (o.params.w > 0.5) albedo = temperSteel(albedo, peak, rough);
+        float crack = 0.0;
+        if (chr > 0.005) {  // Holz, Gummi, Kunststoff: erst braun, dann schwarz und rissig
+            crack = charCracks(p * 70.0 + seed) * smoothstep(0.55, 0.95, chr);
+            albedo = mix(albedo, albedo * vec3(0.5, 0.33, 0.2), smoothstep(0.0, 0.35, chr));
+            albedo = mix(albedo, vec3(0.028, 0.024, 0.02) * (0.7 + 0.6 * vnoise(p * 120.0)), smoothstep(0.3, 0.85, chr));
+            albedo *= 1.0 - 0.6 * crack;
+            rough = mix(rough, 0.95, smoothstep(0.2, 0.8, chr));
+            metallic *= 1.0 - chr;
+        }
+        float glow = glowAmount(T);
+        if (glow > 0.0) {
+            // Holzkohle glüht in den Rissen und flackert, Metall gleichmäßig
+            float flick = 0.75 + 0.25 * sin(pc.params.y * 3.1 + vnoise(p * 30.0) * 12.0);
+            float pattern = mix(1.0, (0.25 + 2.2 * crack) * flick * (0.6 + 0.8 * vnoise(p * 45.0 + pc.params.y * 0.4)), smoothstep(0.4, 0.9, chr));
+            emissive = glowColor(T) * glow * pattern;
+        }
+        rough = mix(rough, 0.07, smoothstep(0.3, 1.0, melt));  // flüssig: spiegelnd glatt
+        if (T < -2.0) {  // Reif aus der Luftfeuchte
+            float f = smoothstep(-2.0, -35.0, T) * (0.55 + 0.45 * fbm(p * 90.0));
+            albedo = mix(albedo, vec3(0.86, 0.9, 0.96), f * 0.9);
+            rough = mix(rough, 0.92, f);
+            metallic *= 1.0 - f;
+        }
+    }
 
     vec3 N = normalize(vNormal);
     bool ortho = pc.camPos.w > 0.5;
@@ -189,6 +295,18 @@ void main() {
     vec3 Fa = f0 + (max(vec3(1.0 - rough), f0) - f0) * pow(1.0 - NoV, 5.0);
     float ao = 0.75 + 0.25 * (N.y * 0.5 + 0.5);
     vec3 color = direct + amb * albedo * (1.0 - metallic) * ao + env * Fa * (1.0 - 0.6 * rough) * ao;
+
+    // Feuerschein: Punktlichter (ohne Schatten), Abnahme mit dem Quadrat der Entfernung
+    for (int i = 0; i < int(frame.lightInfo.x); ++i) {
+        vec3 d = frame.lightPos[i].xyz - vWorldPos;
+        float d2 = dot(d, d);
+        vec3 Ld = d * inversesqrt(max(d2, 1e-6));
+        float ndl = max(dot(N, Ld), 0.0);
+        vec3 Hl = normalize(Ld + V);
+        float spec = pow(max(dot(N, Hl), 0.0), mix(8.0, 96.0, 1.0 - rough)) * (1.0 - rough);
+        color += frame.lightColor[i].rgb * ndl / (d2 + 0.2) * (kd * albedo / PI + f0 * spec * 0.5);
+    }
+    color += emissive;
 
     // Nebel nur in der Perspektive
     if (!ortho) {

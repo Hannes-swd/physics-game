@@ -304,7 +304,9 @@ void World::processImpacts() {
             double e[3] = {ext.x, ext.y, ext.z};
             std::sort(e, e + 3);
             if (e[0] < 0.008 || o->volume < 2e-6) continue;  // zu klein zum weiteren Zerbrechen
-            const double threshold = materials()[o->material].fractureEnergy * e[0] * e[1];
+            // Kälte macht Stahl, Gummi und Kunststoff spröde, verkohltes Holz zerbröselt
+            const double threshold = fractureEnergyAt(o->material, temperatureAt(*o, imp.point)) *
+                                     (1.0 - 0.8 * charAt(*o, imp.point)) * e[0] * e[1];
             if (imp.energy < threshold) continue;
             bool dup = false;
             for (auto& p : pending) dup |= p.id == o->id;
@@ -321,11 +323,14 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
     // und würde das Spiel bei jedem Treffer ruckeln lassen
     if (O.solid.pieces.size() > kMaxImpactPieces) return false;
     const Material& mo = materials()[O.material];
-    if (isRubber(mo)) return false;  // Gummi federt zurück, es bleibt nichts
-    const double hardO = hardnessMPa(O.material);
-    if (hardnessMPa(T.material) < 1.5 * hardO) return false;  // nur ein deutlich härteres Teil wirkt als Werkzeug
     const glm::dvec3 n = glm::normalize(toolIsA ? imp.normal : -imp.normal);  // vom Werkzeug in das Teil
     const glm::dvec3 pT = toolIsA ? imp.point : imp.pointB, pO = toolIsA ? imp.pointB : imp.point;
+    const double tempO = temperatureAt(O, pO);
+    const bool brittle = isBrittle(mo) || brittleness(O.material, tempO) > 0.5;  // Kälte: Stahl, Gummi, Kunststoff
+    if (isRubber(mo) && !brittle) return false;  // Gummi federt zurück, es bleibt nichts
+    // Härte bei der Temperatur an der Stelle: glühender Stahl ist weich und wird von kaltem Stahl verformt (Schmieden)
+    const double hardO = hardnessAt(O, pO);
+    if (hardnessAt(T, pT) < 1.5 * hardO) return false;  // nur ein deutlich härteres Teil wirkt als Werkzeug
     const glm::dvec3 vO = glm::dvec3(physics_.linearVelocity(O.body)), wO = glm::dvec3(physics_.angularVelocity(O.body));
     // Liegt das Teil still auf etwas und wird von oben getroffen, stützt die Unterlage es ab (Brett auf dem Hackklotz):
     // dann wirkt die ganze Bewegungsenergie des Werkzeugs, nicht nur der Anteil aus der reduzierten Masse.
@@ -351,6 +356,7 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
     double flank = 0;
     const double x = penetration(tp, H, extentAlong(O.solid, invO * n), E, flank);
     std::string note;
+    if (strengthFactor(O.material, tempO) < 0.9) note = ", soft from heat (" + fmtNum(tempO, 0) + " °C)";
 
     // ---- Schneide: spalten, wenn der Keil genug Energie in den Riss bringt
     if (tp.form == ToolForm::Edge && mo.splitEnergy > 0) {
@@ -415,8 +421,8 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
     glm::dvec3 ext = O.bbMax - O.bbMin;
     double e[3] = {ext.x, ext.y, ext.z};
     std::sort(e, e + 3);
-    const double bluntLimit = mo.fractureEnergy * e[0] * e[1];
-    if (tp.form == ToolForm::Point && isBrittle(mo) && !O.fixed && e[0] >= 0.008 && E >= 0.4 * bluntLimit) {
+    const double bluntLimit = fractureEnergyAt(O.material, tempO) * (1.0 - 0.8 * charAt(O, pO)) * e[0] * e[1];
+    if (tp.form == ToolForm::Point && brittle && !O.fixed && e[0] >= 0.008 && E >= 0.4 * bluntLimit) {
         fracture(O.id, pO, E / (0.4 * bluntLimit), E, 0.4 * bluntLimit);
         T.breakCooldown = simTime_ + 0.2;
         return true;

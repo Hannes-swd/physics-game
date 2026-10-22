@@ -156,6 +156,7 @@ void App::drawMenuBar() {
         if (ImGui::MenuItem("Leere Werkstatt")) runLine("scene empty", "konsole");
         if (ImGui::MenuItem("Beispiel-Werkstatt")) runLine("scene demo", "konsole");
         if (ImGui::MenuItem("Beispiel-Welt (alles)")) runLine("scene showcase", "konsole");
+        if (ImGui::MenuItem("Feuerstelle (Wärme, Feuer, Kälte)")) runLine("scene fire", "konsole");
         ImGui::Separator();
         if (ImGui::MenuItem("Speichern...", "Strg+S")) saveDialog(true);
         if (ImGui::MenuItem("Laden...", "Strg+O")) saveDialog(false);
@@ -216,6 +217,22 @@ void App::drawMenuBar() {
             if (ImGui::MenuItem("Sturm, 25 m/s von links")) runLine("wind 25 0 0", "konsole");
             ImGui::EndMenu();
         }
+        ImGui::Separator();
+        bool heat = world_->heat();
+        if (ImGui::MenuItem("Wärme und Feuer", nullptr, &heat)) runLine(heat ? "heat on" : "heat off", "konsole");
+        if (ImGui::BeginMenu("Lufttemperatur")) {
+            const double amb = world_->ambient();
+            for (int c : {-40, -20, 0, 20, 35})
+                if (ImGui::MenuItem((std::to_string(c) + " °C").c_str(), nullptr, std::abs(amb - c) < 0.5)) runLine("heat ambient " + std::to_string(c), "konsole");
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Wärme-Zeitraffer")) {
+            const double sp = world_->heatSpeed();
+            for (int f : {1, 5, 20, 60})
+                if (ImGui::MenuItem((std::to_string(f) + "x").c_str(), nullptr, std::abs(sp - f) < 0.01)) runLine("heat speed " + std::to_string(f), "konsole");
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem("Alle Feuer löschen", nullptr, false, world_->burningParts() > 0)) runLine("extinguish all", "konsole");
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Modus")) {
@@ -257,9 +274,25 @@ void App::drawToolPanel() {
     ImGui::RadioButton("Fräsen (M)", &t, 4);
     ImGui::SameLine(170);
     ImGui::RadioButton("Hobeln (P)", &t, 5);
+    ImGui::RadioButton("Wärme / Kälte (H)", &t, 6);
     tool_ = (Tool)t;
     ImGui::Separator();
-    if (tool_ == Tool::Select) {
+    if (tool_ == Tool::Heat) {
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::BeginCombo("##heattool", heatTools()[heatTool_].label)) {
+            for (int i = 0; i < (int)heatTools().size(); ++i) {
+                const HeatTool& h = heatTools()[i];
+                const std::string label = std::string(h.label) + "  (" + fmtNum(h.tempC, 0) + " °C)";
+                if (ImGui::Selectable(label.c_str(), i == heatTool_)) heatTool_ = i;
+            }
+            ImGui::EndCombo();
+        }
+        if (hoverValid_ && hoverHit_.obj)
+            ImGui::TextColored(kAccent, "Hier: %.0f °C", world_->temperatureAt(*hoverHit_.obj, hoverHit_.point));
+        ImGui::TextWrapped("Maustaste auf einem Teil halten: Flamme bzw. Kälte trifft diese Stelle. Holz wird erst schwarz und "
+                           "brennt dann, Metall glüht, wird weich und schmilzt. Im Spiel-Modus: F halten.");
+        if (!world_->heat()) ImGui::TextColored(ImVec4(1, 0.4f, 0.3f, 1), "Wärme ist aus (Menü Physik).");
+    } else if (tool_ == Tool::Select) {
         ImGui::TextWrapped("Klick = auswählen, Shift/Strg+Klick = mehrere. Ziehen = bewegen (Shift = hoch/runter, Alt = ohne Raster, "
                            "Strg = durch andere Teile hindurch).");
     } else if (tool_ == Tool::Round) {
@@ -481,6 +514,40 @@ void App::drawProperties() {
     ImGui::Text("Masse:   %.4f kg  (Gewicht %.3f N)", o->mass, o->mass * 9.81);
     ImGui::Text("Dichte %.0f kg/m³ · Haft %.2f / Gleit %.2f · Stoß %.2f", m.density, m.frictionStatic, m.frictionKinetic, m.restitution);
     ImGui::Text("Zugfestigkeit %.1f MPa · E-Modul %.1f GPa", m.tensileMPa, m.youngGPa);
+
+    ImGui::SeparatorText("Temperatur");
+    {
+        const Thermal& th = thermal(o->material);
+        const bool has = !o->heat.empty();
+        const float amb = (float)world_->ambient();
+        const float tMean = has ? o->heatInfo.tMean : amb, tMin = has ? o->heatInfo.tMin : amb, tMax = has ? o->heatInfo.tMax : amb;
+        const ImVec4 col = tMax > 400 ? ImVec4(1.0f, 0.5f, 0.15f, 1) : tMin < 0 ? ImVec4(0.55f, 0.8f, 1.0f, 1) : ImVec4(0.85f, 0.85f, 0.85f, 1);
+        ImGui::TextColored(col, "%.0f °C   (kältester Punkt %.0f °C, heißester %.0f °C)", tMean, tMin, tMax);
+        std::string state;
+        auto add = [&](const std::string& s) { state += (state.empty() ? "" : " · ") + s; };
+        if (has && o->heatInfo.burning) add("brennt (" + std::to_string(o->heatInfo.burning) + " Stellen)");
+        if (has && o->heatInfo.chr > 0.01f) add("verkohlt " + fmtNum(o->heatInfo.chr * 100, 0) + " %");
+        if (has && o->heatInfo.melt > 0.001f) add("geschmolzen " + fmtNum(o->heatInfo.melt * 100, 0) + " %");
+        if (o->meltForm == MeltForm::Puddle) add(o->heatInfo.melt > 0.5f ? "flüssige Pfütze" : "erstarrte Pfütze");
+        const float sf = strengthFactor(o->material, tMax);
+        if (sf < 0.95f && !combustible(o->material)) add("weich: " + fmtNum(sf * 100, 0) + " % Festigkeit");
+        if (brittleness(o->material, tMin) > 0.05f) add("spröde vor Kälte");
+        ImGui::TextWrapped("%s", state.empty() ? "normal" : state.c_str());
+        std::string info = th.meltC > 0 ? "schmilzt bei " + fmtNum(th.meltC, 0) + " °C" : std::string("schmilzt nicht");
+        if (combustible(o->material)) info += " · verkohlt ab " + fmtNum(th.pyrolysisC, 0) + " °C · brennt ab " + fmtNum(th.ignitionC, 0) + " °C";
+        if (th.brittleC > -400) info += " · spröde unter " + fmtNum(th.brittleC, 0) + " °C";
+        ImGui::TextDisabled("%s", info.c_str());
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputFloat("##settemp", &heatSet_, 10.0f, 100.0f, "%.0f °C");
+        heatSet_ = std::clamp(heatSet_, -273.0f, 5000.0f);
+        ImGui::SameLine();
+        if (ImGui::Button("Temperatur setzen")) runLine("heat " + idText + " " + fmtNum(heatSet_, 0), "konsole");
+        if (combustible(o->material)) {
+            if (ImGui::Button("Anzünden")) runLine("ignite " + idText, "konsole");
+            ImGui::SameLine();
+        }
+        if (ImGui::Button("Löschen (Wasser)")) runLine("extinguish " + idText, "konsole");
+    }
 
     ImGui::SeparatorText("Lage");
     double pos[3] = {o->pos.x * 100, o->pos.y * 100, o->pos.z * 100};
@@ -727,9 +794,13 @@ void App::drawStatusBar() {
     if (!status_.empty() && time_ - statusTime_ < 6.0) {
         left = status_;
     } else if (play_) {
-        left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · Tab Bauen";
+        left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · F " +
+               std::string(heatTools()[heatTool_].label) + " · Tab Bauen";
     } else if (Object* o = world_->find(hovered_)) {
-        left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg]";
+        left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg";
+        if (!o->heat.empty() && (std::abs(o->heatInfo.tMax - world_->ambient()) > 5 || o->heatInfo.tMin < world_->ambient() - 5))
+            left += ", " + fmtNum(world_->temperatureAt(*o, hoverHit_.point), 0) + " °C";
+        left += "]";
     } else {
         left = "Rechte Maus drehen · Mitte/Shift+Rechts verschieben · Rad zoomen · 1-5 Ansichten · Tab Spielen · F1 Konsole · F3 Physik · F4 Zeichnung";
     }
@@ -852,6 +923,10 @@ void App::drawPlayHud() {
         if (hand_.tooHeavy) info += " - zu schwer zum Heben!";
     } else if (Object* o = world_->find(lookAt_)) {
         info = o->name + "  " + fmtNum(o->mass, 2) + " kg" + (o->fixed ? "  (fest)" : "  [Maus links / E]");
+        // Temperatur nur, wenn sie auffällt (heiß, kalt, brennt)
+        const double tc = lookHit_.obj == o ? world_->temperatureAt(*o, lookHit_.point) : world_->ambient();
+        if (std::abs(tc - world_->ambient()) > 15 || o->heatInfo.burning) info += "  " + fmtNum(tc, 0) + " °C" + (o->heatInfo.burning ? ", brennt" : "");
+        if (heatActive_) info += "  [F: " + std::string(heatTools()[heatTool_].label) + "]";
     }
     if (!info.empty()) {
         ImVec2 ts = ImGui::CalcTextSize(info.c_str());

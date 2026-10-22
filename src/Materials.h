@@ -3,7 +3,7 @@
 #include <vector>
 
 // Art der Oberflächen-Darstellung im Shader (prozedurale Textur)
-enum class Shading : int { Wood = 0, Brick = 1, Metal = 2, Stone = 3, Rubber = 4, Concrete = 5, Plain = 6, Ground = 10 };
+enum class Shading : int { Wood = 0, Brick = 1, Metal = 2, Stone = 3, Rubber = 4, Concrete = 5, Plain = 6, Plastic = 7, Ground = 10 };
 
 struct Material {
     const char* name;       // Name in Befehlen und Ausgaben (englisch, klein)
@@ -55,3 +55,41 @@ float wearCoefficient(int a, int b);
 float embedmentMPa(int material, double diameterMm, double cosToGrain);
 // Scherfestigkeit (MPa) für das Ausreißen zum Rand hin
 float shearMPa(int material);
+
+// ---------------------------------------------------------------- Wärme
+// Tabellenwerte bei Raumtemperatur. Temperaturen in °C.
+struct Thermal {
+    float conductivity;      // Wärmeleitfähigkeit λ W/(m·K)
+    float specificHeat;      // spezifische Wärmekapazität c J/(kg·K)
+    float emissivity;        // Emissionsgrad ε der Oberfläche (Wärmestrahlung)
+    float meltC;             // Schmelzpunkt (Kunststoff: fließt), < 0: schmilzt nicht (Holz, Gummi zersetzen sich)
+    float latentHeat;        // Schmelzwärme J/kg
+    float softenC;           // ab hier sinken Festigkeit und Härte
+    float halfC;             // hier ist noch die halbe Festigkeit übrig
+    float brittleC;          // Übergang zäh/spröde bei Kälte (Stahl, Gummi, Kunststoff), < -400: wird nie spröde
+    float pyrolysisC;        // ab hier zersetzt es sich und wird schwarz (verkohlt), 0: nie
+    float ignitionC;         // Zündtemperatur mit Flamme in der Nähe (ohne Flamme etwa 150 °C mehr), 0: brennt nicht
+    float heatOfCombustion;  // Heizwert J/kg
+    float burnRate;          // Abbrand an der Oberfläche kg/(m²·s) bei freiem Brand
+    float soot;              // Rauch 0..1 (Holz wenig, Gummi und Kunststoff viel)
+};
+const Thermal& thermal(int material);
+bool combustible(int material);
+// Anteil der Festigkeit/Härte bei der Temperatur (1 bei Raumtemperatur, nahe dem Schmelzpunkt fast 0)
+float strengthFactor(int material, double tempC);
+// Sprödigkeit bei Kälte: 0 zäh, 1 ganz spröde
+float brittleness(int material, double tempC);
+// Bruchenergie (J/m²) bei der Temperatur: Kälte macht Stahl, Gummi und Kunststoff spröde
+double fractureEnergyAt(int material, double tempC);
+
+// Wärmequellen zum Erhitzen und Abkühlen (Werkzeug, Befehl torch)
+struct HeatTool {
+    const char* name;    // Befehl (englisch)
+    const char* label;   // Menü (deutsch)
+    float tempC;         // Flammen- bzw. Kältemittel-Temperatur
+    float h;             // Wärmeübergang an der Auftreffstelle W/(m²·K)
+    float radius;        // Größe des Flecks (m)
+    bool flame;          // zündet Brennbares an
+};
+const std::vector<HeatTool>& heatTools();
+int findHeatTool(const char* name);  // -1 wenn unbekannt

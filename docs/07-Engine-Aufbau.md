@@ -26,6 +26,7 @@
 | `src/App.h`, `App.cpp` | Hauptschleife, Kameras (Perspektive/orthografisch), Sichtbarkeit und Detailstufen, Bild zusammenstellen |
 | `src/AppInput.cpp` | Maus/Tastatur, Bewegen per Ziehen (mit Anstoßen), Vorschau von Säge, Bohrer, Abrunden, Fräsen, Hobeln, Spielfigur, Tragen |
 | `src/AppUI.cpp` | Menüs, Werkzeug-/Eigenschaften-Fenster, Konsole, Inspektor, Zeichnungsfenster, Dateidialoge (Oberfläche deutsch) |
+| `src/AppFire.cpp` | Wärme-Werkzeug (H, im Spiel F), Flammen, Rauch, Funken, Kältenebel, Feuerschein, Temperaturgitter für den Shader |
 | `src/AppCommands.cpp` | Live-Befehle: Aufträge, `player`, `tool`, `window`, `display`, `status`, Werte für die Befehlssprache |
 | `src/Commands.*` | alle einzelnen Befehle und die Hilfe (`help`) |
 | `src/Script.*` | Befehlssprache: Parser, Ausdrücke, Ausführung mit Warten |
@@ -35,14 +36,15 @@
 | `src/Collision.*` | baut aus den konvexen Stücken eines Teils die Kollisionshüllen (siehe unten) |
 | `src/Joints.cpp` | Verbindungen (Kleber, Nägel, Schrauben, Schweißnaht, Scharnier, Feder, Seil): Tragfähigkeit, Belastung, Bruch |
 | `src/Impact.cpp` | Aufprall: Zerbrechen spröder Teile; Form eines härteren Werkzeugs vermessen (Spitze, Schneide, stumpf), Eindringen, Spalten, Abdruck, Steckenbleiben |
-| `src/Showcase.cpp` | Beispielwelt (`scene showcase`), aufgebaut als Befehlsliste |
+| `src/Heat.cpp` | Wärme: Temperaturgitter je Teil, Wärmeleitung, Luft, Berührung, Reibungswärme, Werkzeuge, Verkohlen und Brennen, Feuer (Heskestad), Schmelzen, Tropfen und Pfützen, Erweichen von Verbindungen, `heat`-Texte ([12](12-Waerme-und-Feuer.md)) |
+| `src/Showcase.cpp` | Beispielwelt (`scene showcase`) und Feuerstelle (`scene fire`), aufgebaut als Befehlslisten |
 | `src/Solid.*` | Festkörper-Geometrie (siehe unten), Kanten finden, Werkzeugformen, Berührfläche zweier Teile |
 | `src/Chunks.*` | 3D-Chunks |
 | `src/Physics.*` | Hülle um Jolt: Körper (Grundformen und Hüllen), Reibung je Materialpaar, Rollreibung, Wegprüfung, Abfragen (Sweep, Überlappung), Achsen, Verbindungs-Constraints mit Kraftmessung, Spielfigur, Aufprall-Meldungen |
 | `src/Bench.cpp` | `--bench`: misst Rechenzeit, Eindringtiefe und Rettungen alter und neuer Einstellungen in elf Szenen |
 | `src/Renderer.*`, `shaders/` | Vulkan-Grafik |
 | `src/Drawing.*` | Dreitafelprojektion, Blatt, SVG |
-| `src/Materials.*` | Materialtabelle, Reibung je Materialpaar |
+| `src/Materials.*` | Materialtabelle, Reibung je Materialpaar, Wärmewerte (`thermal`), Festigkeit je Temperatur, Kälte-Sprödigkeit, Wärme-Werkzeuge |
 | `src/ObjLoader.*` | OBJ-Import |
 | `src/Png.*` | PNG-Schreiber für Fotos |
 | `src/SelfTest.cpp` | automatische Prüfungen |
@@ -159,6 +161,9 @@ und beendet das Programm bei harmlosen Überläufen in Zwischenrechnungen.
 | 4× MSAA | glatte Kanten |
 | Physikalisch basiertes Licht | GGX-Glanz, Metall/Rauheit, Himmels- und Bodenlicht, ACES-Tonemapping |
 | Prozedurale Materialien | Maserung, Sprenkel, Poren werden im Shader im Objektraum berechnet (durchgehend, auch an Schnittflächen). Feine Muster werden entfernungsabhängig ausgeblendet (kein Flimmern) |
+| Wärme | Temperaturgitter je Teil als Speicherpuffer (trilinear gelesen): Glühen (Schwarzer Strahler), Verkohlung mit glühenden Rissen, Anlauffarben nach der Höchsttemperatur, Reif, Schmelzglanz |
+| Feuer (`fire.vert`, `fire.frag`) | Flammen, Rauch, Funken, Kältenebel als kamerazugewandte Rechtecke; Form und Flackern aus aufsteigendem Rauschen im Shader; vormultipliziertes Alpha (Flammen leuchten additiv, Rauch deckt ab) |
+| Feuerschein | bis zu 8 Punktlichter im Bild-Uniform, flackernd |
 | Linien | Kanten, Auswahl, Achsen, Werkzeugvorschau (Schnittfläche, Kante, Fräsfläche), Kraftpfeile, Seile, Federn (Zickzack), Verbindungs-Markierungen |
 | Boden | genaues Mittelstück (für feine Rasterlinien) + Außenring bis zum Horizont, folgt der Kamera |
 
@@ -191,6 +196,9 @@ rot <w> <x> <y> <z>                  (Quaternion)
 prim <1 Quader|2 Kugel|3 Zylinder> <maße xyz>   (nur Grundformen, für die exakte Kollisionsform)
 collision <1 exact|2 hull>           (nur wenn nicht auto)
 unbreakable 1                        (nur wenn gesetzt)
+meltform <1 Tropfen|2 Pfütze>           (nur bei Schmelze)
+heat <nx ny nz> <ecke xyz> <zelle xyz>  (nur wenn das Teil ein Temperaturgitter hat)
+heatcells <je Zelle: °C höchste_°C verkohlt brennstoff schmelze brennt> ...
 pieces <anzahl>
 piece <anzahl flächen>
 f <nx> <ny> <nz> <d> <glatt> <zentrum xyz> <achse xyz> <innen> <radius> <anzahl ecken> <ecken xyz ...>
@@ -204,7 +212,7 @@ next_joint <nr>
 
 Bei importierten Modellen stehen statt der Stücke `scale` und `file` (das Modell wird beim Laden neu eingelesen).
 Arten: 0 Klebung, 1 Nägel, 2 Schrauben, 3 Schweißnaht, 4 Scharnier, 5 Feder, 6 Seil.
-Luft, Wind und `breakage on/off` gehören nicht zur Szene und werden nicht gespeichert.
+Luft, Wind, `breakage on/off`, Lufttemperatur und `heat on/off` gehören nicht zur Szene und werden nicht gespeichert (die Temperaturen der Teile schon).
 
 **Alte Dateien** (`WERKSTATT-SZENE 1` mit deutschen Wörtern wie `objekt`, `stueck`, `verbindung`, Materialnamen wie
 `Fichte` und Kleber wie `holzleim`) werden weiter geladen und beim nächsten Speichern im neuen Format geschrieben.
@@ -224,7 +232,7 @@ mit der Korrektur oben), Dear ImGui 1.91.9.
 
 ## Selbsttest
 
-`Werkstatt.exe --selftest` prüft (72 Prüfungen):
+`Werkstatt.exe --selftest` prüft (109 Prüfungen):
 
 - Geometrie: Volumen, Sägeschnitt, Bohrung (π r² h), Innenflächen, Schnittfuge, Zahnrad, Kugel, Kanten finden,
   Abrunden/Fasen (Volumen nach Formel), Hohlkehle, Drehbank
@@ -239,6 +247,9 @@ mit der Korrektur oben), Dear ImGui 1.91.9.
 - Befehlssprache: Folgen, `wait until`, `if/else`, `repeat`, `set`/`$`, Textvergleich, Fehler, Zeitlimit
 - Verbindungen und Bruch: Kleber hält / reißt, Seilpendel, Ziegel zerbricht, Stahl nicht, Verbindungen speichern
 - Luft: Propellerschub (×4 bei doppelter Drehzahl), Vakuum, Propeller-Wagen
+- Wärme und Feuer: Brenner heizt ein Stabende (anderes Ende kühl), Abkühlen, glühender Stahl weich, kalter Stahl zerspringt
+  (warmer nicht), Brett verkohlt, brennt und das Feuer breitet sich aus, Löschen, kein Feuer im Vakuum, Aluminium schmilzt
+  zur Pfütze, Holzleim lässt bei 150 °C los, Temperatur bleibt beim Speichern und Laden
 - Speichern und Laden, Beispiel-Werkstatt, Getriebe-Übersetzung, Beispielwelt (132 Teile, läuft 5 s ohne Ausreißer)
 
 `Werkstatt.exe --bench [szene]` misst Rechenzeit, Eindringtiefe und Rettungen in elf Physik-Szenen, jeweils mit den alten
@@ -249,7 +260,7 @@ Mit einem Wort dahinter laufen nur die Szenen, deren Name es enthält (z. B. `--
 
 | Vorhaben | Wo |
 |---|---|
-| neues Material | `src/Materials.cpp` (Liste mit englischem Namen und deutschem Anzeigenamen; Paar-Reibung in `frictionPair`), ggf. neue Darstellung in `shaders/mesh.frag` |
+| neues Material | `src/Materials.cpp` (Liste mit englischem Namen und deutschem Anzeigenamen; Paar-Reibung in `frictionPair`; Härte in `hardnessMPa`; Wärmewerte in `thermal`), ggf. neue Darstellung in `shaders/mesh.frag` |
 | neuer Befehl | `src/Commands.cpp` (`runCommand`), Hilfe-Text in `commandHelp()` |
 | neue Bearbeitung | `src/Edit.cpp` (Werkzeug als Liste konvexer Ebenen-Körper, dann `removeMaterial` oder `applyResult`) + Befehl in `Commands.cpp` |
 | neuer Fenster-Befehl | `src/AppCommands.cpp` (`appCommand`) |

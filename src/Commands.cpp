@@ -174,7 +174,15 @@ std::string details(World& w, Object& o) {
         ss << "geometry      imported mesh, " << (o.imported ? o.imported->vertices.size() / 3 : 0) << " triangles\n";
     }
     if (o.body == kNoBody) ss << "warning       no collision shape\n";
+    ss << w.heatText(o);
     return ss.str();
+}
+
+// Stelle auf einer Fläche (Mitte, lokal) für Werkzeuge: +y = oben ...
+glm::dvec3 faceCenter(const Object& o, int k, int s) {
+    glm::dvec3 p = (o.bbMin + o.bbMax) * 0.5;
+    p[k] = s > 0 ? o.bbMax[k] : o.bbMin[k];
+    return p;
 }
 
 // Optionale Position (cm) ab Index i, sonst freie Stelle
@@ -363,13 +371,20 @@ std::string commandHelp() {
         "  bores <id>                                round holes: size, pin and play, load, pressure, wear\n"
         "  lubricate <id> [oil|grease|wax|soap|off]  lower friction and wear (pin hinges, axles, drawers)\n"
         "  breakage [on|off]                         on: joints and parts break when overloaded (default)\n"
+        "HEAT & FIRE\n"
+        "  heat                                      overview: air temperature, fires, hottest part\n"
+        "  heat <id> [°C]                            read temperature/state of a part, or set it throughout\n"
+        "  heat on|off | heat ambient <°C> | heat speed <x>   simulate heat / air temperature / heat time-lapse\n"
+        "  ignite <id> [face]                        light wood, rubber or plastic (default: lowest spot)\n"
+        "  extinguish <id|all>                       pour water on the flames\n"
+        "  torch <id> [lighter|gas|welding|spray|nitrogen] [seconds=5] [face=top]   heat or cool a spot\n"
         "PHYSICS & WORLD\n"
         "  air [density <kg/m3> | vacuum | normal | wind x y z] | wind x y z\n"
         "  impulse <id> jx jy jz                     impulse in N·s | sim <seconds>\n"
         "  mode build|play | view perspective|top|front|side|quad\n"
         "  camera x y z [distance] | select <id ...|all> | screenshot <file.png>\n"
         "  drawing [id ...] [file.svg]               three-view drawing (no id: selection)\n"
-        "  undo | redo | scene empty|demo|showcase | save <file> | load <file> | quit\n"
+        "  undo | redo | scene empty|demo|showcase|fire | save <file> | load <file> | quit\n"
         "  status | wait <seconds>\n"
         "ONLY IN THE GAME WINDOW\n"
         "  player                                    position, view, what is carried\n"
@@ -377,6 +392,7 @@ std::string commandHelp() {
         "  player walk <forward|back|left|right> <seconds> [run] | player jump | player stop | player view [first|third]\n"
         "  player grab [id] | player release | player throw [N·s] | player rotate <deg> [tilt]   (carried part, like R)\n"
         "  tool select|saw [x|y|z] [angle] [kerf_mm]|drill [D_mm] [depth_mm]|round [r_mm] [chamfer]|mill [L W depth]|plane [mm]\n"
+        "  tool heat [lighter|gas|welding|spray|nitrogen]   hold the mouse on a part (build) or F (play) to heat/cool it\n"
         "  window inspector|drawing|console|help [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"
         "  lan [status] | lan host | lan join <address> | lan leave       multiplayer in the local network\n"
         "  lan accept [name|all] | lan decline <name> | lan kick <name> | lan confirm on|off | lan name <text>\n";
@@ -450,6 +466,10 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         out << "\n";
         out << "undo          " << w.undoCount() << " steps\n";
         out << "rescued       " << w.rescueCount() << " times a part was put back to its last free spot\n";
+        double firePower = 0;
+        for (const Fire& f : w.fires()) firePower += f.power;
+        out << "heat          " << (w.heat() ? "on" : "off") << ", air " << fmtNum(w.ambient(), 0) << " °C, " << w.fires().size() << " fire(s) "
+            << fmtNum(firePower / 1000.0, 1) << " kW, " << w.burningParts() << " part(s) burning\n";
         out << host.statusText();
         res.text = out.str();
     } else if (cmd == "wait") {
@@ -462,7 +482,13 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             out << m.name << ": " << m.density << " kg/m3, friction static " << fmtNum(m.frictionStatic, 2) << " sliding "
                 << fmtNum(m.frictionKinetic, 2) << ", rolling " << fmtNum(m.rolling, 4) << ", restitution " << fmtNum(m.restitution, 2)
                 << ", tension " << m.tensileMPa << " MPa, E " << m.youngGPa << " GPa, "
-                << (m.minBendRatio < 0 ? std::string("not bendable") : "bend radius >= " + fmtNum(m.minBendRatio, 2) + " x thickness") << "\n";
+                << (m.minBendRatio < 0 ? std::string("not bendable") : "bend radius >= " + fmtNum(m.minBendRatio, 2) + " x thickness");
+            const Thermal& th = thermal((int)i);
+            out << ", λ " << fmtNum(th.conductivity, 2) << " W/mK";
+            if (th.meltC > 0) out << ", melts " << fmtNum(th.meltC, 0) << " °C";
+            if (th.ignitionC > 0) out << ", ignites " << fmtNum(th.ignitionC, 0) << " °C";
+            if (th.brittleC > -400) out << ", brittle below " << fmtNum(th.brittleC, 0) << " °C";
+            out << "\n";
         }
         res.text = out.str();
     } else if (cmd == "new") {
@@ -1231,6 +1257,108 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         res.text = lub == 0 ? o->name + " is dry again (friction of the materials)"
                             : o->name + " lubricated with " + l.name + ": friction at most " + fmtNum(l.muS, 2) + " static / " +
                                   fmtNum(l.muK, 2) + " sliding, wear x" + fmtNum(l.wear, 2);
+    // ---------------------------------------------------------------- Wärme und Feuer
+    } else if (cmd == "heat" || cmd == "temp" || cmd == "temperature") {
+        const std::string sub = word(1);
+        double v = 0;
+        if (sub.empty()) {
+            int hot = 0;
+            const Object* hottest = nullptr;
+            for (auto& o : w.objects())
+                if (!o->heat.empty()) {
+                    hot += std::abs(o->heatInfo.tMax - w.ambient()) > 5 || o->heatInfo.tMin < w.ambient() - 5;
+                    if (!hottest || o->heatInfo.tMax > hottest->heatInfo.tMax) hottest = o.get();
+                }
+            double power = 0;
+            for (const Fire& f : w.fires()) power += f.power;
+            out << "heat          " << (w.heat() ? "on" : "off (temperatures frozen)") << ", air " << fmtNum(w.ambient(), 1) << " °C, time x"
+                << fmtNum(w.heatSpeed(), 1) << "\n";
+            out << "parts         " << hot << " warmer or colder than the air, " << w.burningParts() << " burning\n";
+            out << "fires         " << w.fires().size() << " (" << fmtNum(power / 1000.0, 1) << " kW)";
+            for (const Fire& f : w.fires())
+                out << "\n  at " << v3(f.base) << " cm: " << fmtNum(f.power / 1000.0, 1) << " kW, flames " << fmtNum(f.height * 100, 0)
+                    << " cm high, " << fmtNum(f.tempC, 0) << " °C";
+            if (hottest) out << "\nhottest       #" << hottest->id << " " << hottest->name << " " << fmtNum(hottest->heatInfo.tMax, 0) << " °C";
+            res.text = out.str();
+        } else if (sub == "on" || sub == "off") {
+            w.setHeat(sub == "on");
+            res.text = std::string("heat ") + (w.heat() ? "on: conduction, cooling, fire and melting are simulated"
+                                                         : "off: every part keeps its temperature");
+        } else if (sub == "ambient" || sub == "air") {
+            if (!num(2, v)) return fail("heat ambient <°C>   (e.g. 20, -20 winter, 35 summer)");
+            w.setAmbient(v);
+            res.text = "air and floor now " + fmtNum(w.ambient(), 1) + " °C (untouched parts too)";
+        } else if (sub == "speed" || sub == "timelapse") {
+            if (!num(2, v) || v <= 0) return fail("heat speed <factor>   (1 = real time, up to 100)");
+            w.setHeatSpeed(v);
+            res.text = "heat runs " + fmtNum(w.heatSpeed(), 1) + "x faster than real time (motion is not affected)";
+        } else {
+            Object* o = obj(1);
+            if (!o) return fail("heat [on|off] | heat ambient <°C> | heat speed <x> | heat <id> [°C]");
+            if (word(2) == "map") {  // Zellgitter Schicht für Schicht (Engine: Temperaturverteilung auslesen)
+                const HeatGrid& g = o->heat;
+                if (g.empty()) {
+                    res.text = o->name + ": no heat grid yet (everything at air temperature " + fmtNum(w.ambient(), 0) + " °C)";
+                    return res;
+                }
+                out << o->name << ": " << g.dim.x << " x " << g.dim.y << " x " << g.dim.z << " cells of " << fmtNum(g.cell.x * 100, 1) << " x "
+                    << fmtNum(g.cell.y * 100, 1) << " x " << fmtNum(g.cell.z * 100, 1) << " cm (local x right, z down per layer)\n"
+                    << "°C per cell, * = burning, ~ = molten, # = charred, . = no material\n";
+                for (int y = g.dim.y - 1; y >= 0; --y) {
+                    out << "layer y" << y << "\n";
+                    for (int z = 0; z < g.dim.z; ++z) {
+                        for (int x = 0; x < g.dim.x; ++x) {
+                            const HeatCell& c = g.cells[g.index(x, y, z)];
+                            std::string s = c.inside ? fmtNum(c.temp, 0) : ".";
+                            s += c.burning ? "*" : c.melt > 0.5f ? "~" : c.chr > 0.5f ? "#" : " ";
+                            out << std::string(s.size() < 7 ? 7 - s.size() : 0, ' ') << s;
+                        }
+                        out << "\n";
+                    }
+                }
+                res.text = out.str();
+            } else if (t.size() > 2) {
+                if (!num(2, v)) return fail("heat <id> <°C> | heat <id> map");
+                w.pushUndo();
+                w.setTemperature(*o, v);
+                res.text = o->name + " is now " + fmtNum(v, 0) + " °C throughout\n" + w.heatText(*o);
+            } else {
+                res.text = "#" + std::to_string(o->id) + " " + o->name + "\n" + w.heatText(*o);
+            }
+        }
+    } else if (cmd == "ignite" || cmd == "fire" || cmd == "light") {
+        Object* o = obj(1);
+        if (!o) return fail("ignite <id> [face]   (default: lowest spot)");
+        int k = 1, s = -1;
+        glm::dvec3 p;
+        const bool at = t.size() > 2 && parseFace(t[2], k, s);
+        if (t.size() > 2 && !at) return fail("ignite <id> [face]   faces: top bottom left right front back, +x ...");
+        if (at) p = faceCenter(*o, k, s);
+        std::string err;
+        if (!w.ignite(*o, at ? &p : nullptr, &err)) return fail(err);
+        res.text = o->name + " is alight (" + materials()[o->material].name + " ignites at " + fmtNum(thermal(o->material).ignitionC, 0) +
+                   " °C) - it chars, then burns and spreads";
+    } else if (cmd == "extinguish" || cmd == "douse") {
+        Object* o = word(1) == "all" || t.size() < 2 ? nullptr : obj(1);
+        if (t.size() > 1 && word(1) != "all" && !o) return fail("extinguish <id|all>");
+        const int n = w.extinguish(o);
+        res.text = "water: " + std::to_string(n) + " burning spot(s) put out" + (o ? " on " + o->name : std::string());
+    } else if (cmd == "torch") {
+        Object* o = obj(1);
+        const int tool = t.size() > 2 ? findHeatTool(word(2).c_str()) : 1;
+        double secs = 5;
+        if (t.size() > 3 && !num(3, secs)) return fail("torch <id> [tool] [seconds] [face]");
+        int k = 1, s = 1;
+        if (t.size() > 4 && !parseFace(t[4], k, s)) return fail("torch <id> [tool] [seconds] [face]");
+        if (!o || tool < 0) {
+            std::string names;
+            for (const auto& h : heatTools()) names += std::string(names.empty() ? "" : " ") + h.name;
+            return fail("torch <id> [tool] [seconds] [face]   tools: " + names);
+        }
+        w.addHeatSource(o->id, faceCenter(*o, k, s), tool, std::clamp(secs, 0.0, 3600.0));
+        const HeatTool& h = heatTools()[tool];
+        res.text = std::string(h.name) + " (" + fmtNum(h.tempC, 0) + " °C) on the " + faceName(k, s) + " face of " + o->name + " for " +
+                   fmtNum(secs, 1) + " s" + (w.heat() ? "" : " (heat is off)");
     } else if (cmd == "breakage") {
         if (t.size() > 1) w.setBreakage(yes(t[1]));
         res.text = std::string("breakage ") + (w.breakage() ? "on: joints and parts break when overloaded (realistic)"
@@ -1419,7 +1547,8 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         if (m == "empty") w.clear();
         else if (m == "demo") w.demoScene();
         else if (m == "showcase") w.showcaseScene();
-        else return fail("scene empty|demo|showcase");
+        else if (m == "fire") w.fireScene();
+        else return fail("scene empty|demo|showcase|fire");
         res.text = "Scene: " + std::to_string(w.objects().size()) + " parts, " + std::to_string(w.joints().size()) + " joints";
     } else if (cmd == "save") {
         if (t.size() < 2) return fail("save <file>");
