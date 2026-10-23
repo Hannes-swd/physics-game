@@ -196,6 +196,7 @@ Kunststoff ist neu: `plastic` (ABS), 1050 kg/m³, 40 MPa, E = 2,3 GPa, Härte 10
 - Das Gitter ist grob (höchstens 400 Zellen je Teil). Feine Details (dünne Stege) haben die Temperatur ihrer Zelle.
 - Wärmeausdehnung wird nicht gerechnet (Passungen bleiben gleich).
 - Strahlung zwischen Teilen ohne Abschattung.
-- Flüssigkeiten fließen nicht; sie tropfen, bilden Pfützen und vereinen sich.
+- Schmelzen fließen nicht; sie tropfen, bilden Pfützen und vereinen sich.
+- Im Wasser kühlen Teile viel schneller ab (Dampffilm, Blasensieden), Feuer geht aus: siehe [14-Wasser.md](14-Wasser.md#wärme).
 - Im LAN-Mehrspieler rechnet der Gastgeber die Wärme; Mitspieler sehen Formänderungen (Abbrennen, Tropfen), aber nicht das
   Glühen und die Flammen.

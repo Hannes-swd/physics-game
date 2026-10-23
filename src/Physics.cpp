@@ -748,6 +748,18 @@ float Physics::mass(BodyHandle h) const {
     return inv > 0 ? 1.0f / inv : 0.0f;
 }
 
+void Physics::setMass(BodyHandle h, double mass) {
+    if (h == kNoBody || mass <= 0) return;
+    BodyLockWrite lock(m->system->GetBodyLockInterface(), toId(h));
+    if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) return;
+    MotionProperties* mp = lock.GetBody().GetMotionProperties();
+    const float inv = mp->GetInverseMass();
+    if (inv <= 0) return;
+    const float k = float((1.0 / inv) / mass);  // altes / neues Gewicht
+    mp->SetInverseMass(float(1.0 / mass));
+    mp->SetInverseInertia(mp->GetInverseInertiaDiagonal() * k, mp->GetInertiaRotation());
+}
+
 glm::dvec3 Physics::centerOfMass(BodyHandle h) const {
     return fromR(m->system->GetBodyInterface().GetCenterOfMassPosition(toId(h)));
 }
@@ -786,6 +798,10 @@ void Physics::activate(BodyHandle h) {
 
 void Physics::deactivate(BodyHandle h) {
     if (h != kNoBody) m->system->GetBodyInterface().DeactivateBody(toId(h));
+}
+
+void Physics::keepAwake(BodyHandle h) {
+    if (h != kNoBody) m->system->GetBodyInterface().ResetSleepTimer(toId(h));
 }
 
 bool Physics::isActive(BodyHandle h) const { return m->system->GetBodyInterface().IsActive(toId(h)); }
@@ -1254,7 +1270,7 @@ void Physics::createCharacter(const glm::dvec3& feet, int who) {
 void Physics::destroyCharacter(int who) { m->characters.erase(who); }
 bool Physics::hasCharacter(int who) const { return m->character(who) != nullptr; }
 
-void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHandle ignore, int who) {
+void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHandle ignore, int who, float swim) {
     auto it = m->characters.find(who);
     if (it == m->characters.end()) return;
     CharacterVirtual* c = it->second.c;
@@ -1291,23 +1307,33 @@ void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHa
               + dUp * (1.0f - std::exp(-dt / 0.15f));     // senkrecht: Knie federn Rucke ab
 
     Vec3 v;
+    const bool swimming = swim > 0.5f;
     bool towardsGround = (vertical - ground).Dot(up) < 0.1f;
-    if (onGround && towardsGround) {
-        v = ground;
-        if (jump) v += 4.6f * up;  // ca. 1,1 m Sprunghöhe
+    if (swimming) {
+        // Schwimmen: Auftrieb (Körper mit Luft in der Lunge, im Gleichgewicht ragt der Kopf heraus), das Wasser bremst und
+        // die Figur gleitet in die gewünschte Richtung, auch auf und ab
+        v = c->GetLinearVelocity();
+        v += m->system->GetGravity() * dt * (1.0f - 1.06f * std::min(swim, 1.0f));
+        v += (Vec3(wish.x, wish.y, wish.z) - v) * (1.0f - std::exp(-dt * 2.5f));
     } else {
-        v = vertical;
+        if (onGround && towardsGround) {
+            v = ground;
+            if (jump) v += 4.6f * up;  // ca. 1,1 m Sprunghöhe
+        } else {
+            v = vertical;
+        }
+        v += m->system->GetGravity() * dt;
+        v += Vec3(wish.x, 0, wish.z);
     }
-    v += m->system->GetGravity() * dt;
-    v += Vec3(wish.x, 0, wish.z);
     c->SetLinearVelocity(v);
 
     CharacterVirtual::ExtendedUpdateSettings us;
     us.mWalkStairsStepUp = Vec3(0, 0.35f, 0);
+    if (swimming) us.mStickToFloorStepDown = Vec3::sZero();  // im Wasser nicht an den Boden ziehen
     IgnoreSingleBodyFilter ignoreFilter(ignore == kNoBody ? BodyID() : toId(ignore));
     BodyFilter defaultFilter;
     const BodyFilter& bf = ignore == kNoBody ? defaultFilter : static_cast<const BodyFilter&>(ignoreFilter);
-    c->ExtendedUpdate(dt, m->system->GetGravity(), us, m->system->GetDefaultBroadPhaseLayerFilter(Layers::MOVING),
+    c->ExtendedUpdate(dt, swimming ? Vec3::sZero() : m->system->GetGravity(), us, m->system->GetDefaultBroadPhaseLayerFilter(Layers::MOVING),
                       m->system->GetDefaultLayerFilter(Layers::MOVING), bf, {}, *m->temp);
 }
 

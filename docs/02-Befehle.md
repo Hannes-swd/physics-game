@@ -40,6 +40,7 @@ Dokumentation sind deutsch.
 | Löschen & Verlauf | `delete`, `undo`, `redo` |
 | Physik | `sim`, `impulse`, `mode`, `breakage`, `air`, `wind` |
 | Wärme & Feuer | `heat`, `ignite`, `extinguish`, `torch`, `tool heat` (siehe [12](12-Waerme-und-Feuer.md)) |
+| Wasser | `water`, `water pool`, `water sea`, `water waves`, `water fill` … (siehe [14](14-Wasser.md)) |
 | Ansicht & Bild | `view`, `camera`, `screenshot`, `window`, `display`, `tool` |
 | Spielfigur | `player ...` |
 | Zeichnung | `drawing` |
@@ -645,6 +646,16 @@ Eine Flamme oder Kälte auf die Mitte einer Fläche richten. `tool`: `lighter` (
 torch 3 welding 60 right ; wait 60 ; heat 3
 ```
 
+## Wasser
+
+Alle Befehle mit Beispielen und das Modell (Auftrieb, Hohlräume, Wellen, Abschrecken): [14-Wasser.md](14-Wasser.md).
+
+```
+water pool 200 150 50 walls      # Becken 2 x 1,5 m, 50 cm tief, mit Betonrand (hier auf dem Boden)
+water waves all 30               # Wellen, 30 cm
+new box spruce 40 40 10 0 60 0 ; wait 3 ; water last
+```
+
 ---
 
 ## Ansicht & Bild (nur mit Fenster)
@@ -727,6 +738,8 @@ SVG saved: board.svg
 | `scene empty` | alle Teile entfernen (Nummern beginnen wieder bei 1) |
 | `scene demo` | Beispiel-Werkstatt laden (Werkbank, Bretter, Rampe, Getriebe …) |
 | `scene showcase` | große Beispielwelt mit allem (siehe unten) |
+| `scene water` | Wasserbecken: Holz, Stahl, Gummi, Floß, Stahlboot, Becher, glühender Stahl ([14](14-Wasser.md)) |
+| `scene river` | Fluss: Kanal mit Strömung, Felsen, Brückenpfeiler, Treibgut ([14](14-Wasser.md)) |
 | `scene fire` | Feuerstelle: Lagerfeuer, Stahlstab darüber, Aluminium, Kunststoff, Gummi, geleimtes Brett, gefrorener Stahl ([12](12-Waerme-und-Feuer.md)) |
 | `save <file>` | Szene speichern (Textformat `.werkstatt`) |
 | `load <file>` | Szene laden (auch Dateien aus der Zeit vor den englischen Befehlen) |

@@ -79,6 +79,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | Rechte Maustaste | getragenes Teil werfen |
 | Mausrad | Abstand des getragenen Teils ändern |
 | **F** halten | Wärme-Werkzeug (Brenner, Kälte; Auswahl im Bau-Modus unter H) auf das angeschaute Teil richten |
+| im Wasser | Waten bremst; ab der Brust schwimmt die Figur: **W** in Blickrichtung (nach unten schauen = tauchen), **Leertaste** hoch, **Strg** runter |
 | **F5** | Ansicht wechseln: durch die Augen der Figur / von hinten über die Schulter |
 | **Esc** | Maus freigeben (Pause). Klick ins Bild: weiterspielen |
 
@@ -143,6 +144,8 @@ Zwei gewählte Teile lassen sich darunter auch zu einem Teil **vereinen**, das z
 | **Beispiel-Werkstatt** | Werkbank, Rampe, Getriebe (`scene demo`) |
 | **Beispiel-Welt (alles)** | große Welt mit Kugelbahn, Dominos, Pendel, Propellern, Hängebrücke, Feder, Wippe, Werkstücken, Regal, Abrissbirne, Axt mit Spaltholz (`scene showcase`, siehe [02](02-Befehle.md#die-beispielwelt-scene-showcase)) |
 | **Feuerstelle (Wärme, Feuer, Kälte)** | Lagerfeuer mit Stahlstab, Aluminium, Kunststoff, Gummi, geleimtem Brett und gefrorenem Stahl (`scene fire`, siehe [12](12-Waerme-und-Feuer.md)) |
+| **Wasserbecken (Schwimmen, Sinken, Boote)** | Becken mit schwimmenden und sinkenden Teilen, Stahlboot, Bechern, glühendem Stahl (`scene water`, siehe [14](14-Wasser.md)) |
+| **Fluss (Strömung, Hindernisse, Treibgut)** | Kanal mit 1,2 m/s Strömung, Felsen und Brückenpfeiler, Stämme und Bretter treiben mit (`scene river`, siehe [14](14-Wasser.md)) |
 | **Speichern / Laden** | Szene als Datei (Strg+S / Strg+O) |
 | **Modell importieren** | Blender-Modell (.obj) |
 | **Foto speichern** | Bild als PNG (F12) |
@@ -159,3 +162,4 @@ Zwei gewählte Teile lassen sich darunter auch zu einem Teil **vereinen**, das z
 | **Lufttemperatur** | −40 … 35 °C (wie `heat ambient`) |
 | **Wärme-Zeitraffer** | 1× bis 60× (wie `heat speed`), nur für die Wärme |
 | **Alle Feuer löschen** | wie `extinguish all` |
+| **Wasser** | Becken hier, Meer an/aus, Wellen, Strömung, ausgewähltes Teil füllen, alles Wasser entfernen (wie `water ...`, siehe [14](14-Wasser.md)) |

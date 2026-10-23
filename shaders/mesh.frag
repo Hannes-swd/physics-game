@@ -288,13 +288,16 @@ void main() {
 
     float sh = shadowFactor(vWorldPos, N);
     vec3 direct = (kd * albedo / PI + D * Vis * F) * frame.sunColor.rgb * NoL * sh;
+    // unter Wasser: weniger Sonne (rot zuerst), Lichtflecken der Wellen, weniger Umgebungslicht
+    vec4 sea = waterCount() > 0 ? waterSun(vWorldPos, pc.params.y) : vec4(1.0);
+    direct *= sea.rgb;
 
-    vec3 amb = mix(frame.groundColor.rgb, frame.skyColor.rgb, N.y * 0.5 + 0.5);
+    vec3 amb = mix(frame.groundColor.rgb, frame.skyColor.rgb, N.y * 0.5 + 0.5) * sea.a;
     vec3 R = reflect(-V, N);
     vec3 env = mix(frame.groundColor.rgb * 1.2, frame.skyColor.rgb * 1.6, smoothstep(-0.3, 0.5, R.y));
     vec3 Fa = f0 + (max(vec3(1.0 - rough), f0) - f0) * pow(1.0 - NoV, 5.0);
     float ao = 0.75 + 0.25 * (N.y * 0.5 + 0.5);
-    vec3 color = direct + amb * albedo * (1.0 - metallic) * ao + env * Fa * (1.0 - 0.6 * rough) * ao;
+    vec3 color = direct + amb * albedo * (1.0 - metallic) * ao + env * sea.a * Fa * (1.0 - 0.6 * rough) * ao;
 
     // Feuerschein: Punktlichter (ohne Schatten), Abnahme mit dem Quadrat der Entfernung
     for (int i = 0; i < int(frame.lightInfo.x); ++i) {
@@ -307,6 +310,9 @@ void main() {
         color += frame.lightColor[i].rgb * ndl / (d2 + 0.2) * (kd * albedo / PI + f0 * spec * 0.5);
     }
     color += emissive;
+
+    // Weg vom Auge durch das Wasser: Farbe wird blaugrün und verschwindet in der Tiefe
+    if (waterCount() > 0) color = waterView(color, pc.camPos.xyz, vWorldPos, vWorldPos.xz);
 
     // Nebel nur in der Perspektive
     if (!ortho) {

@@ -20,6 +20,7 @@
 #include "Physics.h"
 #include "Renderer.h"
 #include "Solid.h"
+#include "Water.h"
 
 enum class ObjKind : int { Solid = 0, Mesh = 1 };
 
@@ -162,6 +163,28 @@ struct Object : ObjectState {
         double age = 0;             // Tropfen: so lange schon unterwegs (s)
         double cellMass = 0;        // kg je Zelle mit Material
     } heatInfo;
+    // Wasser (Water.cpp)
+    std::shared_ptr<WaterCache> waterCache;  // Stücke und Hohlräume, bei der ersten Berührung mit Wasser berechnet
+    struct RoomState {                       // je Hohlraum
+        double water = 0;                    // Wasser darin (m³)
+        double level = -1e30;                // sein Spiegel (Welt-y)
+        glm::dvec3 centroid{0};              // sein Schwerpunkt (lokal)
+        int age = 99;                        // Schritte seit der letzten Berechnung des Spiegels
+        int liquid = 0;
+    };
+    std::vector<RoomState> rooms;
+    struct WaterState {
+        double displaced = 0;                // verdrängtes Volumen: Material und Luft in Hohlräumen (m³)
+        double solidSub = 0;                 // davon Material (m³): so viel fehlt dem Auftrieb in der Luft
+        glm::dvec3 buoyancy{0}, drag{0};     // Kräfte des Wassers im letzten Schritt (Welt, N)
+        double extraMass = 0;                // Wasser in den Hohlräumen, das der Physik-Körper mitträgt (kg)
+        glm::dvec3 lastVel{0};               // Geschwindigkeit im letzten Schritt (Beschleunigung)
+        uint32_t body = 0;                   // Gewässer (0 = keins)
+        double depth = 0;                    // Schwerpunkt unter der Oberfläche (m), negativ = darüber
+        std::vector<float> wet;              // je Luftfläche: Anteil unter Wasser (dort keine Luftkraft)
+        uint64_t step = 0;                   // in diesem Wasserschritt nass (World::waterSteps_)
+        double splash = 0;                   // schlägt gerade mit dieser Geschwindigkeit auf (m/s)
+    } water;
 };
 
 // Verbindungen zwischen zwei Teilen
@@ -365,6 +388,44 @@ public:
     const std::vector<Fire>& fires() const { return fires_; }
     int burningParts() const;
 
+    // ---------------------------------------------------------- Wasser (Water.cpp)
+    uint32_t addWater(WaterBody b);                  // neue Nummer; weckt Teile darin auf
+    bool removeWater(uint32_t id);                   // 0 = alle
+    WaterBody* findWater(uint32_t id);
+    void changedWater(const WaterBody& b);           // nach einer Änderung (Spiegel, Wellen ...): Teile darin aufwecken
+    const std::vector<WaterBody>& waters() const { return waters_; }
+    void setWaters(const std::vector<WaterBody>& list);  // LAN: Liste vom Gastgeber
+    const WaterBody* waterTouching(const glm::dvec3& mn, const glm::dvec3& mx) const;
+    // Gewässer, über oder in dem der Punkt liegt; surface = Höhe der Oberfläche darüber (mit Wellen). nullptr: keins
+    const WaterBody* waterColumn(const glm::dvec3& p, double& surface) const;
+    bool inWater(const glm::dvec3& p) const;
+    double waterTemp(const WaterBody& b) const;
+    WaveSet wavesOf(const WaterBody& b) const;
+    glm::dvec2 waveDirection() const;                // Wellen laufen mit dem Wind
+    double waterTime() const { return waterTime_; }  // Uhr der Wellen (Physik und Bild)
+    void setWaterTime(double t) { waterTime_ = t; }
+    void advanceWaterClock(double dt);               // Bau-Modus: Wellen und Strömung laufen weiter
+    // Oberfläche über (x, z): Spiegel + Wellen + Stau an Hindernissen; grad = Steigung
+    double surfaceHeight(const WaterBody& b, const WaveSet& w, double x, double z, glm::dvec2* grad = nullptr) const;
+    glm::dvec3 currentAt(const WaterBody& b, double x, double z) const;  // Strömung dort (m/s), mit Hindernissen
+    const FlowGrid* flowGrid(uint32_t waterId) const;  // nullptr: keine Strömung, keine Wellen
+    void setWaterFocus(const glm::dvec3& p) { waterFocus_ = p; }  // Meer: dort wird die Strömung gerechnet (Kamera)
+    // Hohlräume eines Teils (Becher, Boot) zu einem Anteil 0..1 mit Wasser füllen. false: es hat keine
+    bool fillWater(Object& o, double fraction, std::string* err);
+    std::string waterText() const;
+    std::string waterText(const WaterBody& b) const;
+    std::string waterTextOf(Object& o);
+    struct Splash {                                  // ein Teil schlägt auf das Wasser
+        glm::dvec3 pos;
+        double speed, size;
+    };
+    struct Steam {                                   // heißes Teil im Wasser: Dampf steigt auf
+        glm::dvec3 pos;
+        double power;                                // W
+    };
+    std::vector<Splash> takeSplashes();
+    std::vector<Steam> takeSteam();
+
     // ---------------------------------------------------------- Physik-Inspektor
     void setInspect(uint32_t id);
     uint32_t inspectId() const { return inspectId_; }
@@ -387,6 +448,8 @@ public:
     void demoScene();
     void showcaseScene();  // große Beispielwelt mit allem (Showcase.cpp)
     void fireScene();      // Feuerstelle: Wärme, Feuer, Schmelzen, Kälte (Showcase.cpp)
+    void waterScene();     // Wasserbecken: Schwimmen, Sinken, Boote, Becher (Showcase.cpp)
+    void riverScene();     // Fluss: Strömung um Hindernisse, Stau, Schaum, Treibgut (Showcase.cpp)
     bool save(const std::filesystem::path& file, std::string* err) const;
     bool load(const std::filesystem::path& file, std::string* err);
 
@@ -416,7 +479,8 @@ private:
     struct Snapshot {
         std::vector<ObjectState> objects;
         std::vector<JointState> joints;
-        uint32_t nextId = 1, nextJointId = 1;
+        std::vector<WaterBody> waters;
+        uint32_t nextId = 1, nextJointId = 1, nextWaterId = 1;
     };
     Joint* addJoint(JointState s, std::string* err);
     void computeCapacity(Joint& j);
@@ -458,6 +522,11 @@ private:
     void collectFrictionHeat(float h);
     double jointHeatFactor(const Joint& j) const;
     void makePuddle(Object& o, double floorY);
+    // Wasser (Water.cpp)
+    void waterSteps(float h);                  // alle wachen Teile im Wasser, auf allen Kernen
+    void updateFlow(double dt);                // Strömungsgitter: Hindernisse, Umströmung, Stau, Schaum
+    bool waterStep(Object& o, float h);
+    void ensureWaterCache(Object& o);
 
     Physics& physics_;
     Renderer* renderer_;
@@ -520,9 +589,23 @@ private:
     double ambient_ = 20.0, heatSpeed_ = 1.0;
     double heatAccum_ = 0, heatTime_ = 0, heatShapeAccum_ = 0;
     size_t heatShapeCursor_ = 0;  // abgebrannte/geschmolzene Stellen: reihum, mit Zeitbudget
+    // Wasser
+    std::vector<WaterBody> waters_;
+    uint32_t nextWaterId_ = 1;
+    double waterTime_ = 0;
+    uint64_t waterSteps_ = 0;
+    std::vector<Object*> waterParts_;  // Teile im letzten Wasserschritt
+    std::vector<FlowGrid> flowGrids_;
+    double flowAccum_ = 0;
+    glm::dvec3 waterFocus_{0};
+    std::vector<Splash> splashes_;
+    std::vector<Steam> steam_;
 };
 
 std::string fmtNum(double v, int decimals = 1);
+// Strömungskraft auf eine ebene Fläche (Plattenmodell, Luft und Wasser): vRel = Geschwindigkeit der Fläche gegen das
+// Medium, n = Normale nach außen, rho = Dichte. Addiert zu out.
+void plateForce(const glm::dvec3& vRel, const glm::dvec3& n, double area, double rho, glm::dvec3& out);
 // Kleber-Sorte zu ihrem Schlüssel (woodglue, epoxy ...; alte deutsche Namen werden auch erkannt)
 std::string gluePresetKey(const std::string& name);
 // Kleber-Schlüssel für ein beim Aufprall steckengebliebenes Werkzeug (hält nur durch Reibung)

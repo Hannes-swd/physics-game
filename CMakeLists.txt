@@ -88,7 +88,8 @@ set(SHADER_SOURCES
   ${SHADER_DIR}/shadow.vert
   ${SHADER_DIR}/line.vert ${SHADER_DIR}/line.frag
   ${SHADER_DIR}/sky.vert ${SHADER_DIR}/sky.frag
-  ${SHADER_DIR}/fire.vert ${SHADER_DIR}/fire.frag)
+  ${SHADER_DIR}/fire.vert ${SHADER_DIR}/fire.frag
+  ${SHADER_DIR}/water.vert ${SHADER_DIR}/water.frag)
 set(SHADER_OUTPUTS)
 foreach(src ${SHADER_SOURCES})
   get_filename_component(name ${src} NAME)

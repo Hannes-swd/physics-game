@@ -706,6 +706,11 @@ void World::clear() {
     fires_.clear();
     heatSources_.clear();
     frictionHeat_.clear();
+    waters_.clear();
+    nextWaterId_ = 1;
+    flowGrids_.clear();
+    splashes_.clear();
+    steam_.clear();
 }
 
 Object* World::duplicate(uint32_t id, const glm::dvec3& offset) {
@@ -1089,9 +1094,9 @@ void World::simulateSeconds(double seconds, bool wakeAll) {
 // Luftdichte bei 20 °C: 1,204 kg/m³ (einstellbar mit setAir)
 static constexpr double kG = 9.81;
 
-// Luftkraft auf eine Fläche (Plattenmodell): Normalkraft je nach Anstellwinkel + Reibung entlang der Fläche.
+// Luft- bzw. Wasserkraft auf eine Fläche (Plattenmodell): Normalkraft je nach Anstellwinkel + Reibung entlang der Fläche.
 // C_N = 2π·sinα / (1 + 4,2·sinα): bei kleinen Winkeln wie ein Flügel (2π·α), quer angeströmt ≈ 1,2.
-static inline void plateForce(const glm::dvec3& vRel, const glm::dvec3& n, double area, double rho, glm::dvec3& out) {
+void plateForce(const glm::dvec3& vRel, const glm::dvec3& n, double area, double rho, glm::dvec3& out) {
     const double sp2 = glm::dot(vRel, vRel);
     if (sp2 < 1e-10) return;
     const double vn = glm::dot(vRel, n);
@@ -1112,8 +1117,8 @@ void World::setAir(double density, const glm::dvec3& wind) {
             if (o->body != kNoBody && !o->fixed && simulating_) physics_.activate(o->body);
 }
 
-void World::beforeStep(float) {
-    PROFILE("step.before (air)");
+void World::beforeStep(float h) {
+    PROFILE("step.before (air, water)");
     std::vector<uint64_t> noContact;  // steckengebliebene Werkzeuge berühren ihren Abdruck nicht
     for (const auto& j : joints_)
         if (j->type == JointType::Glue && j->preset == kStuckPreset)
@@ -1127,6 +1132,10 @@ void World::beforeStep(float) {
     for (BodyHandle b : awake_)
         if (Object* o = fromBody(b)) o->aeroForce = o->aeroTorque = glm::dvec3(0);
     physics_.activeBodies(awake_);
+    {
+        PROFILE("step.water");
+        waterSteps(h);  // Wasser: Auftrieb, Widerstand, Hohlräume (Water.cpp), auf allen Kernen
+    }
     for (BodyHandle b : awake_) {
         Object* op = fromBody(b);
         if (!op || op->fixed) continue;
@@ -1137,7 +1146,9 @@ void World::beforeStep(float) {
         // Teil mit Bohrung in Bewegung: Kontakte an der runden Wand jeden Schritt neu (Jolt würde sie sonst bei kleinen
         // Drehungen weiterverwenden, die Punkte wandern aber auf der Wand)
         if (o.boreInUse && (glm::length(v) > 1e-4 || glm::length(w) > 1e-3)) physics_.invalidateContacts(o.body);
-        const glm::dvec3 buoy(0, rho * o.volume * kG, 0);  // Auftrieb (Archimedes)
+        // Was unter Wasser ist, hat keinen Auftrieb und Widerstand in der Luft
+        const bool wet = o.water.step == waterSteps_;
+        const glm::dvec3 buoy(0, rho * (o.volume - (wet ? o.water.solidSub : 0.0)) * kG, 0);  // Auftrieb in der Luft (Archimedes)
         glm::dvec3 force(0), torque(0);
         const double reach = 0.5 * glm::length(o.bbMax - o.bbMin);
         if (!legacyCollision_) {
@@ -1154,10 +1165,14 @@ void World::beforeStep(float) {
         }
         if (rho > 0 && glm::length(v - wind_) + glm::length(w) * reach > 0.02) {
             const glm::dmat3 rot = glm::mat3_cast(o.rot);
-            for (const Object::AeroFace& f : o.aero) {
+            const bool faceWet = wet && o.water.wet.size() == o.aero.size();
+            for (size_t i = 0; i < o.aero.size(); ++i) {
+                const Object::AeroFace& f = o.aero[i];
+                const double dry = faceWet ? 1.0 - o.water.wet[i] : 1.0;
+                if (dry <= 0) continue;
                 const glm::dvec3 r = rot * glm::dvec3(f.c), n = rot * glm::dvec3(f.n);
                 glm::dvec3 df(0);
-                plateForce(v + glm::cross(w, r) - wind_, n, f.area, rho, df);
+                plateForce(v + glm::cross(w, r) - wind_, n, f.area * dry, rho, df);
                 force += df;
                 torque += glm::cross(r, df);
             }
@@ -1167,7 +1182,7 @@ void World::beforeStep(float) {
         physics_.addForceNoWake(o.body, glm::vec3(force + buoy));
         if (glm::length(torque) > 0) physics_.addTorqueNoWake(o.body, glm::vec3(torque));
         if (o.id == inspectId_) {
-            aeroDrag_ = force;
+            aeroDrag_ = force + o.water.drag;
             aeroTorque_ = torque;
         }
     }
@@ -1287,6 +1302,13 @@ void World::handleDeepContacts() {
 
 void World::afterStep(float h) {
     simTime_ += h;
+    waterTime_ += h;
+    flowAccum_ += h;
+    if (flowAccum_ >= 0.05) {  // Strömung 20-mal je Sekunde
+        PROFILE("step.flow");
+        updateFlow(flowAccum_);
+        flowAccum_ = 0;
+    }
     {
         PROFILE("step.sync+deepContacts");
         syncAwake();  // aktuelle Lage, bevor Verbindungen und Brüche ausgewertet werden
@@ -1322,7 +1344,7 @@ void World::afterStep(float h) {
     glm::dvec3 acc = s.dynamic ? (s.vel - velBefore_) / (double)h : glm::dvec3(0);
     inspect_.acc += (acc - inspect_.acc) * k;
     inspect_.fGravity = glm::dvec3(0, -m * kG, 0);
-    inspect_.fBuoyancy = glm::dvec3(0, airDensity_ * o->volume * kG, 0);
+    inspect_.fBuoyancy = glm::dvec3(0, airDensity_ * (o->volume - o->water.solidSub) * kG, 0) + o->water.buoyancy;
     inspect_.fDrag += (aeroDrag_ - inspect_.fDrag) * k;
     inspect_.tAero += (aeroTorque_ - inspect_.tAero) * k;
     inspect_.fExternal += (extForce_ - inspect_.fExternal) * k;
@@ -1412,11 +1434,15 @@ std::string World::inspectText(uint32_t id) {
     if (o->hinge) line(ss, "Motor torque", fmtNum(physics_.hingeTorque(o->hinge), 3) + " N·m");
 
     ss << "FORCES\n";
-    glm::dvec3 fg(0, -m * kG, 0), fb(0, airDensity_ * o->volume * kG, 0);
-    line(ss, "Weight", fmtNum(glm::length(fg), 3) + " N (down)");
+    glm::dvec3 fg(0, -m * kG, 0), fb(0, airDensity_ * (o->volume - o->water.solidSub) * kG, 0);
+    line(ss, "Weight", fmtNum(glm::length(fg), 3) + " N (down)" + (o->water.extraMass > 0 ? " incl. " + fmtNum(o->water.extraMass, 3) + " kg water inside" : ""));
     line(ss, "Buoyancy (air)", fmtNum(fb.y, 4) + " N (up)");
+    if (o->water.body) {
+        line(ss, "Buoyancy (water)", fmtNum(o->water.buoyancy.y, 3) + " N (up), displaced " + fmtNum(o->water.displaced * 1e6, 1) + " cm3");
+        line(ss, "Water drag", fmtNum(glm::length(o->water.drag), 3) + " N  " + v3(o->water.drag, 3));
+    }
     if (live) {
-        line(ss, "Air force", fmtNum(glm::length(inspect_.fDrag), 4) + " N  " + v3(inspect_.fDrag, 3) + "  (drag/thrust)");
+        line(ss, "Air + water force", fmtNum(glm::length(inspect_.fDrag), 4) + " N  " + v3(inspect_.fDrag, 3) + "  (drag/thrust)");
         if (glm::length(inspect_.tAero) > 1e-6) line(ss, "Air torque", fmtNum(glm::length(inspect_.tAero), 4) + " N·m  " + v3(inspect_.tAero, 4));
         if (glm::length(inspect_.fExternal) > 1e-6) line(ss, "Holding force (hand)", fmtNum(glm::length(inspect_.fExternal), 3) + " N  " + v3(inspect_.fExternal, 2));
         glm::dvec3 fc = inspect_.fContact;
@@ -1600,14 +1626,18 @@ World::Snapshot World::capture() const {
     Snapshot s;
     s.nextId = nextId_;
     s.nextJointId = nextJointId_;
+    s.nextWaterId = nextWaterId_;
     for (auto& o : objects_) s.objects.push_back(static_cast<const ObjectState&>(*o));
     for (auto& j : joints_) s.joints.push_back(static_cast<const JointState&>(*j));
+    s.waters = waters_;
     return s;
 }
 
 void World::restore(const Snapshot& s) {
     clear();
     nextId_ = s.nextId;
+    waters_ = s.waters;
+    nextWaterId_ = s.nextWaterId;
     for (const ObjectState& st : s.objects) {
         auto o = std::make_unique<Object>();
         static_cast<ObjectState&>(*o) = st;
@@ -1822,6 +1852,11 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
             << j.motorRpm << " " << j.motorTorque << " " << j.unbreakable << " " << (j.preset.empty() ? "-" : j.preset) << "\n";
     }
     out << "next_joint " << nextJointId_ << "\n";
+    for (const WaterBody& b : waters_)  // Gewässer
+        out << "water " << b.id << " " << liquids()[b.liquid].name << " " << b.sea << " " << b.lo.x << " " << b.lo.y << " " << b.lo.z << " "
+            << b.hi.x << " " << b.hi.y << " " << b.hi.z << " " << b.waves << " " << b.flow.x << " " << b.flow.y << " " << b.flow.z << " "
+            << b.ownTemp << " " << b.tempC << "\n";
+    if (!waters_.empty()) out << "next_water " << nextWaterId_ << "\n";
     return true;
 }
 
@@ -1850,6 +1885,8 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
     std::vector<ObjectState> states;
     std::vector<JointState> loadedJoints;
     uint32_t nextJointIdLoaded = 1;
+    std::vector<WaterBody> loadedWaters;
+    uint32_t nextWaterIdLoaded = 1;
     std::vector<std::pair<std::string, double>> meshFiles;  // pro Zustand (leer = Festkörper)
     uint32_t nextId = 1;
     ObjectState cur;
@@ -1960,11 +1997,22 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
             loadedJoints.push_back(j);
         } else if (tag == "next_joint") {
             ss >> nextJointIdLoaded;
+        } else if (tag == "water") {
+            WaterBody b;
+            std::string liquid;
+            ss >> b.id >> liquid >> b.sea >> b.lo.x >> b.lo.y >> b.lo.z >> b.hi.x >> b.hi.y >> b.hi.z >> b.waves >> b.flow.x >> b.flow.y >>
+                b.flow.z >> b.ownTemp >> b.tempC;
+            b.liquid = std::max(0, findLiquid(liquid.c_str()));
+            if (ss) loadedWaters.push_back(b);
+        } else if (tag == "next_water") {
+            ss >> nextWaterIdLoaded;
         }
     }
     clear();
     undo_.clear();
     redo_.clear();
+    setWaters(loadedWaters);
+    nextWaterId_ = std::max(nextWaterId_, nextWaterIdLoaded);
     nextId_ = nextId;
     for (size_t i = 0; i < states.size(); ++i) {
         if (states[i].kind == ObjKind::Mesh) {

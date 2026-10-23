@@ -22,6 +22,7 @@ Anleitung sind deutsch.
 | [11-Mehrspieler.md](11-Mehrspieler.md) | Mehrspieler im LAN: Spiel öffnen, Mitspieler zulassen, beitreten, wer was rechnet, Ports |
 | [12-Waerme-und-Feuer.md](12-Waerme-und-Feuer.md) | Wärme, Feuer und Kälte: Temperatur in jedem Teil, Wärmeleitung, Brenner und Kältespray, Holz verkohlt und brennt, Feuer breitet sich aus, Metall wird weich und schmilzt, Kälte macht spröde, Darstellung |
 | [13-Materialien.md](13-Materialien.md) | Alle Materialien in der Datei `assets/materials.json`: jeder Wert erklärt, neue Materialien anlegen (Datei, Fenster, Befehle), Reibungspaare |
+| [14-Wasser.md](14-Wasser.md) | Wasser: Becken und Meer, Auftrieb, Boote und Becher, die volllaufen, Wellen, Strömung, Abschrecken, Schwimmen, Darstellung im Shader, Rechenzeit |
 
 ## Schnellstart
 
@@ -35,6 +36,8 @@ build\Release\Werkstatt.exe
 4. **F1** öffnet die Konsole. `help` zeigt alle Befehle.
 5. Menü *Datei → Beispiel-Welt (alles)* lädt eine große Welt mit Kugelbahn, Dominos, Propellern, Hängebrücke und mehr.
 6. Menü *Datei → Feuerstelle* zündet ein Lagerfeuer an: Holz verkohlt und brennt, Stahl glüht, Kunststoff schmilzt, gefrorener Stahl zerspringt.
+7. Menü *Datei → Wasserbecken*: Holz schwimmt, Stahl sinkt, ein Stahlboot schwimmt, bis es vollläuft, ein umgedrehter Becher hält Luft.
+8. Menü *Datei → Fluss*: Strömung um Felsen und einen Brückenpfeiler, das Wasser staut sich und schäumt, Treibgut fährt mit.
 
 Dasselbe als Befehle:
 

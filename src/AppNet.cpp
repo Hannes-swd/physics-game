@@ -764,6 +764,19 @@ void App::netSync(Peer& p) {
         w.u32((uint32_t)world_->undoCount());
         w.u32((uint32_t)world_->redoCount());
         w.u8(world_->simulating());
+        w.f64(world_->waterTime());  // Gewässer und die Uhr der Wellen: schwimmende Teile und Wellen passen zusammen
+        w.u32((uint32_t)world_->waters().size());
+        for (const WaterBody& b : world_->waters()) {
+            w.u32(b.id);
+            w.u8((uint8_t)b.liquid);
+            w.u8(b.sea);
+            w.dvec3(b.lo);
+            w.dvec3(b.hi);
+            w.f64(b.waves);
+            w.dvec3(b.flow);
+            w.u8(b.ownTemp);
+            w.f64(b.tempC);
+        }
         p.conn->send(Msg::Tick, w);
     }
     net::Writer w;
@@ -816,7 +829,7 @@ void App::updatePeerFigures(float dt) {
         if (!p->accepted || !p->play || !physics_.hasCharacter((int)p->id)) continue;
         BodyHandle ignore = kNoBody;
         if (Object* g = world_->find(p->hand.grabbed)) ignore = g->body;
-        physics_.updateCharacter(dt, p->wish, p->jump, ignore, (int)p->id);
+        physics_.updateCharacter(dt, p->wish, p->jump, ignore, (int)p->id, swimDepth(physics_.characterPosition((int)p->id)));
         p->jump = false;
     }
 }
@@ -1041,10 +1054,25 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
         netUndo_ = r.u32();
         netRedo_ = r.u32();
         netHostSim_ = r.u8() != 0;
+        const double waterTime = r.f64();
+        std::vector<WaterBody> waters(readCount(r, 95));
+        for (WaterBody& b : waters) {
+            b.id = r.u32();
+            b.liquid = std::min<int>(r.u8(), (int)liquids().size() - 1);
+            b.sea = r.u8() != 0;
+            b.lo = r.dvec3();
+            b.hi = r.dvec3();
+            b.waves = r.f64();
+            b.flow = r.dvec3();
+            b.ownTemp = r.u8() != 0;
+            b.tempC = r.f64();
+        }
         if (!r.ok()) break;
         if (air != world_->airDensity() || wind != world_->wind()) world_->setAir(air, wind);
         world_->setBreakage(breakage);
         world_->setBuildCollision(buildCollision);
+        world_->setWaters(waters);
+        world_->setWaterTime(waterTime);
         break;
     }
     case Msg::Result: {

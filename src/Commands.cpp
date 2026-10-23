@@ -382,13 +382,21 @@ std::string commandHelp() {
         "  ignite <id> [face]                        light wood, rubber or plastic (default: lowest spot)\n"
         "  extinguish <id|all>                       pour water on the flames\n"
         "  torch <id> [lighter|gas|welding|spray|nitrogen] [seconds=5] [face=top]   heat or cool a spot\n"
+        "WATER (lengths in cm)\n"
+        "  water                                     water bodies, liquids, what floats\n"
+        "  water pool <L> <W> <depth> [x y z] [liquid] [walls]   water L x W, bottom middle at x y z (default: here on the floor)\n"
+        "  water sea <level> [liquid] | water sea off           endless sea: everything below the level is water\n"
+        "  water level|waves <n|all> <cm> | water temp <n|all> <°C|air> | water flow <n|all> <x> <z> (m/s) | water liquid <n|all> <l>\n"
+        "  water remove <n|all> | water <id>         how a part floats: displaced volume, buoyancy, water in its hollows\n"
+        "  water fill <id> [percent] | water empty <id>   fill the hollows of a cup or boat\n"
+        "      liquids: water seawater muddy oil\n"
         "PHYSICS & WORLD\n"
         "  air [density <kg/m3> | vacuum | normal | wind x y z] | wind x y z\n"
         "  impulse <id> jx jy jz                     impulse in N·s | sim <seconds>\n"
         "  mode build|play | view perspective|top|front|side|quad\n"
         "  camera x y z [distance] | select <id ...|all> | screenshot <file.png>\n"
         "  drawing [id ...] [file.svg]               three-view drawing (no id: selection)\n"
-        "  undo | redo | scene empty|demo|showcase|fire | save <file> | load <file> | quit\n"
+        "  undo | redo | scene empty|demo|showcase|fire|water|river | save <file> | load <file> | quit\n"
         "  status | wait <seconds> | profile [reset|on|off]   time spent per engine section (find slow parts)\n"
         "ONLY IN THE GAME WINDOW\n"
         "  player                                    position, view, what is carried\n"
@@ -1484,6 +1492,126 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         res.text = "air: density " + fmtNum(w.airDensity(), 3) + " kg/m3" + (w.airDensity() == 0 ? " (vacuum)" : "") + ", wind " +
                    fmtNum(w.wind().x, 2) + " " + fmtNum(w.wind().y, 2) + " " + fmtNum(w.wind().z, 2) + " m/s (" +
                    fmtNum(glm::length(w.wind()), 2) + " m/s = " + fmtNum(glm::length(w.wind()) * 3.6, 1) + " km/h)";
+    } else if (cmd == "water") {
+        const std::string sub = word(1);
+        double x = 0, y = 0, z = 0, v = 0;
+        // Gewässer per Nummer ("all" = alle)
+        auto bodies = [&](size_t i) {
+            std::vector<WaterBody*> r;
+            if (word(i) == "all")
+                for (const WaterBody& b : w.waters()) r.push_back(w.findWater(b.id));
+            else if (num(i, v))
+                if (WaterBody* b = w.findWater((uint32_t)v)) r.push_back(b);
+            return r;
+        };
+        if (sub.empty()) {
+            res.text = w.waterText();
+        } else if (sub == "pool") {
+            // water pool <L> <W> <depth> [x y z] [liquid] [walls]: Wasser L x W, Boden in Höhe y (ohne Angabe: hier auf dem Boden)
+            double L = 0, W = 0, D = 0;
+            if (!num(2, L) || !num(3, W) || !num(4, D) || L <= 0 || W <= 0 || D <= 0)
+                return fail("water pool <L> <W> <depth> [x y z] [liquid] [walls]   (cm; x y z = middle of the bottom)");
+            glm::dvec3 c = host.spawnReference();
+            size_t next = 5;
+            if (num(5, x) && num(6, y) && num(7, z)) {
+                c = glm::dvec3(x, y, z) / 100.0;
+                next = 8;
+            }
+            WaterBody b;
+            bool walls = false;
+            for (size_t i = next; i < t.size(); ++i) {
+                if (word(i) == "walls") walls = true;
+                else if (findLiquid(word(i).c_str()) >= 0) b.liquid = findLiquid(word(i).c_str());
+                else return fail("unknown liquid or option '" + t[i] + "' (" + std::string(liquids()[0].name) + ", seawater, muddy, oil, walls)");
+            }
+            b.lo = c - glm::dvec3(L / 200.0, 0, W / 200.0);
+            b.hi = c + glm::dvec3(L / 200.0, D / 100.0, W / 200.0);
+            w.pushUndo();
+            if (walls) {  // Beckenrand aus Beton, 10 cm dick, 5 cm höher als das Wasser
+                const double th = 0.10, H = D / 100.0 + 0.05, l = L / 100.0, wd = W / 100.0;
+                const glm::dvec3 sizes[4] = {{l + 2 * th, H, th}, {l + 2 * th, H, th}, {th, H, wd}, {th, H, wd}};
+                const glm::dvec3 offs[4] = {{0, H / 2, -(wd + th) / 2}, {0, H / 2, (wd + th) / 2}, {-(l + th) / 2, H / 2, 0}, {(l + th) / 2, H / 2, 0}};
+                for (int i = 0; i < 4; ++i)
+                    if (Object* o = w.addBox(materialIndex("concrete"), sizes[i], c + offs[i], "Pool wall")) w.setFixed(*o, true);
+            }
+            const uint32_t id = w.addWater(b);
+            res.text = "water: " + w.waterText(*w.findWater(id));
+        } else if (sub == "sea") {
+            if (word(2) == "off") {
+                int n = 0;
+                std::vector<uint32_t> ids;
+                for (const WaterBody& b : w.waters())
+                    if (b.sea) ids.push_back(b.id);
+                if (!ids.empty()) w.pushUndo();
+                for (uint32_t id : ids) n += w.removeWater(id);
+                res.text = n ? "the sea is gone" : "there is no sea";
+                return res;
+            }
+            if (!num(2, v)) return fail("water sea <level_cm> [liquid] | water sea off   (endless: everything below the level is water)");
+            const int l = t.size() > 3 ? findLiquid(word(3).c_str()) : findLiquid("seawater");
+            if (l < 0) return fail("unknown liquid '" + t[3] + "' (water, seawater, muddy, oil)");
+            WaterBody* sea = nullptr;
+            for (const WaterBody& b : w.waters())
+                if (b.sea) sea = w.findWater(b.id);
+            w.pushUndo();
+            if (!sea) {
+                WaterBody b;
+                b.sea = true;
+                b.liquid = l;
+                sea = w.findWater(w.addWater(b));
+            }
+            sea->hi.y = v / 100.0;
+            if (t.size() > 3) sea->liquid = l;
+            w.changedWater(*sea);
+            res.text = "water: " + w.waterText(*sea);
+        } else if (sub == "remove" || sub == "delete") {
+            auto list = bodies(2);
+            if (list.empty()) return fail("water remove <n|all>   ('water' lists them)");
+            w.pushUndo();
+            std::vector<uint32_t> ids;
+            for (WaterBody* b : list) ids.push_back(b->id);
+            for (uint32_t id : ids) w.removeWater(id);
+            res.text = std::to_string(ids.size()) + " water bod" + (ids.size() == 1 ? "y" : "ies") + " removed";
+        } else if (sub == "level" || sub == "waves" || sub == "temp" || sub == "liquid" || sub == "flow" || sub == "current") {
+            auto list = bodies(2);
+            if (list.empty()) return fail("water " + sub + " <n|all> ...   ('water' lists them)");
+            const int l = findLiquid(word(3).c_str());
+            if (sub == "level" && !num(3, v)) return fail("water level <n|all> <height_cm>");
+            if (sub == "waves" && (!num(3, v) || v < 0)) return fail("water waves <n|all> <height_cm>   (0 = calm, 30 = choppy, 150 = storm)");
+            if (sub == "temp" && word(3) != "air" && !num(3, v)) return fail("water temp <n|all> <°C|air>");
+            if (sub == "liquid" && l < 0) return fail("water liquid <n|all> <water|seawater|muddy|oil>");
+            if ((sub == "flow" || sub == "current") && (!num(3, x) || !num(4, z))) return fail("water flow <n|all> <x> <z>   (m/s, e.g. a river)");
+            w.pushUndo();
+            for (WaterBody* b : list) {
+                if (sub == "level") {
+                    b->hi.y = std::max(v / 100.0, b->sea ? -1e9 : b->lo.y + 0.001);
+                } else if (sub == "waves") {
+                    b->waves = std::min(v / 100.0, 10.0);
+                } else if (sub == "temp") {
+                    b->ownTemp = word(3) != "air";
+                    if (b->ownTemp) b->tempC = std::clamp(v, -2.0, 99.0);
+                } else if (sub == "liquid") {
+                    b->liquid = l;
+                } else {
+                    b->flow = glm::dvec3(x, 0, z);
+                }
+                w.changedWater(*b);
+                out << "water: " << w.waterText(*b) << "\n";
+            }
+            res.text = out.str();
+        } else if (sub == "fill" || sub == "empty") {
+            Object* o = obj(2);
+            if (!o) return fail("water fill <id> [percent] | water empty <id>   (fill the hollows of a cup or boat)");
+            double pct = sub == "empty" ? 0 : 100;
+            if (sub == "fill" && t.size() > 3 && !num(3, pct)) return fail("water fill <id> [percent]");
+            std::string err;
+            if (!w.fillWater(*o, pct / 100.0, &err)) return fail(err);
+            res.text = w.waterTextOf(*o);
+        } else if (Object* o = obj(1)) {
+            res.text = w.waterTextOf(*o);
+        } else {
+            return fail("water | water pool <L> <W> <depth> [x y z] [liquid] [walls] | water sea <level>|off | water <id> ...  ('help')");
+        }
     } else if (cmd == "collision") {
         Object* o = obj(1);
         std::string m = word(2);
@@ -1643,7 +1771,9 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         else if (m == "demo") w.demoScene();
         else if (m == "showcase") w.showcaseScene();
         else if (m == "fire") w.fireScene();
-        else return fail("scene empty|demo|showcase|fire");
+        else if (m == "water" || m == "pool") w.waterScene();
+        else if (m == "river") w.riverScene();
+        else return fail("scene empty|demo|showcase|fire|water|river");
         res.text = "Scene: " + std::to_string(w.objects().size()) + " parts, " + std::to_string(w.joints().size()) + " joints";
     } else if (cmd == "save") {
         if (t.size() < 2) return fail("save <file>");

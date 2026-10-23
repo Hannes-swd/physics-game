@@ -197,6 +197,7 @@ int App::run(const AppOptions& opt) {
             heatToolInput(dt);
         }
         world_->pollCollisionJobs();  // im Hintergrund fertig gewordene Kollisionsformen übernehmen
+        world_->advanceWaterClock(dt);  // Wellen laufen auch, wenn die Physik steht
         if (!netClient()) {
             PROFILE("world.heatOnly");
             world_->stepHeatOnly(dt);  // Bau-Modus: Wärme und Feuer laufen weiter, auch wenn die Physik steht
@@ -528,8 +529,9 @@ void App::buildFrame(FrameDesc& fd) {
         }
     });
 
-    addAvatars(fd);  // andere Spieler im LAN
-    addFireFx(fd);   // Flammen, Rauch, Feuerschein
+    addAvatars(fd);    // andere Spieler im LAN
+    addFireFx(fd);     // Flammen, Rauch, Feuerschein
+    addWaterData(fd);  // Gewässer: Wellen, Farbe, Lichtflecken
 
     // Auswahl: Hüllquader + lokale Achsen
     if (!play_) {

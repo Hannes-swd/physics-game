@@ -37,6 +37,7 @@
 | `src/Joints.cpp` | Verbindungen (Kleber, Nägel, Schrauben, Schweißnaht, Scharnier, Feder, Seil): Tragfähigkeit, Belastung, Bruch |
 | `src/Impact.cpp` | Aufprall: Zerbrechen spröder Teile; Form eines härteren Werkzeugs vermessen (Spitze, Schneide, stumpf), Eindringen, Spalten, Abdruck, Steckenbleiben |
 | `src/Heat.cpp` | Wärme: Temperaturgitter je Teil, Wärmeleitung, Luft, Berührung, Reibungswärme, Werkzeuge, Verkohlen und Brennen, Feuer (Heskestad), Schmelzen, Tropfen und Pfützen, Erweichen von Verbindungen, `heat`-Texte ([12](12-Waerme-und-Feuer.md)) |
+| `src/Water.*`, `src/AppWater.cpp` | Wasser: Gewässer (Becken, Meer), Flüssigkeiten, Wellen, exakter Auftrieb je konvexem Stück, Hohlräume, die volllaufen, Widerstand und Dämpfung, auf allen Kernen; Gewässer für die Shader, Spritzer, Dampf, Schwimmen ([14](14-Wasser.md)) |
 | `src/Showcase.cpp` | Beispielwelt (`scene showcase`) und Feuerstelle (`scene fire`), aufgebaut als Befehlslisten |
 | `src/Solid.*` | Festkörper-Geometrie (siehe unten), Kanten finden, Werkzeugformen, Berührfläche zweier Teile |
 | `src/Chunks.*` | 3D-Chunks |
@@ -164,6 +165,7 @@ und beendet das Programm bei harmlosen Überläufen in Zwischenrechnungen.
 | Prozedurale Materialien | Maserung, Sprenkel, Poren werden im Shader im Objektraum berechnet (durchgehend, auch an Schnittflächen). Feine Muster werden entfernungsabhängig ausgeblendet (kein Flimmern) |
 | Wärme | Temperaturgitter je Teil als Speicherpuffer (trilinear gelesen): Glühen (Schwarzer Strahler), Verkohlung mit glühenden Rissen, Anlauffarben nach der Höchsttemperatur, Reif, Schmelzglanz |
 | Feuer (`fire.vert`, `fire.frag`) | Flammen, Rauch, Funken, Kältenebel als kamerazugewandte Rechtecke; Form und Flackern aus aufsteigendem Rauschen im Shader; vormultipliziertes Alpha (Flammen leuchten additiv, Rauch deckt ab) |
+| Wasser (`water.vert`, `water.frag`, `waterView`/`waterSun` in `common.glsl`) | Oberfläche als Gitter aus `gl_VertexIndex`, Wellen wie in der Physik, Fresnel-Spiegelung, Sonnenglanz, Schaum; Körper färben sich nach ihrem Weg durch das Wasser, Lichtflecken am Grund ([14](14-Wasser.md)) |
 | Feuerschein | bis zu 8 Punktlichter im Bild-Uniform, flackernd |
 | Linien | Kanten, Auswahl, Achsen, Werkzeugvorschau (Schnittfläche, Kante, Fräsfläche), Kraftpfeile, Seile, Federn (Zickzack), Verbindungs-Markierungen |
 | Boden | genaues Mittelstück (für feine Rasterlinien) + Außenring bis zum Horizont, folgt der Kamera |
@@ -281,7 +283,7 @@ Physik läuft leicht in Zeitlupe).
 
 ## Selbsttest
 
-`Werkstatt.exe --selftest` prüft (118 Prüfungen):
+`Werkstatt.exe --selftest` prüft (140 Prüfungen):
 
 - Geometrie: Volumen, Sägeschnitt, Bohrung (π r² h), Innenflächen, Schnittfuge, Zahnrad, Kugel, Kanten finden,
   Abrunden/Fasen (Volumen nach Formel), Hohlkehle, Drehbank
@@ -302,6 +304,10 @@ Physik läuft leicht in Zeitlupe).
 - Materialdatei (mit der eingebetteten Kopie, unabhängig von eigenen Änderungen): Laden, Aliasse, Speichern und Lesen
   ergibt dieselben Werte, kaputte Datei wird abgelehnt (alte Liste bleibt), unbekannte Schlüssel gemeldet, neues Material
   per Befehl sofort benutzbar, Dichte ändern ändert vorhandene Teile, Neuladen behält das Material über den Namen
+- Wasser: Fichte schwimmt zu 47 % unter Wasser, schräg eingesetzt legt sie sich flach, Stahl sinkt, Stahlboot schwimmt und
+  sinkt vollgelaufen, Becher läuft unter Wasser voll, umgedreht hält er Luft, volles Glas kopfüber läuft aus, Abschrecken,
+  Wellen, Meer, Speichern und Rückgängig; Fluss: Strömung um einen Pfeiler (wie die Potentialströmung), Stau und Schaum davor,
+  Treibgut fährt vorbei, ohne Pfeiler fließt es wieder gerade
 - Speichern und Laden, Beispiel-Werkstatt, Getriebe-Übersetzung, Beispielwelt (132 Teile, läuft 5 s ohne Ausreißer)
 
 `Werkstatt.exe --bench [szene]` misst Rechenzeit, Eindringtiefe und Rettungen in elf Physik-Szenen, jeweils mit den alten

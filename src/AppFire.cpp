@@ -65,6 +65,7 @@ void App::heatToolInput(float) {
 
 void App::updateFx(float dt) {
     dt = std::min(dt, 0.1f);
+    updateWaterFx(dt);  // Spritzer, Dampf
     const glm::vec3 wind = glm::vec3(world_->wind());
     // Rauch und Funken aus den Feuern
     for (const Fire& F : world_->fires()) {
@@ -130,6 +131,11 @@ void App::updateFx(float dt) {
         } else if (p.kind == 2) {
             p.vel.y -= 1.5f * dt;  // Funken kühlen ab und fallen
             p.vel += (wind - p.vel) * 0.3f * dt;
+        } else if (p.kind == 5) {  // Dampf steigt, treibt mit dem Wind
+            p.vel += (wind - glm::vec3(p.vel.x, 0, p.vel.z)) * glm::vec3(0.8f, 0, 0.8f) * dt;
+            p.vel.y += 0.15f * dt;
+        } else if (p.kind == 6) {
+            p.vel.y -= 9.81f * dt;  // Wassertropfen fallen zurück
         } else {
             p.vel *= 1.0f - 1.5f * dt;
             p.vel.y -= 0.4f * dt;  // kalte Luft sinkt

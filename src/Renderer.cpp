@@ -43,6 +43,12 @@ const uint32_t kFireVert[] =
 const uint32_t kFireFrag[] =
 #include "fire.frag.inc"
     ;
+const uint32_t kWaterVert[] =
+#include "water.vert.inc"
+    ;
+const uint32_t kWaterFrag[] =
+#include "water.frag.inc"
+    ;
 
 struct Push {
     glm::mat4 viewProj;
@@ -62,9 +68,12 @@ struct FrameUbo {
     glm::vec4 lightPos[kMaxLights];
     glm::vec4 lightColor[kMaxLights];
     glm::vec4 lightInfo;  // x = Anzahl
+    WaterGpu water[kMaxWater];
+    glm::vec4 waterInfo;  // x = Anzahl, yz = Richtung der Wellen
 };
 
 constexpr VkDeviceSize kHeatBytes = 64 * 1024 * sizeof(glm::vec4);  // Anfangsgröße des Wärme-Puffers
+constexpr VkDeviceSize kWaterBytes = 16 * 1024 * sizeof(glm::vec4);  // Anfangsgröße des Strömungs-Puffers
 
 #define VK_CHECK(x)                                                                     \
     do {                                                                                \
@@ -133,17 +142,18 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
     VK_CHECK(vkCreateSampler(device_, &si, nullptr, &shadowSampler_));
 
     // Deskriptoren
-    VkDescriptorSetLayoutBinding binds[4] = {};
+    VkDescriptorSetLayoutBinding binds[5] = {};
     binds[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     binds[1] = {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     binds[2] = {2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     binds[3] = {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};  // Temperaturgitter
+    binds[4] = {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};  // Strömung
     VkDescriptorSetLayoutCreateInfo dli{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dli.bindingCount = 4;
+    dli.bindingCount = 5;
     dli.pBindings = binds;
     VK_CHECK(vkCreateDescriptorSetLayout(device_, &dli, nullptr, &setLayout_));
 
-    VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * kFrames},
+    VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 * kFrames},
                                      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFrames},
                                      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFrames}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -177,6 +187,7 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
         f.vertices = createBuffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
         f.meshVertices = createBuffer(256 * 1024, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
         f.heat = createBuffer(kHeatBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        f.water = createBuffer(kWaterBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
 
         VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         dai.descriptorPool = descPool_;
@@ -188,8 +199,9 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
         VkDescriptorImageInfo shInfo{shadowSampler_, shadow_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         VkDescriptorBufferInfo uboInfo{f.ubo.buffer, 0, sizeof(FrameUbo)};
         VkDescriptorBufferInfo heatInfo{f.heat.buffer, 0, VK_WHOLE_SIZE};
-        VkWriteDescriptorSet w[4] = {};
-        for (int i = 0; i < 4; ++i) {
+        VkDescriptorBufferInfo waterInfo{f.water.buffer, 0, VK_WHOLE_SIZE};
+        VkWriteDescriptorSet w[5] = {};
+        for (int i = 0; i < 5; ++i) {
             w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             w[i].dstSet = f.set;
             w[i].dstBinding = i;
@@ -203,7 +215,9 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
         w[2].pBufferInfo = &uboInfo;
         w[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         w[3].pBufferInfo = &heatInfo;
-        vkUpdateDescriptorSets(device_, 4, w, 0, nullptr);
+        w[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        w[4].pBufferInfo = &waterInfo;
+        vkUpdateDescriptorSets(device_, 5, w, 0, nullptr);
     }
 
     return createPipelines();
@@ -450,6 +464,8 @@ bool Renderer::createPipelines() {
     VkShaderModule skyF = shaderModule(kSkyFrag, sizeof(kSkyFrag));
     VkShaderModule fireV = shaderModule(kFireVert, sizeof(kFireVert));
     VkShaderModule fireF = shaderModule(kFireFrag, sizeof(kFireFrag));
+    VkShaderModule waterV = shaderModule(kWaterVert, sizeof(kWaterVert));
+    VkShaderModule waterF = shaderModule(kWaterFrag, sizeof(kWaterFrag));
 
     struct Cfg {
         VkShaderModule vs, fs;
@@ -468,6 +484,8 @@ bool Renderer::createPipelines() {
         {lineV, lineF, false, true, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_CULL_MODE_NONE, true, false, 1, false, &linePipe_},
         {lineV, lineF, false, true, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, false, 1, false, &transPipe_},
         {fireV, fireF, false, true, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, false, 2, false, &firePipe_},
+        // Wasseroberfläche: Gitter aus gl_VertexIndex (kein Puffer), vormultipliziert (Spiegelung deckt, Glanz leuchtet)
+        {waterV, waterF, false, false, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_CULL_MODE_NONE, true, false, 2, false, &waterPipe_},
     };
 
     for (const Cfg& c : cfgs) {
@@ -572,7 +590,7 @@ bool Renderer::createPipelines() {
             return false;
         }
     }
-    for (VkShaderModule m : {meshV, meshF, shadowV, lineV, lineF, skyV, skyF, fireV, fireF}) vkDestroyShaderModule(device_, m, nullptr);
+    for (VkShaderModule m : {meshV, meshF, shadowV, lineV, lineF, skyV, skyF, fireV, fireF, waterV, waterF}) vkDestroyShaderModule(device_, m, nullptr);
     return true;
 }
 
@@ -760,6 +778,9 @@ void Renderer::render(const FrameDesc& fd) {
         ubo.lightColor[i] = glm::vec4(fd.lightColor[i], 0.0f);
     }
     ubo.lightInfo = glm::vec4((float)nLights, 0, 0, 0);
+    const size_t nWater = std::min<size_t>(fd.water.size(), kMaxWater);
+    for (size_t i = 0; i < nWater; ++i) ubo.water[i] = fd.water[i];
+    ubo.waterInfo = glm::vec4((float)nWater, fd.waveDir.x, fd.waveDir.y, 0.0f);
     std::memcpy(fr.ubo.mapped, &ubo, sizeof(ubo));
 
     // Temperaturgitter (wächst bei Bedarf; der Deskriptor dieses Bilds zeigt dann auf den neuen Puffer)
@@ -777,6 +798,21 @@ void Renderer::render(const FrameDesc& fd) {
         vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
     }
     if (heatBytes) std::memcpy(fr.heat.mapped, fd.heatCells.data(), heatBytes);
+    // Strömungsgitter der Gewässer (wächst ebenso)
+    const VkDeviceSize waterBytes = fd.waterCells.size() * sizeof(glm::vec4);
+    if (waterBytes > fr.water.size) {
+        destroyBuffer(fr.water);
+        fr.water = createBuffer(std::max(waterBytes * 2, kWaterBytes), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        VkDescriptorBufferInfo wi{fr.water.buffer, 0, VK_WHOLE_SIZE};
+        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w.dstSet = fr.set;
+        w.dstBinding = 4;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        w.pBufferInfo = &wi;
+        vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
+    }
+    if (waterBytes) std::memcpy(fr.water.mapped, fd.waterCells.data(), waterBytes);
 
     const size_t nLines = fd.lines.size(), nOverlay = fd.overlayLines.size(), nTrans = fd.translucent.size(), nFire = fd.fire.size();
     const size_t vbBytes = (nLines + nOverlay + nTrans + nFire) * sizeof(LineVertex);
@@ -914,6 +950,21 @@ void Renderer::render(const FrameDesc& fd) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipe_);
             for (uint32_t i = 0; i < objCount; ++i) drawItem(cmd, fd.items[i], i);
 
+            if (nWater) {  // Wasseroberflächen: nach den Körpern (darunter schon gefärbt), vor Flammen und Linien
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipe_);
+                for (size_t i = 0; i < nWater; ++i) {
+                    const uint32_t n = (uint32_t)std::clamp(fd.water[i].scatter.w, 1.0f, 256.0f);
+                    const bool sea = fd.water[i].absorb.w > 0.5f;
+                    for (int part = 0; part < (sea ? 1 : 2); ++part) {  // Oberfläche, beim Becken auch die Seiten
+                        Push wp = p;
+                        wp.params = glm::vec4((float)i, fd.time, (float)part, (float)n);
+                        vkCmdPushConstants(cmd, pipeLayout_, pcStages, 0, sizeof(Push), &wp);
+                        vkCmdDraw(cmd, part == 0 ? n * n * 6 : 4 * n * 6, 1, 0, 0);
+                    }
+                }
+                vkCmdPushConstants(cmd, pipeLayout_, pcStages, 0, sizeof(Push), &p);
+            }
+
             VkDeviceSize off = 0;
             if (nLines + nOverlay + nTrans + nFire > 0) vkCmdBindVertexBuffers(cmd, 0, 1, &fr.vertices.buffer, &off);
             if (nFire) {  // Flammen und Rauch: nach den Körpern, schreiben keine Tiefe
@@ -1049,10 +1100,11 @@ void Renderer::shutdown() {
         destroyBuffer(f.vertices);
         destroyBuffer(f.meshVertices);
         destroyBuffer(f.heat);
+        destroyBuffer(f.water);
         vkDestroySemaphore(device_, f.imageAvailable, nullptr);
         vkDestroyFence(device_, f.fence, nullptr);
     }
-    for (VkPipeline p : {meshPipe_, shadowPipe_, skyPipe_, linePipe_, transPipe_, firePipe_})
+    for (VkPipeline p : {meshPipe_, shadowPipe_, skyPipe_, linePipe_, transPipe_, firePipe_, waterPipe_})
         if (p) vkDestroyPipeline(device_, p, nullptr);
     vkDestroyPipelineLayout(device_, pipeLayout_, nullptr);
     vkDestroyDescriptorPool(device_, descPool_, nullptr);

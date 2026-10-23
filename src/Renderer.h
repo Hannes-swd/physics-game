@@ -30,6 +30,18 @@ struct ObjectGpuData {
 };
 
 constexpr int kMaxLights = 8;  // Feuerschein (Punktlichter)
+constexpr int kMaxWater = 8;   // Gewässer je Bild (die nächsten)
+
+// Ein Gewässer für die Shader. Muss zu frame.water in common.glsl passen (7 vec4 je Gewässer)
+struct WaterGpu {
+    glm::vec4 lo{0.0f};       // xyz Ecke unten (relativ zum Ursprung), w = Wellenlänge der größten Welle (m)
+    glm::vec4 hi{0.0f};       // xyz Ecke oben (y = Wasserspiegel in Ruhe), w = Wellenhöhe (m)
+    glm::vec4 phase{0.0f};    // Phase der vier Wellen am Ursprung (rad)
+    glm::vec4 absorb{0.0f};   // rgb Lichtabsorption je m, w = 1 Meer (unbegrenzt)
+    glm::vec4 scatter{0.0f};  // rgb Streufarbe, w = Rastergröße der Oberfläche (Vierecke je Seite)
+    glm::vec4 grid0{0.0f, 0.0f, 1.0f, -1.0f};  // Strömungsgitter: xy = Ecke (x, z relativ zum Ursprung), z = Zellgröße, w = erste Zelle (-1: keins)
+    glm::vec4 grid1{0.0f};    // xy = Zellen je Achse (x, z), zw = Strömung ohne Hindernisse (m/s)
+};
 
 struct DrawItem {
     const GpuMesh* mesh = nullptr;
@@ -65,6 +77,11 @@ struct FrameDesc {
     std::vector<LineVertex> fire;
     // Feuerschein: Position (relativ zum Ursprung) und Farbe·Stärke
     std::vector<glm::vec3> lightPos, lightColor;
+    // Gewässer (höchstens kMaxWater) und die Richtung der Wellen
+    std::vector<WaterGpu> water;
+    glm::vec2 waveDir{1.0f, 0.0f};
+    // Strömungsgitter aller Gewässer: je Zelle (Strömung x, z in m/s, Schaum 0..1, Stau in m), siehe WaterGpu::grid0
+    std::vector<glm::vec4> waterCells;
     glm::dvec3 origin{0.0};  // Darstellungsursprung: alle Positionen im Bild sind relativ dazu
     float fogDensity = 0.00035f;
     glm::mat4 lightViewProj{1.0f};
@@ -109,7 +126,7 @@ private:
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         VkSemaphore imageAvailable = VK_NULL_HANDLE;
         VkFence fence = VK_NULL_HANDLE;
-        Buffer objects, ubo, vertices, meshVertices, heat;
+        Buffer objects, ubo, vertices, meshVertices, heat, water;
         VkDescriptorSet set = VK_NULL_HANDLE;
     };
     struct Pending {
@@ -164,7 +181,7 @@ private:
     VkDescriptorPool imguiPool_ = VK_NULL_HANDLE;
     VkPipelineLayout pipeLayout_ = VK_NULL_HANDLE;
     VkPipeline meshPipe_ = VK_NULL_HANDLE, shadowPipe_ = VK_NULL_HANDLE, skyPipe_ = VK_NULL_HANDLE;
-    VkPipeline linePipe_ = VK_NULL_HANDLE, transPipe_ = VK_NULL_HANDLE, firePipe_ = VK_NULL_HANDLE;
+    VkPipeline linePipe_ = VK_NULL_HANDLE, transPipe_ = VK_NULL_HANDLE, firePipe_ = VK_NULL_HANDLE, waterPipe_ = VK_NULL_HANDLE;
 
     static constexpr int kFrames = 2;
     static constexpr uint32_t kMaxObjects = 8192;

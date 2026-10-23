@@ -698,6 +698,23 @@ void App::updatePlay(float dt) {
         autoMoveTime_ = std::max(0.0, autoMoveTime_ - dt);
     }
     if (glm::length(wish) > 0) wish = glm::normalize(wish) * (run ? 7.0f : 4.0f);
+    // Wasser: Waten bremst, ab der Brust schwimmt die Figur. W mit Blick nach unten taucht, Leertaste hoch, Strg hinunter
+    const float swim = swimDepth(netClient() ? netFeet_ : physics_.characterPosition());
+    if (swim > 0.5f) {
+        wish *= 0.5f;
+        if (play_ && cursorCaptured_ && !io.WantTextInput) {
+            if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) {
+                wish.x *= std::cos((float)playPitch_);
+                wish.z *= std::cos((float)playPitch_);
+                wish.y += std::sin((float)playPitch_) * (run ? 3.5f : 2.0f);
+            }
+            if (glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS) wish.y += 1.5f;
+            if (glfwGetKey(window_, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) wish.y -= 1.5f;
+        }
+        jump = false;
+    } else if (swim > 0.25f) {
+        wish *= 1.0f - (swim - 0.25f) * 1.6f;
+    }
     if (netClient()) {  // der Gastgeber bewegt die Figur
         netWish_ = wish;
         netJump_ = netJump_ || jump;
@@ -710,7 +727,7 @@ void App::updatePlay(float dt) {
     if (play_) {
         BodyHandle ignore = kNoBody;
         if (Object* g = world_->find(hand_.grabbed)) ignore = g->body;
-        physics_.updateCharacter(dt, wish, jump, ignore);
+        physics_.updateCharacter(dt, wish, jump, ignore, 0, swim);
         // Stufe hinauf: die Figur steht sofort oben, die Kamera gleitet nach (schneller, als man laufen oder springen kann)
         const double y = physics_.characterPosition().y, dy = y - lastFeetY_;
         if (physics_.characterOnGround() && dy > 0.04 && dy < 0.5 && dy > 8.0 * dt) eyeLag_ -= dy;

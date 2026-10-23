@@ -161,6 +161,8 @@ public:
     glm::vec3 angularVelocity(BodyHandle h) const;
     glm::vec3 pointVelocity(BodyHandle h, const glm::dvec3& p) const;
     float mass(BodyHandle h) const;
+    // Masse ändern (z.B. Wasser in einem Hohlraum), die Trägheit wächst im gleichen Verhältnis. Schwerpunkt bleibt
+    void setMass(BodyHandle h, double mass);
     glm::dvec3 centerOfMass(BodyHandle h) const;
     void addForceAt(BodyHandle h, const glm::vec3& f, const glm::dvec3& p);
     void addTorque(BodyHandle h, const glm::vec3& t);
@@ -171,6 +173,7 @@ public:
     void setContinuous(BodyHandle h, bool on);
     void activate(BodyHandle h);
     void deactivate(BodyHandle h);
+    void keepAwake(BodyHandle h);  // langsamen Körper (noch) nicht schlafen legen, z.B. schaukelnd im Wasser
     bool isActive(BodyHandle h) const;
     // Alle gerade wachen Körper. Schlafende bewegen sich nicht: bei vielen ruhenden Teilen viel schneller als jedes Teil zu fragen
     void activeBodies(std::vector<BodyHandle>& out) const;
@@ -216,7 +219,8 @@ public:
     void createCharacter(const glm::dvec3& feet, int who = 0);
     void destroyCharacter(int who = 0);
     bool hasCharacter(int who = 0) const;
-    void updateCharacter(float dt, const glm::vec3& wishVelocity, bool jump, BodyHandle ignore, int who = 0);
+    // swim: Anteil der Figur unter Wasser (0..1). Ab der Brust schwimmt sie: das Wasser trägt sie, wishVelocity.y = auf/ab
+    void updateCharacter(float dt, const glm::vec3& wishVelocity, bool jump, BodyHandle ignore, int who = 0, float swim = 0.0f);
     glm::dvec3 characterPosition(int who = 0) const;
     void setCharacterPosition(const glm::dvec3& feet, int who = 0);
     bool characterOnGround(int who = 0) const;

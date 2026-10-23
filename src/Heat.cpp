@@ -377,12 +377,16 @@ bool World::ignite(Object& o, const glm::dvec3* local, std::string* err) {
         double by = 1e30;
         for (int i = 0; i < (int)g.cells.size(); ++i)
             if (g.cells[i].inside && g.cells[i].area > 0 && g.cells[i].fuel > 0.02) {
-                const double y = (o.pos + o.rot * cellCenter(g, i)).y;
-                if (y < by - 1e-6) by = y, best = i;
+                const glm::dvec3 p = o.pos + o.rot * cellCenter(g, i);
+                if (p.y < by - 1e-6 && !inWater(p)) by = p.y, best = i;  // unter Wasser brennt nichts
             }
     }
     if (best < 0) {
-        if (err) *err = "nothing left to burn";
+        if (err) *err = inWater(o.pos) ? "the part is under water" : "nothing left to burn";
+        return false;
+    }
+    if (inWater(o.pos + o.rot * cellCenter(g, best))) {
+        if (err) *err = "that spot is under water";
         return false;
     }
     const Thermal& th = thermal(o.material);
@@ -753,6 +757,11 @@ void World::stepHeat(double dt) {
         uint32_t obj;
         float soot;
     };
+    // Wasser mit eigener Temperatur (kalter See, warmes Becken) erwärmt bzw. kühlt auch Teile, die luftwarm sind
+    for (const WaterBody& b : waters_)
+        if (b.ownTemp && std::abs(b.tempC - Ta) > 0.3)
+            for (auto& op : objects_)
+                if (op->heatInfo.idle && waterTouching(op->wMin, op->wMax) == &b && ensureHeat(*op)) op->heatInfo.idle = false;
     // Jedes Teil rechnet nur mit seinen eigenen Zellen: auf alle Kerne verteilt
     std::vector<Object*> active;
     for (auto& op : objects_)
@@ -762,6 +771,12 @@ void World::stepHeat(double dt) {
     if (simulating_)
         for (size_t k = 0; k < active.size(); ++k)
             if (active[k]->body != kNoBody) velocity[k] = physics_.linearVelocity(active[k]->body);
+    // Teile im Wasser: ihr Gewässer und seine Wellen (die Schleife unten liest nur), Dampf je Teil
+    std::vector<const WaterBody*> wetOf(active.size(), nullptr);
+    std::vector<WaveSet> wavesAt(active.size());
+    std::vector<std::vector<Steam>> steamOf(active.size());
+    for (size_t k = 0; k < active.size(); ++k)
+        if ((wetOf[k] = waterTouching(active[k]->wMin, active[k]->wMax))) wavesAt[k] = wavesOf(*wetOf[k]);
     jobs::parallelFor(active.size(), [&](size_t k) {
         Object& o = *active[k];
         std::vector<BurnSpot>& spots = spotsOf[k];
@@ -776,14 +791,36 @@ void World::stepHeat(double dt) {
         const double forced = 6.0 * std::pow(vrel, 0.8);
         const double fb = o.heatInfo.boost;
         const glm::dmat3 rot = glm::mat3_cast(o.rot);
+        const WaterBody* wb = wetOf[k];
         for (int i = 0; i < (int)g.cells.size(); ++i) {
             HeatCell& c = g.cells[i];
             if (!c.inside) continue;
+            // Wasser: Konvektion; beim Abschrecken über ~450 °C erst ein Dampffilm (Leidenfrost, in kaltem Wasser ~1200 W/m²K),
+            // darunter Blasensieden (sehr guter Übergang, ~9000 W/m²K). Unter Wasser brennt nichts
+            bool submerged = false;
+            if (wb && c.area > 0) {
+                const glm::dvec3 p = o.pos + rot * cellCenter(g, i);
+                const double s = surfaceHeight(*wb, wavesAt[k], p.x, p.z);
+                if (wb->covers(p.x, p.z) && (wb->sea || p.y >= wb->lo.y) && p.y < s) {
+                    submerged = true;
+                    const Liquid& L = liquids()[wb->liquid];
+                    const double vw = o.body != kNoBody && simulating_ ? glm::length(glm::dvec3(velocity[k]) - wb->flow) : 0.0;
+                    double h = L.heatTransfer + 1500.0 * std::pow(vw, 0.8);
+                    if (L.boilC > 0 && c.temp > L.boilC) {
+                        const double dT = c.temp - L.boilC, film = std::clamp((dT - 200.0) / 150.0, 0.0, 1.0);
+                        h = std::max(h, std::min(1.0, dT / 15.0) * 9000.0 * (1.0 - film) + 1200.0 * film);
+                        if (steamOf[k].size() < 64) steamOf[k].push_back({glm::dvec3(p.x, s, p.z), h * c.area * dT});
+                    }
+                    c.temp = (float)relax(c.temp, waterTemp(*wb), h * c.area, C, dt);
+                    if (L.quench) c.burning = 0;
+                }
+            }
             // Luft: Konvektion (frei 1,31·ΔT^⅓, mit Fahrtwind mehr) und Strahlung
-            if (c.area > 0) {
+            if (c.area > 0 && !submerged) {
                 const double h = airK * (1.31 * std::cbrt(std::abs(c.temp - Ta)) + forced) + radiationH(th.emissivity, c.temp, Ta);
                 c.temp = (float)relax(c.temp, Ta, h * c.area, C, dt);
             }
+            const bool air = oxygen && !submerged;
             if (fuelMat) {
                 // Zersetzen: Holz wird braun, dann schwarz (ab 200 °C langsam, ab 300 °C schnell)
                 if (c.temp > th.pyrolysisC) {
@@ -792,7 +829,7 @@ void World::stepHeat(double dt) {
                     if (c.fuel > 0.35f) c.fuel = (float)std::max(0.35, c.fuel - rate * dt * 0.5);  // Holzgas entweicht, Kohle bleibt
                 }
                 // Zünden: mit Flamme daneben ab der Zündtemperatur, ohne Flamme etwa 150 °C später
-                if (!c.burning && c.fuel > 0.02f && c.area > 0 && oxygen) {
+                if (!c.burning && c.fuel > 0.02f && c.area > 0 && air) {
                     bool flame = pl && (*pl)[i];
                     const glm::ivec3 cc = cellCoord(g, i);
                     for (const glm::ivec3& d : kNb) {
@@ -802,7 +839,7 @@ void World::stepHeat(double dt) {
                     if ((flame && c.temp >= th.ignitionC) || c.temp >= th.ignitionC + 150) c.burning = 1;
                 }
                 if (c.burning) {
-                    if (!oxygen || c.fuel <= 0.0f || c.area <= 0 || c.temp < th.ignitionC - 50) {
+                    if (!air || c.fuel <= 0.0f || c.area <= 0 || c.temp < th.ignitionC - 50) {
                         c.burning = 0;
                         if (c.fuel <= 0.0f) c.chr = 1.0f;
                     } else {
@@ -916,6 +953,8 @@ void World::stepHeat(double dt) {
     });
     std::vector<BurnSpot> spots;
     for (auto& s : spotsOf) spots.insert(spots.end(), s.begin(), s.end());
+    for (auto& s : steamOf)
+        if (steam_.size() < 256) steam_.insert(steam_.end(), s.begin(), s.end());
 
     lap.mark("heat.cells (all parts)");
     // ---- Feuer: brennende Stellen zu Feuern zusammenfassen (Nachbarn, deren Flammen sich berühren)

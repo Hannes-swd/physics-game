@@ -597,6 +597,126 @@ int runSelfTest() {
         std::filesystem::remove(file);
     }
 
+    std::printf("== Water ==\n");
+    {
+        World w(physics, nullptr);
+        w.setSimulating(true);
+        TestHost host(w);
+        auto run = [&](const std::string& line) { return runScriptSync(host, line); };
+        auto val = [&](const std::string& expr) {
+            std::string o = runScriptSync(host, "print " + expr);
+            size_t p = o.rfind("= ");
+            return p == std::string::npos ? -1e30 : std::atof(o.c_str() + p + 2);
+        };
+        run("water pool 400 300 100 0 0 0");  // Wasserspiegel 100 cm
+        check(val("waters") == 1 && w.inWater({0, 0.5, 0}) && !w.inWater({0, 1.05, 0}) && !w.inWater({2.1, 0.5, 0}), "a pool holds water up to its level");
+        // Holz schwimmt: Tiefe = Höhe · Dichte Holz / Dichte Wasser
+        run("new box spruce 40 40 10 -100 105 -80 ; set wb = last ; wait 6");
+        const double draft = 100.0 - val("wb.bottom");
+        check(approx(draft, 10.0 * 470.0 / 998.0, 0.3) && approx(val("wb.submerged"), 47.1, 3), "a spruce block floats with 47 % under water",
+              num(draft) + " cm deep, " + num(val("wb.submerged")) + " %");
+        // schräg ins Wasser gesetzt: dreht sich flach (stabile Lage) und kommt zur Ruhe, statt endlos zu schaukeln
+        run("new box spruce 60 20 10 100 105 120 ; set tilt = last ; rotation $tilt 70 0 0 ; wait 4");
+        check(std::abs(std::sin(val("tilt.rx") * pi / 180)) < 0.04 && val("tilt.resting") == 1, "a block put in tilted turns flat and comes to rest",
+              num(val("tilt.rx")) + "°");
+        run("new box steel 5 5 5 100 105 -80 ; set ws = last ; wait 4");
+        check(val("ws.bottom") < 0.5, "a steel cube sinks to the bottom", num(val("ws.bottom")) + " cm");
+        // Stahlboot: Wanne aus 3 mm Blech verdrängt mehr Wasser als sie wiegt (18,4 kg -> 4,6 cm tief)
+        run("new box steel 80 50 15 0 108 60 ; set boat = last ; pocket $boat top 0 0 794 494 147 ; wait 6");
+        const double boatDraft = 100.0 - val("boat.bottom");
+        check(approx(boatDraft, 4.6, 0.6) && val("boat.flooded") < 2, "a boat of 3 mm steel sheet floats",
+              num(boatDraft) + " cm deep, " + num(val("boat.flooded")) + " % flooded");
+        run("water fill $boat 100 ; wait 6");
+        check(val("boat.bottom") < 1.0, "the same boat full of water sinks", num(val("boat.bottom")) + " cm");
+        // Becher (ABS, schwerer als Wasser): leer schwimmt er, unter Wasser gedrückt läuft er voll und sinkt
+        run("new cylinder plastic 8 10 -100 107 60 ; set cup = last ; new cylinder plastic 7 10 -100 108 60 ; subtract $cup last ; wait 4");
+        check(val("cup.bottom") > 94 && val("cup.flooded") < 5, "an empty plastic cup floats upright",
+              "bottom " + num(val("cup.bottom")) + " cm, " + num(val("cup.flooded")) + " % flooded");
+        run("position $cup -100 60 60 ; wait 10");  // ABS ist kaum schwerer als Wasser: sinkt langsam
+        check(val("cup.flooded") > 90 && val("cup.bottom") < 2, "pushed under water, the cup fills and sinks",
+              num(val("cup.flooded")) + " % flooded, bottom " + num(val("cup.bottom")) + " cm");
+        // Kopfüber unter Wasser: die Luft kann nicht nach oben entweichen, der Becher steigt auf (Taucherglocke)
+        run("new cylinder plastic 8 10 100 60 60 ; set bell = last ; new cylinder plastic 7 10 100 61 60 ; subtract $bell last ; "
+            "rotate $bell x 180 ; wait 5");
+        check(val("bell.flooded") < 30 && val("bell.top") > 96, "a cup upside down under water keeps its air and comes up",
+              num(val("bell.flooded")) + " % flooded, top " + num(val("bell.top")) + " cm");
+        // Ein volles Glas kopfüber in der Luft läuft aus
+        run("new cylinder plastic 8 10 300 200 300 ; set glass = last ; new cylinder plastic 7 10 300 201 300 ; subtract $glass last ; "
+            "water fill $glass ; rotate $glass x 180 ; wait 2");
+        check(val("glass.flooded") < 5, "a full glass upside down in the air runs empty", num(val("glass.flooded")) + " % left");
+        // Abschrecken: glühender Stahl kühlt im Wasser viel schneller als an der Luft
+        run("new box steel 20 2 2 -150 120 -80 ; set hot = last ; heat $hot 800 ; new box steel 20 2 2 300 200 -300 ; set dry = last ; "
+            "fix $dry ; heat $dry 800 ; wait 20");
+        check(val("hot.tempmax") < 120 && val("dry.tempmin") > 500, "red-hot steel is quenched in water (in the air it stays hot)",
+              num(val("hot.tempmax")) + " °C in water, " + num(val("dry.tempmin")) + " °C in the air");
+        // Wellen heben und senken, was schwimmt
+        run("water waves 1 30");
+        double lo = 1e9, hi = -1e9, fastest = 0;
+        for (int i = 0; i < 30; ++i) {
+            run("wait 0.1");
+            lo = std::min(lo, val("wb.y"));
+            hi = std::max(hi, val("wb.y"));
+            for (auto& o : w.objects())
+                if (o->body != kNoBody && !o->fixed) fastest = std::max(fastest, (double)glm::length(physics.linearVelocity(o->body)));
+        }
+        check(hi - lo > 6 && hi - lo < 40 && fastest < 5, "waves rock what floats (nothing flies off)",
+              "rises and falls " + num(hi - lo) + " cm, fastest " + num(fastest) + " m/s");
+        // Speichern, Laden, Rückgängig
+        const std::string file = (std::filesystem::temp_directory_path() / "werkstatt_water_test.werkstatt").string();
+        run("save \"" + file + "\" ; load \"" + file + "\"");
+        check(w.waters().size() == 1 && approx(w.waters()[0].waves, 0.3, 1e-9) && approx(w.waters()[0].level(), 1.0, 1e-9),
+              "save and load keep the water");
+        std::filesystem::remove(file);
+        run("water remove all");
+        const double gone = val("waters");
+        run("undo");
+        check(gone == 0 && val("waters") == 1, "undo brings removed water back");
+        // Meer: überall unter dem Spiegel ist Wasser
+        run("water sea 50 ; new box oak 30 30 10 5000 80 5000 ; set far = last ; wait 5");
+        check(val("far.inwater") == 1 && approx(50.0 - val("far.bottom"), 10.0 * 720.0 / 1025.0, 0.6), "the sea carries an oak block far away",
+              num(50.0 - val("far.bottom")) + " cm deep");
+    }
+
+    std::printf("== River ==\n");
+    {
+        World w(physics, nullptr);
+        w.setSimulating(true);
+        TestHost host(w);
+        auto run = [&](const std::string& line) { return runScriptSync(host, line); };
+        auto val = [&](const std::string& expr) {
+            std::string o = runScriptSync(host, "print " + expr);
+            size_t p = o.rfind("= ");
+            return p == std::string::npos ? -1e30 : std::atof(o.c_str() + p + 2);
+        };
+        // Kanal 6 x 1,2 m, 40 cm tief, 1 m/s nach +x
+        run("water pool 600 120 40 0 0 0 ; water flow all 1 0 ; wait 0.2");
+        const FlowGrid* g = w.flowGrid(w.waters()[0].id);
+        auto at = [&](double x, double z) {
+            glm::dvec2 u(0);
+            double r = 0, f = 0;
+            if (g = w.flowGrid(w.waters()[0].id); g) flowSample(*g, x, z, &u, &r, &f);
+            return std::make_tuple(u, r, f);
+        };
+        const glm::dvec2 free0 = std::get<0>(at(0.0, 0.0));
+        check(g && approx(free0.x, 1.0, 0.02) && approx(free0.y, 0.0, 0.02), "a channel without obstacles flows evenly", num(free0.x) + " m/s");
+        // Umbauen: ein Pfeiler mitten im Fluss. Davor staut es sich (fast stehendes Wasser), daneben wird es schneller
+        run("new cylinder concrete 30 60 0 30 0 ; fix last ; wait 1");
+        // Umströmung eines Zylinders (Potentialströmung): vorn u = U·(1 − R²/r²), seitlich U·(1 + R²/r²)
+        const auto [uFront, rFront, fFront] = at(-0.17, 0.0);
+        const auto [uSide, rSide, fSide] = at(0.0, 0.25);
+        check(glm::length(uFront) < 0.4 && glm::length(uSide) > 1.2, "after building a pier the water flows around it",
+              "in front " + num(glm::length(uFront)) + " m/s, beside " + num(glm::length(uSide)) + " m/s (theory 0.22 / 1.36)");
+        check(rFront > 0.02 && rSide < rFront && fFront > 0.2, "in front of the pier the water piles up and foams",
+              "rises " + num(rFront * 100) + " cm, foam " + num(fFront * 100) + " %");
+        // Treibgut fährt mit und um den Pfeiler herum bis ans Ende
+        run("new box spruce 30 15 5 -250 41 -30 ; set drift = last ; wait 4");
+        check(val("drift.x") > 0 && val("drift.inwater") == 1, "a floating board drifts downstream past the pier",
+              "now at x = " + num(val("drift.x")) + " cm");
+        // Pfeiler weg: das Wasser fließt wieder gerade
+        run("delete 1 ; wait 1");
+        check(approx(glm::length(std::get<0>(at(-0.22, 0.0))), 1.0, 0.05), "after removing the pier the river flows straight again");
+    }
+
     std::printf("== Material file ==\n");
     {
         loadBuiltinMaterials();

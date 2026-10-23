@@ -158,6 +158,8 @@ void App::drawMenuBar() {
         if (ImGui::MenuItem("Beispiel-Werkstatt")) runLine("scene demo", "konsole");
         if (ImGui::MenuItem("Beispiel-Welt (alles)")) runLine("scene showcase", "konsole");
         if (ImGui::MenuItem("Feuerstelle (Wärme, Feuer, Kälte)")) runLine("scene fire", "konsole");
+        if (ImGui::MenuItem("Wasserbecken (Schwimmen, Sinken, Boote)")) runLine("scene water", "konsole");
+        if (ImGui::MenuItem("Fluss (Strömung, Hindernisse, Treibgut)")) runLine("scene river", "konsole");
         ImGui::Separator();
         if (ImGui::MenuItem("Speichern...", "Strg+S")) saveDialog(true);
         if (ImGui::MenuItem("Laden...", "Strg+O")) saveDialog(false);
@@ -235,6 +237,31 @@ void App::drawMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::MenuItem("Alle Feuer löschen", nullptr, false, world_->burningParts() > 0)) runLine("extinguish all", "konsole");
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Wasser")) {
+            if (ImGui::MenuItem("Becken hier (2 x 1,5 m, 50 cm tief, mit Rand)")) runLine("water pool 200 150 50 walls", "konsole");
+            bool sea = false;
+            for (const WaterBody& b : world_->waters()) sea |= b.sea;
+            if (ImGui::MenuItem("Meer (Wasserspiegel 40 cm)", nullptr, &sea)) runLine(sea ? "water sea 40" : "water sea off", "konsole");
+            if (ImGui::BeginMenu("Wellen", !world_->waters().empty())) {
+                const char* names[] = {"ruhig", "leicht (10 cm)", "bewegt (40 cm)", "Sturm (150 cm)"};
+                const int cm[] = {0, 10, 40, 150};
+                for (int i = 0; i < 4; ++i)
+                    if (ImGui::MenuItem(names[i])) runLine("water waves all " + std::to_string(cm[i]), "konsole");
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Strömung", !world_->waters().empty())) {
+                const char* names[] = {"keine", "langsam (0,4 m/s nach rechts)", "Fluss (1,2 m/s nach rechts)", "reißend (2,5 m/s nach rechts)"};
+                const char* speeds[] = {"0", "0.4", "1.2", "2.5"};
+                for (int i = 0; i < 4; ++i)
+                    if (ImGui::MenuItem(names[i])) runLine(std::string("water flow all ") + speeds[i] + " 0", "konsole");
+                ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem("Ausgewähltes Teil füllen", nullptr, false, !selection_.empty()))
+                runLine("water fill " + std::to_string(selection_[0]), "konsole");
+            if (ImGui::MenuItem("Alles Wasser entfernen", nullptr, false, !world_->waters().empty())) runLine("water remove all", "konsole");
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Modus")) {

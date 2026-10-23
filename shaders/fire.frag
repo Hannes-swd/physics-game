@@ -43,7 +43,7 @@ void main() {
     float seed = vData.w - kind * 10.0;
     float t = pc.params.y;
 
-    if (kind < 0.5 || kind > 3.5) {
+    if (kind < 0.5 || (kind > 3.5 && kind < 4.5)) {
         // ---- Flamme (Art 0) bzw. Brennerflamme (Art 4): unten breit, oben spitz, Zungen steigen auf
         vec2 p = vec2(uv.x * 2.0 - 1.0, uv.y);
         float rise = kind > 3.5 ? 9.0 : 2.2;
@@ -83,11 +83,16 @@ void main() {
         // ---- Funke (Art 2): kleiner glühender Punkt
         float a = 1.0 - smoothstep(0.0, 1.0, r);
         outColor = vec4(tonemap(vec3(1.0, 0.38, 0.05) * a * a * 1.3 * strength), 0.0);
-    } else {
-        // ---- Kältenebel (Art 3): weiß, sinkt ab
-        float n = fbm(p * 2.0 + vec2(seed * 19.0, t * 0.5));
+    } else if (kind < 5.5) {
+        // ---- Kältenebel (Art 3, sinkt ab) und Dampf (Art 5, steigt auf): weiß
+        float n = fbm(p * 2.0 + vec2(seed * 19.0, t * (kind > 4.5 ? -0.6 : 0.5)));
         float a = (1.0 - smoothstep(0.2, 1.0, r + (n - 0.5) * 0.7)) * strength * 0.6;
         vec3 c = tonemap(vec3(0.9, 0.94, 1.0) * 1.6);
+        outColor = vec4(c * a, a);
+    } else {
+        // ---- Wassertropfen (Art 6): kleiner, heller Spritzer
+        float a = (1.0 - smoothstep(0.35, 1.0, r)) * strength * 0.85;
+        vec3 c = tonemap(waterLight() * vec3(0.75, 0.85, 0.9) + frame.sunColor.rgb * 0.15);
         outColor = vec4(c * a, a);
     }
 }

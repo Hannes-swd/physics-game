@@ -209,6 +209,11 @@ private:
     void addFireFx(FrameDesc& fd);
     void addHeatData(FrameDesc& fd, DrawItem& it, const Object& o);
 
+    // AppWater.cpp (Gewässer für die Shader, Spritzer und Dampf, Schwimmen)
+    void addWaterData(FrameDesc& fd);
+    void updateWaterFx(float dt);
+    float swimDepth(const glm::dvec3& feet) const;  // Anteil der Figur unter Wasser (0..1)
+
     // AppUI.cpp
     void setupStyle();
     void drawUI();
@@ -329,7 +334,7 @@ private:
         glm::dvec3 pos{0};
         glm::vec3 vel{0};
         float age = 0, life = 1, size = 0.1f, grow = 1, strength = 1, seed = 0;
-        int kind = 1;                      // 1 Rauch, 2 Funke, 3 Kältenebel
+        int kind = 1;                      // 1 Rauch, 2 Funke, 3 Kältenebel, 5 Dampf, 6 Wassertropfen
     };
     std::vector<FxParticle> fx_;
     double fxSmokeAccum_ = 0;

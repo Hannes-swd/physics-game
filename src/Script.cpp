@@ -130,6 +130,16 @@ bool objectProp(World& w, uint32_t id, const std::string& p, Value& out, std::st
     else if (p == "burning") out = numV(o->heat.empty() ? 0 : o->heatInfo.burning);  // brennende Stellen
     else if (p == "charred") out = numV(o->heat.empty() ? 0 : o->heatInfo.chr * 100.0);  // %
     else if (p == "molten") out = numV(o->heat.empty() ? 0 : o->heatInfo.melt * 100.0);  // %
+    else if (p == "inwater") out = numV(o->water.body ? 1 : 0);
+    else if (p == "submerged") out = numV(100.0 * o->water.solidSub / std::max(o->volume, 1e-12));  // % des Materials unter Wasser
+    else if (p == "flooded") {  // % der Hohlräume voll Wasser
+        double in = 0, cap = 0;
+        for (size_t j = 0; o->waterCache && j < o->rooms.size() && j < o->waterCache->rooms.size(); ++j) {
+            in += o->rooms[j].water;
+            cap += o->waterCache->rooms[j].volume;
+        }
+        out = numV(cap > 0 ? 100.0 * in / cap : 0.0);
+    }
     else if (p == "boreload" || p == "boreforce" || p == "pressure" || p == "wear") {
         double m = 0;
         for (size_t i = 0; i < o->coll.bores.size() && i < o->boreRt.size(); ++i) {
@@ -197,6 +207,7 @@ bool lookupName(const std::string& n, CommandHost& host, Value& out, std::string
     else if (n == "rescued") out = numV(w.rescueCount());
     else if (n == "ambient") out = numV(w.ambient());
     else if (n == "fires") out = numV((double)w.fires().size());
+    else if (n == "waters") out = numV((double)w.waters().size());
     else if (n == "pi") out = numV(kPi);
     else {
         err = "unknown name '" + n + "'";
@@ -963,7 +974,8 @@ std::string scriptHelp() {
            "        .pieces .hulls .edges .airforce .airx .airy .airz .airtorque .joints .load .name .material .exists\n"
            "        .bores .pins .boreload (%) .boreforce (N) .pressure (MPa) .wear (mm) .worn (mm3) .lubricant\n"
            "        .temp .tempmax .tempmin (°C) .burning (spots) .charred .molten (%)\n"
+           "        .inwater (0/1) .submerged (% under water) .flooded (% of its hollows full of water)\n"
            "        instead of <id>: selected, last (last created) or a variable set with 'set'\n"
            "        player.x .y .z .onground .holding .lookingat   camera.x .y .z .distance\n"
-           "        mode time parts joints broken rescued fps ambient fires\n";
+           "        mode time parts joints broken rescued fps ambient fires waters\n";
 }

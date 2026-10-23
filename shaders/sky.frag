@@ -14,11 +14,17 @@ void main() {
         return;
     }
     vec3 dir = normalize(vFar.xyz / vFar.w - vNear.xyz / vNear.w);
-    vec3 zenith = vec3(0.16, 0.34, 0.72);
-    vec3 haze = vec3(0.45, 0.47, 0.50);
-    vec3 col = dir.y > 0.0 ? mix(kHorizon, zenith, pow(dir.y, 0.55)) : mix(kHorizon, haze, pow(-dir.y, 0.35));
-    float s = max(dot(dir, normalize(frame.sunDir.xyz)), 0.0);
-    col += vec3(1.0, 0.9, 0.75) * (pow(s, 900.0) * 30.0 + pow(s, 12.0) * 0.25);
+    vec3 col = skyColor(dir);
+    if (waterCount() > 0) {
+        if (insideWater(pc.camPos.xyz)) {
+            // unter Wasser: der Strahl läuft durch das Wasser bis zur Oberfläche (oder ins Unendliche)
+            col = waterView(col, pc.camPos.xyz, pc.camPos.xyz + dir * 1e5, pc.camPos.xz);
+        } else if (dir.y < 0.0) {
+            // Meer hinter dem Ende der Oberfläche (über 25 km): so flach angeschaut spiegelt es nur den Himmel
+            for (int w = 0; w < waterCount(); ++w)
+                if (waterIsSea(w) && pc.camPos.y > frame.water[w * 7 + 1].y) col = skyColor(vec3(dir.x, -dir.y, dir.z));
+        }
+    }
     // leichtes Rauschen gegen Farbstufen im Verlauf
     float dither = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
     outColor = vec4(tonemap(col) + dither, 1.0);

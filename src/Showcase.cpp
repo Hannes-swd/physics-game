@@ -164,7 +164,76 @@ const char* kFireScene[] = {
     "ignite $fs_k ; ignite 1 ; ignite 2",
 };
 
+// Wasserbecken ("scene water"): was schwimmt, was sinkt, ein Stahlboot, Becher, die volllaufen oder Luft halten, Abschrecken
+const char* kWaterScene[] = {
+    // Becken 3 x 2 m, 60 cm tief, Rand aus Beton
+    "water pool 300 200 60 0 0 0 walls",
+    // Holz schwimmt: Fichte (470 kg/m3) liegt knapp zur Hälfte im Wasser, Eiche (720) tiefer
+    "new box spruce 60 20 10 -90 75 -50 ; name last 'Spruce block (floats half under)'",
+    "new cylinder oak 15 60 -100 80 45 ; rotate last z 90 ; name last 'Oak log (floats deep)'",
+    // Floß aus drei geleimten Brettern mit einem Stahlwürfel darauf
+    "new box spruce 60 15 4 0 70 -60 ; set ws_a = last ; new box spruce 60 15 4 0 70 -45 ; set ws_b = last ; "
+    "new box spruce 60 15 4 0 70 -30 ; set ws_c = last ; glue $ws_a $ws_b ; glue $ws_b $ws_c ; name $ws_b 'Raft (glued boards)'",
+    "new box steel 8 8 8 0 76.01 -45 ; name last 'Steel cube on the raft'",
+    // Sinkt: Stahl sofort, Gummi (1100 kg/m3) langsam
+    "new box steel 8 8 8 45 75 -75 ; name last 'Steel cube (sinks)'",
+    "new sphere rubber 12 80 80 -70 ; name last 'Rubber ball (sinks slowly)'",
+    // Stahlboot: Wanne aus 3 mm Stahlblech. Schwimmt, weil es mehr Wasser verdrängt, als es wiegt - bis es vollläuft
+    "new box steel 80 50 15 75 70 35 ; set ws_boat = last ; pocket $ws_boat top 0 0 794 494 147 ; name $ws_boat 'Steel boat (3 mm sheet)'",
+    // Kunststoffbecher: schwimmt aufrecht; drückt man ihn unter, läuft er voll und sinkt. Umgedreht hält er Luft (Taucherglocke)
+    "new cylinder plastic 8 10 -15 70 55 ; set ws_cup = last ; new cylinder plastic 7 10 -15 71 55 ; subtract $ws_cup last ; "
+    "name $ws_cup 'Plastic cup (fills when pushed under)'",
+    "new cylinder plastic 8 10 -40 70 55 ; set ws_bell = last ; new cylinder plastic 7 10 -40 71 55 ; subtract $ws_bell last ; "
+    "rotate $ws_bell x 180 ; name $ws_bell 'Upside-down cup (traps air)'",
+    // Glühender Stahlstab: zischt im Wasser und ist schnell kalt
+    "new box steel 30 3 3 -100 95 75 ; heat last 850 ; name last 'Red-hot steel bar (quenching)'",
+};
+
+// Fluss ("scene river"): Kanal 8 x 1,6 m mit 1,2 m/s Strömung. Felsen und ein Brückenpfeiler stehen im Wasser: davor staut
+// es sich und schäumt, das Wasser fließt um sie herum und nimmt Stämme, Bälle und Bretter mit. Am Ende sammelt sich alles
+const char* kRiverScene[] = {
+    "water pool 800 160 40 0 0 0 walls ; water flow all 1.2 0",
+    // Hindernisse: ragen aus dem Wasser und stehen fest
+    "new box granite 40 30 60 -150 30 -25 ; fix last ; rotate last y 25 ; name last 'Rock'",
+    "new box granite 30 40 55 40 27.5 45 ; fix last ; rotate last y -15 ; name last 'Rock'",
+    "new cylinder concrete 30 70 200 35 -10 ; fix last ; name last 'Bridge pier'",
+    // Treibgut am Anfang des Flusses
+    "new cylinder oak 12 70 -350 50 -40 ; rotate last z 90 ; name last 'Log'",
+    "new cylinder spruce 10 60 -330 50 40 ; rotate last z 90 ; rotate last y 40 ; name last 'Log'",
+    "new box spruce 40 20 3 -300 45 0 ; name last 'Board'",
+    "new sphere spruce 15 -370 50 10 ; name last 'Wooden ball'",
+    "new box spruce 25 25 25 -260 55 -50 ; name last 'Crate'",
+};
+
 } // namespace
+
+void World::riverScene() {
+    clear();
+    undo_.clear();
+    redo_.clear();
+    BuildHost host(*this);
+    for (const char* line : kRiverScene) {
+        bool ok = true;
+        std::string out = runScriptSync(host, line, &ok);
+        if (!ok) std::fprintf(stderr, "river scene: %s\n%s\n", line, out.c_str());
+    }
+    undo_.clear();
+    redo_.clear();
+}
+
+void World::waterScene() {
+    clear();
+    undo_.clear();
+    redo_.clear();
+    BuildHost host(*this);
+    for (const char* line : kWaterScene) {
+        bool ok = true;
+        std::string out = runScriptSync(host, line, &ok);
+        if (!ok) std::fprintf(stderr, "water scene: %s\n%s\n", line, out.c_str());
+    }
+    undo_.clear();
+    redo_.clear();
+}
 
 void World::fireScene() {
     clear();
