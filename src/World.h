@@ -441,6 +441,8 @@ private:
     Object* setPrimitive(Object* o, int prim, const glm::dvec3& size);
     void beforeStep(float h);
     void afterStep(float h);
+    void syncObject(Object& o);  // Lage eines Teils aus der Physik übernehmen
+    void syncAwake();            // nur Teile, die vor oder nach dem letzten Schritt wach waren
     void handleDeepContacts();
     void processBores(float h);  // Kräfte in Bohrungen, Abrieb, Ausreißen
     void tearOut(uint32_t id, size_t bore, const glm::dvec3& dirLocal, double force, double capacity);
@@ -466,7 +468,7 @@ private:
     GpuMesh groundMesh_, boxMesh_;
     ChunkGrid grid_;
     std::unordered_map<uint32_t, Object*> byId_;
-    std::unordered_map<BodyHandle, Object*> byBody_;  // Physik-Körper -> Teil (Kontakte, Aufpralle)
+    std::vector<Object*> byBody_;  // Physik-Körper -> Teil (Kontakte, Aufpralle), Index = Körpernummer ohne Folgenummer
     uint32_t inspectId_ = 0;
     InspectData inspect_;
     glm::dvec3 velBefore_{0}, extForce_{0}, aeroDrag_{0}, aeroTorque_{0};
@@ -485,6 +487,7 @@ private:
     int rescues_ = 0;                                   // so oft wurde ein Teil an seine letzte freie Stelle zurückgesetzt
     std::unordered_map<uint64_t, std::pair<double, int>> rescueLog_;  // Paar -> (Beginn, Anzahl) im Zeitfenster
     std::unordered_map<uint64_t, double> stuckPairs_;   // Paar steckt dauerhaft: bis zu dieser Zeit nur sanft trennen
+    std::vector<BodyHandle> awake_, awakeNow_;          // wache Körper vor dem letzten Physikschritt und danach (sortiert)
     // Wärme
     struct HeatSource {
         uint32_t id = 0;

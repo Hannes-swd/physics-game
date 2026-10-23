@@ -5,7 +5,7 @@
 | Eigenschaft | Wert |
 |---|---|
 | Engine | Jolt Physics 5.3, **doppelte Genauigkeit** (genau auch Kilometer vom Ursprung entfernt), mit einer Korrektur (siehe unten) |
-| Zeitschritt | fest 1/240 s, höchstens 10 Schritte pro Bild (ist der PC zu langsam, läuft die Physik in Zeitlupe statt ungenau) |
+| Zeitschritt | fest 1/240 s, höchstens 10 Schritte und ca. 20 ms Rechenzeit pro Bild (ist der PC zu langsam, läuft die Physik in Zeitlupe statt ungenau, das Bild bleibt flüssig) |
 | Löser | 15 Geschwindigkeits- und 4 Positionsdurchläufe |
 | Kontaktgenauigkeit | 1 mm Eindringtoleranz, 2 cm vorausschauende Kontakte (Kontakte entstehen, bevor sich Teile berühren) |
 | Herausdrücken | Teile, die ineinander stecken, werden mit höchstens 0,5 mm pro Durchlauf (ca. 0,5 m/s) getrennt, nicht herausgeschleudert |

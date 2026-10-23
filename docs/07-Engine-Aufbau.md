@@ -231,18 +231,28 @@ build\Release\Werkstatt.exe --selftest
 Abhängigkeiten (werden automatisch geladen): GLFW 3.4, GLM 1.0.1, Jolt Physics 5.3.0 (doppelte Genauigkeit,
 mit der Korrektur oben), Dear ImGui 1.91.9.
 
+**Welche Konfiguration?** Zum Spielen und Testen `Release` oder `RelWithDebInfo` (optimiert, in Visual Studio trotzdem
+mit Haltepunkten und Aufrufliste). `Debug` nur zum Schritt-für-Schritt-Debuggen des eigenen Codes: Dort sind die
+Abhängigkeiten (Jolt, GLFW) zwar optimiert und kleine `inline`-Funktionen (glm) werden eingesetzt (`/Ob1`), der Spielcode
+selbst ist aber nicht optimiert und rechnet etwa 3- bis 10-mal langsamer. Der Fenstertitel zeigt dann „Debug-Version“.
+Jolts eigener Profiler und Debug-Zeichner sind abgeschaltet (das Spiel misst selbst mit `profile`).
+
 ## Leistung und Threads
 
 | Was | Wie |
 |---|---|
 | Physik (Jolt) | eigener Thread-Pool mit allen Kernen außer einem |
+| Zeitbudget der Physik | höchstens ca. 20 ms je Bild (`Physics::step`): reicht die Zeit für 240 Schritte/s nicht, läuft die Physik in Zeitlupe, statt dass jedes Bild länger wird und das nächste noch mehr nachholen muss |
+| Ruhende Teile | kosten je Physikschritt nichts: Lage übernehmen, Luftkräfte und „letzte freie Stelle“ nur für wache Körper (`Physics::activeBodies`, `World::syncAwake`) |
 | Kollisionsform bearbeiteter Teile | im Fenster **im Hintergrund** (`src/Jobs.*`, Hilfs-Threads mit niedriger Priorität): nach Sägen, Bohren, Zerbrechen, Abdruck, Abbrennen bekommt das Teil sofort eine grobe Form (eine Hülle je Stück, dünne Splitter weggelassen), die genaue (Lücken bleiben offen, Bohrungen exakt) wird nachgereicht (`World::pollCollisionJobs`, jedes Bild). Ohne Fenster und im Selbsttest sofort genau |
 | Hüllen zusammenfassen | die Paarbewertung in `clusterHulls` läuft auf allen Kernen |
 | Wärme je Teil | Zellen, Verbrennen, Schmelzen, Wärmeleitung: jedes Teil auf einem eigenen Kern (`jobs::parallelFor`) |
 | Flamme und Strahlung | je Teil parallel; nahe glühende Teile (30 cm) werden zu einer Strahlungsquelle zusammengefasst |
 | Brennende Stellen | je Teil zu wenigen zusammengefasst (kleine Teile: eine, große: höchstens 48) |
 | Abbrennen, Schmelzen | Formänderungen reihum mit 4 ms Budget je Wärmeschritt; durchgebrannte Teile behalten höchstens 8 Bruchstücke, Krümel werden Asche |
-| Teil zu Physik-Körper | Hash-Tabelle statt Suche |
+| Teil zu Physik-Körper | Tabelle nach Jolts Körpernummer (direkter Zugriff, `World::fromBody`) |
+| Strahl (Maus, Blick) | erst die Weltbegrenzung jedes Teils prüfen, nur Treffer ins Teil umrechnen |
+| Konsole | zeichnet nur die sichtbaren Zeilen (bis zu 3000 im Speicher) |
 
 **Messen:** `profile` zeigt, wo die Zeit bleibt (seit dem letzten `profile reset`): Bilder pro Sekunde, langsamstes
 Bild, Bilder über 50 ms und je Abschnitt Aufrufe, Summe, ms pro Sekunde, ms pro Aufruf und Höchstwert. Wichtige
@@ -258,6 +268,16 @@ Gemessen (RX 6800 XT, 165-Hz-Bildschirm), langsamstes Bild / Bilder über 50 ms 
 | Feuerstelle, großes Feuer (`heat speed 8`) | 81 ms / 19 | 12 ms / 0 |
 | Holzstapel mit 30 Scheiten, voller Brand (110 brennende Teile) | 148 ms / 34 | 29 ms / 0 |
 | Bohren eines Bretts (Kollisionsform) | 48 ms | 2 ms (genaue Form im Hintergrund) |
+
+Rechenzeit je Physikschritt (Ryzen 7 7700X, ohne Fenster gemessen):
+
+| Szene | vorher | jetzt |
+|---|---|---|
+| Demo-Werkstatt, `Debug`-Build: Jolt | 2,6 ms | 0,3 ms (Jolt auch in Debug optimiert) |
+| 1600 ruhende Teile, Release: Spielcode je Schritt (Lage, Luft, Eindringen) | 0,08 ms | 0,00 ms |
+
+600 gleichzeitig fallende Kisten im Spiel: Release 168 Bilder/s, `Debug` 39 Bilder/s (dort greift das Zeitbudget, die
+Physik läuft leicht in Zeitlupe).
 
 ## Selbsttest
 

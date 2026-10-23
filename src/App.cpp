@@ -82,7 +82,13 @@ bool App::init(const AppOptions& opt) {
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_MAXIMIZED, opt.screenshotPath.empty() ? GLFW_TRUE : GLFW_FALSE);
-    window_ = glfwCreateWindow(1600, 900, "Werkstatt – Handwerker-Simulator", nullptr, nullptr);
+#ifdef NDEBUG
+    const char* title = "Werkstatt – Handwerker-Simulator";
+#else
+    // Debug-Version: das Spiel selbst ist nicht optimiert (gut zum Debuggen; zum Spielen Release oder RelWithDebInfo)
+    const char* title = "Werkstatt – Handwerker-Simulator (Debug-Version, langsamer)";
+#endif
+    window_ = glfwCreateWindow(1600, 900, title, nullptr, nullptr);
     if (!window_) return false;
     glfwSetWindowUserPointer(window_, this);
     glfwSetScrollCallback(window_, [](GLFWwindow* w, double, double y) { static_cast<App*>(glfwGetWindowUserPointer(w))->scrollAccum_ += y; });
@@ -110,6 +116,9 @@ bool App::init(const AppOptions& opt) {
         std::snprintf(netName_, sizeof(netName_), "%s", user && *user ? user : "Spieler");
     }
     log("Welcome to the workshop! F1 = console, 'help' lists all commands.", 3);
+#ifndef NDEBUG
+    log("Debug build: the game code is not optimized and runs slower. For playing use Release or RelWithDebInfo.", 2);
+#endif
     if (remote_.start(opt.port))
         log("Remote control active: Werkstatt.exe --send \"command\" (port " + std::to_string(opt.port) + ")", 3);
     else

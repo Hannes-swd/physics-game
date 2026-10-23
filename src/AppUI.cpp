@@ -832,10 +832,14 @@ void App::drawConsole() {
     }
     const float footer = ImGui::GetFrameHeightWithSpacing();
     ImGui::BeginChild("log", ImVec2(0, -footer), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);
-    for (const LogLine& l : log_) {
-        ImVec4 c = l.kind == 1 ? kAccent : l.kind == 2 ? ImVec4(1, 0.4f, 0.35f, 1) : l.kind == 3 ? ImVec4(0.5f, 0.8f, 1, 1) : ImVec4(0.88f, 0.88f, 0.88f, 1);
-        ImGui::TextColored(c, "%s", l.text.c_str());
-    }
+    ImGuiListClipper clip;  // bis zu 3000 Zeilen: nur die sichtbaren zeichnen
+    clip.Begin((int)log_.size());
+    while (clip.Step())
+        for (int i = clip.DisplayStart; i < clip.DisplayEnd; ++i) {
+            const LogLine& l = log_[i];
+            ImVec4 c = l.kind == 1 ? kAccent : l.kind == 2 ? ImVec4(1, 0.4f, 0.35f, 1) : l.kind == 3 ? ImVec4(0.5f, 0.8f, 1, 1) : ImVec4(0.88f, 0.88f, 0.88f, 1);
+            ImGui::TextColored(c, "%s", l.text.c_str());
+        }
     if (scrollLog_) {
         ImGui::SetScrollHereY(1.0f);
         scrollLog_ = false;

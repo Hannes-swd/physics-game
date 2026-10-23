@@ -21,6 +21,8 @@
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+// Körpernummer in Jolts BodyID; die oberen Bits zählen, wie oft die Nummer schon vergeben war
+constexpr BodyHandle kBodyIndexMask = 0x7fffff;
 
 float randomSeed() {
     static std::mt19937 rng(12345);
@@ -355,7 +357,8 @@ void World::releaseBody(Object& o) {
     if (o.hinge) physics_.destroyConstraint(o.hinge);
     o.hinge = 0;
     if (o.body != kNoBody) {
-        byBody_.erase(o.body);
+        const size_t i = o.body & kBodyIndexMask;
+        if (i < byBody_.size() && byBody_[i] == &o) byBody_[i] = nullptr;
         physics_.destroyBody(o.body);
     }
     o.body = kNoBody;
@@ -404,7 +407,11 @@ void World::rebuildBody(Object& o) {
     o.ccd = false;
     d.userData = o.id;
     o.body = physics_.createBody(d);
-    if (o.body != kNoBody) byBody_[o.body] = &o;
+    if (o.body != kNoBody) {
+        const size_t i = o.body & kBodyIndexMask;
+        if (i >= byBody_.size()) byBody_.resize(i + 1, nullptr);
+        byBody_[i] = &o;
+    }
     if (o.body == kNoBody) {
         std::fprintf(stderr, "Warning: no collision shape for '%s'\n", o.name.c_str());
         return;
@@ -648,8 +655,10 @@ Object* World::find(uint32_t id) {
 }
 
 Object* World::fromBody(BodyHandle b) {
-    auto it = byBody_.find(b);
-    return it == byBody_.end() ? nullptr : it->second;
+    if (b == kNoBody) return nullptr;
+    const size_t i = b & kBodyIndexMask;
+    Object* o = i < byBody_.size() ? byBody_[i] : nullptr;
+    return o && o->body == b ? o : nullptr;  // gleicher Index, aber ein neuerer Körper: nicht dieses Teil
 }
 
 void World::worldBounds(const Object& o, glm::dvec3& mn, glm::dvec3& mx) const {
@@ -1021,17 +1030,31 @@ void World::setSimulating(bool on) {
     }
 }
 
+void World::syncObject(Object& o) {
+    if (o.body == kNoBody || o.fixed) return;
+    glm::dvec3 p;
+    glm::dquat q;
+    physics_.getTransform(o.body, p, q);
+    bool moved = glm::length(p - o.pos) > 1e-7 || std::abs(glm::dot(q, o.rot)) < 1.0 - 1e-12;
+    o.pos = p;
+    o.rot = q;
+    if (moved) refreshPlacement(o);  // ggf. in einen anderen Chunk wechseln
+}
+
 void World::syncFromPhysics() {
-    for (auto& o : objects_) {
-        if (o->body == kNoBody || o->fixed) continue;
-        glm::dvec3 p;
-        glm::dquat q;
-        physics_.getTransform(o->body, p, q);
-        bool moved = glm::length(p - o->pos) > 1e-7 || std::abs(glm::dot(q, o->rot)) < 1.0 - 1e-12;
-        o->pos = p;
-        o->rot = q;
-        if (moved) refreshPlacement(*o);  // ggf. in einen anderen Chunk wechseln
-    }
+    for (auto& o : objects_) syncObject(*o);
+}
+
+// Wie syncFromPhysics, aber nur die Teile, die sich bewegt haben können: wach nach dem Schritt oder im Schritt
+// eingeschlafen (awake_ aus beforeStep). Schlafende Teile liegen still; Lageänderungen von außen setzen o.pos selbst.
+void World::syncAwake() {
+    physics_.activeBodies(awakeNow_);
+    std::sort(awakeNow_.begin(), awakeNow_.end());
+    for (BodyHandle b : awakeNow_)
+        if (Object* o = fromBody(b)) syncObject(*o);
+    for (BodyHandle b : awake_)
+        if (!std::binary_search(awakeNow_.begin(), awakeNow_.end(), b))
+            if (Object* o = fromBody(b)) syncObject(*o);
 }
 
 void World::step(float dt, const std::function<void(float)>& preStep) {
@@ -1043,7 +1066,7 @@ void World::step(float dt, const std::function<void(float)>& preStep) {
             beforeStep(h);
         },
         [&](float h) { afterStep(h); });
-    syncFromPhysics();
+    syncAwake();
 }
 
 void World::simulateSeconds(double seconds, bool wakeAll) {
@@ -1059,7 +1082,7 @@ void World::simulateSeconds(double seconds, bool wakeAll) {
                 beforeStep(h);
             },
             [&](float h) { afterStep(h); });
-    syncFromPhysics();
+    syncAwake();
 }
 
 // Luft: Auftrieb (Archimedes) und Strömungswiderstand für alle bewegten Teile
@@ -1090,6 +1113,7 @@ void World::setAir(double density, const glm::dvec3& wind) {
 }
 
 void World::beforeStep(float) {
+    PROFILE("step.before (air)");
     std::vector<uint64_t> noContact;  // steckengebliebene Werkzeuge berühren ihren Abdruck nicht
     for (const auto& j : joints_)
         if (j->type == JointType::Glue && j->preset == kStuckPreset)
@@ -1098,10 +1122,16 @@ void World::beforeStep(float) {
     aeroDrag_ = glm::dvec3(0);
     aeroTorque_ = glm::dvec3(0);
     const double rho = airDensity_;
-    for (auto& op : objects_) {
+    // Nur wache Teile (ruhende bekommen keine Luftkraft). Wer im letzten Schritt wach war, startet bei 0: schläft es
+    // jetzt, bleibt seine Luftkraft 0.
+    for (BodyHandle b : awake_)
+        if (Object* o = fromBody(b)) o->aeroForce = o->aeroTorque = glm::dvec3(0);
+    physics_.activeBodies(awake_);
+    for (BodyHandle b : awake_) {
+        Object* op = fromBody(b);
+        if (!op || op->fixed) continue;
         Object& o = *op;
         o.aeroForce = o.aeroTorque = glm::dvec3(0);
-        if (o.body == kNoBody || o.fixed || !physics_.isActive(o.body)) continue;
         const glm::dvec3 v = glm::dvec3(physics_.linearVelocity(o.body));
         const glm::dvec3 w = glm::dvec3(physics_.angularVelocity(o.body));
         // Teil mit Bohrung in Bewegung: Kontakte an der runden Wand jeden Schritt neu (Jolt würde sie sonst bei kleinen
@@ -1161,14 +1191,11 @@ void World::handleDeepContacts() {
         anyDeep |= c.depth > 0.004f;
     }
     if (anyDeep) {
-        std::unordered_map<BodyHandle, Object*> byBody;
-        for (auto& o : objects_)
-            if (o->body != kNoBody) byBody[o->body] = o.get();
         std::vector<uint32_t> moved;
         for (const StepContact& c : cs) {
             if (c.depth <= 0.004f) continue;
-            Object* A = byBody.count(c.a) ? byBody[c.a] : nullptr;
-            Object* B = byBody.count(c.b) ? byBody[c.b] : nullptr;
+            Object* A = fromBody(c.a);
+            Object* B = fromBody(c.b);
             if (!A && !B) continue;
             auto minExt = [](const Object* o) {
                 glm::dvec3 e = o->bbMax - o->bbMin;
@@ -1243,10 +1270,11 @@ void World::handleDeepContacts() {
             }
         }
     }
-    // freie Stellen merken (Teil steckt höchstens 1,5 mm in etwas)
-    for (auto& op : objects_) {
+    // freie Stellen merken (Teil steckt höchstens 1,5 mm in etwas). Nur wache Teile: ruhende liegen still.
+    for (BodyHandle b : awakeNow_) {
+        Object* op = fromBody(b);
+        if (!op || op->fixed) continue;
         Object& o = *op;
-        if (o.body == kNoBody || o.fixed || !physics_.isActive(o.body)) continue;
         auto it = pen.find(o.body);
         if (it != pen.end() && it->second > 0.0015f) continue;
         o.safePos = o.pos;
@@ -1259,7 +1287,7 @@ void World::afterStep(float h) {
     simTime_ += h;
     {
         PROFILE("step.sync+deepContacts");
-        syncFromPhysics();  // aktuelle Lage, bevor Verbindungen und Brüche ausgewertet werden
+        syncAwake();  // aktuelle Lage, bevor Verbindungen und Brüche ausgewertet werden
         handleDeepContacts();
     }
     {
@@ -1532,8 +1560,11 @@ void World::applyImpulse(Object& o, const glm::vec3& j) {
 bool World::raycast(const glm::dvec3& origin, const glm::dvec3& dir, RayHit& hit, uint32_t ignoreId) {
     double best = 1e30;
     bool found = false;
+    const glm::dvec3 pad(1e-4);
     for (auto& o : objects_) {
         if (o->id == ignoreId) continue;
+        // schnelle Vorprüfung mit der Weltbegrenzung (ohne Drehen): die meisten Teile liegen nicht auf dem Strahl
+        if (!rayAabb(origin, dir, o->wMin - pad, o->wMax + pad)) continue;
         double t;
         glm::dvec3 n, lp, ln;
         if (rayObject(*o, origin, dir, t, n, &lp, &ln) && t < best) {
@@ -1585,6 +1616,7 @@ void World::restore(const Snapshot& s) {
 }
 
 void World::pushUndo() {
+    PROFILE("world.pushUndo");
     undo_.push_back(capture());
     if (undo_.size() > 50) undo_.erase(undo_.begin());
     redo_.clear();

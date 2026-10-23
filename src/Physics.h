@@ -172,6 +172,8 @@ public:
     void activate(BodyHandle h);
     void deactivate(BodyHandle h);
     bool isActive(BodyHandle h) const;
+    // Alle gerade wachen Körper. Schlafende bewegen sich nicht: bei vielen ruhenden Teilen viel schneller als jedes Teil zu fragen
+    void activeBodies(std::vector<BodyHandle>& out) const;
     bool bodyState(BodyHandle h, BodyState& out) const;
     // Kontakte eines Körpers mitschreiben (für den Physik-Inspektor)
     void watchContacts(BodyHandle h);

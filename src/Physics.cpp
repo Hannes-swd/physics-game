@@ -333,8 +333,7 @@ bool Physics::init() {
     ContactConstraintManager::sContactImpulseCallback = onContactImpulse;
 
     m->temp = std::make_unique<TempAllocatorImpl>(64 * 1024 * 1024);
-    int threads = std::max(1, (int)std::thread::hardware_concurrency() - 1);
-    m->jobs = std::make_unique<JobSystemThreadPool>(cMaxPhysicsJobs, cMaxPhysicsBarriers, threads);
+    int threads = std::max(1, (int)std::thread::hardware_concurrency() - 1);    m->jobs = std::make_unique<JobSystemThreadPool>(cMaxPhysicsJobs, cMaxPhysicsBarriers, threads);
 
     m->system = std::make_unique<PhysicsSystem>();
     m->system->Init(20000, 0, 65536, 20480, m->bpLayers, m->objVsBp, m->objPair);
@@ -782,6 +781,14 @@ void Physics::deactivate(BodyHandle h) {
 
 bool Physics::isActive(BodyHandle h) const { return m->system->GetBodyInterface().IsActive(toId(h)); }
 
+void Physics::activeBodies(std::vector<BodyHandle>& out) const {
+    BodyIDVector ids;
+    m->system->GetActiveBodies(EBodyType::RigidBody, ids);
+    out.clear();
+    out.reserve(ids.size());
+    for (const BodyID& id : ids) out.push_back(id.GetIndexAndSequenceNumber());
+}
+
 uint32_t Physics::createHinge(BodyHandle body, const HingeDesc& d) {
     glm::dvec3 axis = glm::normalize(d.axis);
     glm::dvec3 helper = std::abs(axis.y) < 0.9 ? glm::dvec3(0, 1, 0) : glm::dvec3(1, 0, 0);
@@ -990,6 +997,7 @@ void Physics::step(float frameDt, const std::function<void(float)>& preStep, con
     m->stats.frameMs = 0;
     m->stats.steps = 0;
     m->listener.maxPenetration = 0.0f;
+    const auto frameStart = std::chrono::steady_clock::now();
     while (m->accum >= dt && n < 10) {
         if (preStep) preStep(dt);
         {
@@ -1031,8 +1039,12 @@ void Physics::step(float frameDt, const std::function<void(float)>& preStep, con
         if (postStep) postStep(dt);
         m->accum -= dt;
         ++n;
+        // Höchstens ca. 20 ms Physik je Bild: Schafft der Rechner die 240 Schritte/s nicht (sehr viele bewegte Teile,
+        // Debug-Build), würde jedes Bild länger und das nächste müsste noch mehr Schritte nachholen
+        if (std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart).count() > 20.0) break;
     }
-    if (n == 10) m->accum = 0;  // Rechner zu langsam: lieber Zeitlupe als Spirale
+    // Rechner zu langsam: lieber Zeitlupe als Spirale. Ein kleiner Rückstand (ein einzelnes langsames Bild) wird nachgeholt.
+    m->accum = std::min(m->accum, 4.0f * dt);
 }
 
 const PhysicsStats& Physics::stats() const { return m->stats; }

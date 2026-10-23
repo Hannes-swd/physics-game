@@ -195,6 +195,10 @@ build\Release\Werkstatt.exe --selftest
 build\Release\Werkstatt.exe
 ```
 
+In Visual Studio zum Spielen die Konfiguration **Release** oder **RelWithDebInfo** wählen (optimiert, Haltepunkte gehen
+trotzdem). **Debug** ist nur zum Schritt-für-Schritt-Debuggen gedacht: Der Spielcode ist dort nicht optimiert und das Spiel
+deutlich langsamer (Fenstertitel „Debug-Version“). Details: [Engine-Aufbau, Bauen](docs/07-Engine-Aufbau.md#bauen).
+
 ## Verwendung
 
 ### In der Anwendung

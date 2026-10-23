@@ -38,6 +38,10 @@ set(CPP_RTTI_ENABLED ON CACHE BOOL "" FORCE)
 set(DOUBLE_PRECISION ON CACHE BOOL "" FORCE)   # genaue Physik auch weit vom Ursprung
 # Prüfhilfe von Jolt: bricht bei Gleitkomma-Überlauf in den Physik-Threads das Programm ab. Im Spiel nicht erwünscht.
 set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
+# Jolts eigener Profiler und Debug-Zeichner werden nicht benutzt (das Spiel misst selbst: Befehl "profile"), kosten aber
+# in jedem Physikschritt Zeit
+set(PROFILER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(JoltPhysics
   URL https://github.com/jrouwe/JoltPhysics/archive/refs/tags/v5.3.0.zip
   SOURCE_SUBDIR Build
@@ -47,7 +51,23 @@ FetchContent_Declare(JoltPhysics
 # ---------------------------------------------------------------- Dear ImGui (Menüs)
 FetchContent_Declare(imgui URL https://github.com/ocornut/imgui/archive/refs/tags/v1.91.9.zip)
 
+# Debug-Build: die Abhängigkeiten trotzdem optimiert übersetzen. Ohne Optimierung rechnet Jolt etwa 17-mal langsamer,
+# die 240 Physikschritte/s sind dann nicht mehr zu schaffen und das Spiel ruckelt stark. Das Spiel selbst bleibt voll
+# debugbar. Gilt nur für die Unterverzeichnisse der Abhängigkeiten (die Werte werden danach zurückgesetzt).
+if(MSVC)
+  set(WERKSTATT_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+  set(WERKSTATT_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+  set(CMAKE_C_FLAGS_DEBUG "/Zi /O2 /Ob2")
+  set(CMAKE_CXX_FLAGS_DEBUG "/Zi /O2 /Ob2")
+endif()
 FetchContent_MakeAvailable(glfw glm JoltPhysics imgui)
+if(MSVC)
+  set(CMAKE_C_FLAGS_DEBUG "${WERKSTATT_C_FLAGS_DEBUG}")
+  set(CMAKE_CXX_FLAGS_DEBUG "${WERKSTATT_CXX_FLAGS_DEBUG}")
+  # Spiel im Debug-Build: kleine inline-Funktionen (glm-Vektorrechnung) einsetzen statt aufrufen, sonst ist jede
+  # Vektoraddition ein Funktionsaufruf. Ohne Optimierung (/Od): Variablen bleiben im Debugger sichtbar.
+  string(REPLACE "/Ob0" "/Ob1" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+endif()
 
 add_library(imgui STATIC
   ${imgui_SOURCE_DIR}/imgui.cpp
