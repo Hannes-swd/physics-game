@@ -126,6 +126,7 @@ struct Object : ObjectState {
     };
     std::vector<BoreRuntime> boreRt;
     bool boreInUse = false;         // etwas liegt an einer Bohrungswand an: genauer rechnen
+    double inBoreUntil = 0;         // liegt als Stift an einer Bohrungswand an (Simulationszeit): solange keine Wegprüfung
     double wornVolume = 0;          // seit dem Laden abgeriebenes Volumen (m³), alle Bohrungs-/Stiftkontakte
     struct AeroFace {
         glm::vec3 c, n;  // Mittelpunkt und Normale (lokal)

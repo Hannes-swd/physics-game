@@ -1143,8 +1143,10 @@ void World::beforeStep(float) {
         if (!legacyCollision_) {
             // Ab ca. 3 m/s (2 cm Vorausschau je Schritt reichen bis 4,8 m/s) zusätzlich den Weg prüfen
             const double speed = glm::length(v) + glm::length(w) * reach;
-            // Teile mit Bohrungen nie: der Weg-Test schiebt sie geradlinig und bleibt am eigenen Stift hängen
-            const bool fast = o.coll.bores.empty() && (o.ccd ? speed > 2.0 : speed > 3.0);
+            // Teile mit Bohrungen nie: der Weg-Test schiebt sie geradlinig und bleibt am eigenen Stift hängen. Ebenso der
+            // Stift selbst, solange er an einer Lochwand anliegt: der Weg-Test trifft die Wand direkt vor ihm, der Stift
+            // bleibt stehen und das Teil mit der Bohrung rutscht über ihn hinweg (Achse fällt aus dem gezogenen Wagen)
+            const bool fast = o.coll.bores.empty() && simTime_ >= o.inBoreUntil && (o.ccd ? speed > 2.0 : speed > 3.0);
             if (fast != o.ccd) {
                 o.ccd = fast;
                 physics_.setContinuous(o.body, fast);

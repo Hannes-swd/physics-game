@@ -112,7 +112,10 @@ void World::processBores(float h) {
                 rt.normal += N;
                 rt.slip = std::max(rt.slip, double(c.slip));
                 Object* other = fromBody(side == 0 ? c.b : c.a);
-                if (other) rt.partner = other->id;
+                if (other) {
+                    rt.partner = other->id;
+                    other->inBoreUntil = simTime_ + 0.25;  // Stift: keine Wegprüfung (siehe beforeStep)
+                }
                 // Abrieb nach Archard: Volumen = k · Normalkraft · Gleitweg / Härte (beide Seiten, weicheres mehr)
                 if (c.slip > 1e-6 && N > 0) {
                     const int om = other ? other->material : o.material;

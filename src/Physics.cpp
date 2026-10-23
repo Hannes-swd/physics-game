@@ -261,11 +261,15 @@ public:
 
     void OnContactAdded(const Body& b1, const Body& b2, const ContactManifold& m, ContactSettings& s) override {
         record(b1, b2, m, s);
+        impact(b1, b2, m, -0.3f);
+    }
+    // Aufprall: Annäherung schneller als minApproach (negativ, m/s) an der Kontaktstelle
+    void impact(const Body& b1, const Body& b2, const ContactManifold& m, float minApproach) {
         if (m.mRelativeContactPointsOn1.empty()) return;
         RVec3 p = m.GetWorldSpaceContactPointOn1(0);
         Vec3 n = m.mWorldSpaceNormal;  // von Körper 1 zu Körper 2
         float vn = (b2.GetPointVelocity(p) - b1.GetPointVelocity(p)).Dot(n);
-        if (vn > -0.3f) return;  // kaum Annäherung
+        if (vn > minApproach) return;  // kaum Annäherung
         float im1 = b1.IsDynamic() ? b1.GetMotionProperties()->GetInverseMass() : 0.0f;
         float im2 = b2.IsDynamic() ? b2.GetMotionProperties()->GetInverseMass() : 0.0f;
         if (im1 + im2 <= 0) return;
@@ -281,7 +285,12 @@ public:
         std::lock_guard<std::mutex> lock(impactMutex);
         if (impacts.size() < 4096) impacts.push_back(info);
     }
-    void OnContactPersisted(const Body& b1, const Body& b2, const ContactManifold& m, ContactSettings& s) override { record(b1, b2, m, s); }
+    void OnContactPersisted(const Body& b1, const Body& b2, const ContactManifold& m, ContactSettings& s) override {
+        record(b1, b2, m, s);
+        // Schlag auf ein Teil, das schon anliegt (Nagel angesetzt, dann Hammerschlag): der Kontakt besteht bereits
+        // (vorausschauend ab 2 cm), ein neuer entsteht nicht. Ruhende Kontakte nähern sich nicht an.
+        impact(b1, b2, m, -1.0f);
+    }
 };
 
 } // namespace

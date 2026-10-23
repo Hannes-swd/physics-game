@@ -247,24 +247,32 @@ ToolProfile measureTool(const Object& t, const glm::dvec3& nWorld, const glm::dv
 // Eindringtiefe: Die Energie wird gegen die Härte verbraucht, W(x) = ∫ H · A(s) ds (A = Querschnitt in der Tiefe s).
 // Tritt die Spitze hinten aus einem dünnen Teil aus, trägt nur noch der Querschnitt im Material.
 // flank = eingedrungene Seitenfläche (hält das Werkzeug durch Reibung fest).
-double penetration(const ToolProfile& p, double H, double thick, double E, double& flank) {
+// Optional ein zweites Teil dahinter (Nagel durch ein Brett in das darunter): es liegt from2 .. from2 + thick2 hinter
+// der getroffenen Oberfläche, Härte H2; flank2 = Seitenfläche darin.
+double penetration(const ToolProfile& p, double H, double thick, double E, double& flank, double H2 = 0, double from2 = 0,
+                   double thick2 = 0, double* flank2 = nullptr) {
     const double ds = 0.00025, maxX = kDepths[kNumDepths - 1];
     double W = 0, x = 0;
     flank = 0;
+    if (flank2) *flank2 = 0;
     while (x < maxX) {
         const double s = x + ds * 0.5;
         const double a = p.areaAt(s) - p.areaAt(s - thick);
         const double per = p.perimeterAt(s) - p.perimeterAt(s - thick);
-        const double dW = H * a * ds;
+        const double a2 = thick2 > 0 ? p.areaAt(s - from2) - p.areaAt(s - from2 - thick2) : 0.0;
+        const double per2 = thick2 > 0 ? p.perimeterAt(s - from2) - p.perimeterAt(s - from2 - thick2) : 0.0;
+        const double dW = (H * a + H2 * a2) * ds;
         if (dW > 0 && W + dW >= E) {
             const double f = (E - W) / dW;
             x += ds * f;
             flank += per * ds * f;
+            if (flank2) *flank2 += per2 * ds * f;
             break;
         }
         W += dW;
         x += ds;
         flank += per * ds;
+        if (flank2) *flank2 += per2 * ds;
     }
     return x;
 }
@@ -355,8 +363,36 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
             muK = std::min(muK, lub[l].muK);
         }
     const glm::dquat invO = glm::conjugate(O.rot);
-    double flank = 0;
-    const double x = penetration(tp, H, extentAlong(O.solid, invO * n), E, flank);
+    const double thickO = extentAlong(O.solid, invO * n);
+    // Liegt dahinter (höchstens 5 mm Luft) ein zweites Holzteil, dringt die Spitze nach dem Austritt in dieses ein: ein
+    // Nagel durch ein Brett in das darunter klemmt in beiden und hält sie zusammen
+    Object* P = nullptr;
+    double fromP = 0, thickP = 0, HP = 0, hardP = 0;
+    if (tp.form != ToolForm::Blunt) {
+        const glm::dvec3 from = pO + n * (thickO - 0.001);  // knapp vor der Rückseite des getroffenen Teils
+        double best = 0.006;
+        for (auto& op : objects_) {
+            Object& c = *op;
+            if (&c == &T || &c == &O || c.kind != ObjKind::Solid || c.unbreakable || !isWood(materials()[c.material]) ||
+                c.solid.pieces.size() > kMaxImpactPieces)
+                continue;
+            double t = 0;
+            if (rayToObject(c, from, n, t) && t < best) {
+                best = t;
+                P = &c;
+            }
+        }
+        if (P) {
+            fromP = thickO - 0.001 + best;
+            thickP = extentAlong(P->solid, glm::conjugate(P->rot) * n);
+            hardP = hardnessAt(*P, from + n * best);
+            const glm::dvec3 grainP = P->rot * glm::dvec3(1, 0, 0);
+            HP = hardP * 1e6 * (1.0 + 1.5 * glm::dot(n, grainP) * glm::dot(n, grainP));
+        }
+    }
+    double flank = 0, flankP = 0;
+    const double x = penetration(tp, H, thickO, E, flank, HP, fromP, thickP, &flankP);
+    const double depthP = P ? x - fromP : 0.0;  // so tief steckt die Spitze im zweiten Teil
     std::string note;
     if (strengthFactor(O.material, tempO) < 0.9) note = ", soft from heat (" + fmtNum(tempO, 0) + " °C)";
 
@@ -451,9 +487,12 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
     const glm::dvec3 tipW = T.pos + T.rot * tp.tipPoint;
     glm::dvec3 surf = pO;
     double t = 0;
-    if (rayToObject(O, tipW - n * 0.05, n, t)) surf = tipW - n * 0.05 + n * t;
+    const double back = 0.05 + 2.0 * imp.speed * physics_.fixedDt();  // Strahl von weiter oben, falls es zurückgeprallt ist
+    if (rayToObject(O, tipW - n * back, n, t)) surf = tipW - n * back + n * t;
     const double gap = glm::dot(surf - tipW, n);
-    if (std::abs(gap) > 0.05) return false;  // Spitze liegt nicht an der Kontaktstelle
+    // Spitze liegt nicht an der Kontaktstelle? Ein schnelles Werkzeug ist im selben Schritt schon ein Stück zurückgeprallt
+    // (45 m/s: 19 cm je Schritt), es wird gleich in seinen Abdruck gesetzt
+    if (std::abs(gap) > back) return false;
     const glm::dvec3 shift = n * (gap + x);
     // Abdruck in der Lage nach dem Eindringen, als ein einfaches konvexes Stück: Umriss des Werkzeugs an der Spitze, in
     // halber Tiefe und knapp über der Oberfläche, je auf 8 Punkte vereinfacht. Wenige Ebenen zerlegen das Teil kaum,
@@ -462,6 +501,7 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
     for (double d : {kDepths[0], x + 0.003}) sectionOf(tp.near, tp.n, tp.tip - d, &outline);
     solid::Piece imprint = solid::hullPiece(outline);
     if (imprint.faces.empty()) return false;
+    const solid::Piece imprintTool = imprint;  // in Werkzeug-Koordinaten, für das zweite Teil dahinter
     solid::transform(imprint, glm::inverse(frameOf(O)) * glm::translate(glm::dmat4(1.0), shift) * frameOf(T));
     const std::string name = O.name;
     const glm::dvec3 pos0 = O.pos;
@@ -479,9 +519,38 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
             }
             p->breakCooldown = simTime_ + 0.2;
         }
+    // Zweites Teil dahinter: derselbe Abdruck reicht bis in dieses hinein
+    uint32_t idP = 0;
+    std::string nameP;
+    if (P && depthP >= 0.002) {
+        idP = P->id;
+        nameP = P->name;
+        P = find(idP);  // das erste Teil wurde neu aufgebaut (eventuell in Stücke): Zeiger neu holen
+        if (P) {
+            solid::Piece imprintP = imprintTool;
+            solid::transform(imprintP, glm::inverse(frameOf(*P)) * glm::translate(glm::dmat4(1.0), shift) * frameOf(T));
+            const glm::dvec3 vP = glm::dvec3(physics_.linearVelocity(P->body)), wP = glm::dvec3(physics_.angularVelocity(P->body));
+            const glm::dvec3 posP0 = P->pos;
+            double removedP = 0;
+            std::vector<uint32_t> idsP;
+            solid::Solid carvedP = solid::subtract(P->solid, solid::planesOf(imprintP), &removedP, false);
+            if (removedP < 1e-12 || !applyResult(*P, std::move(carvedP), &idsP, &err)) idP = 0;
+            for (uint32_t id : idsP)
+                if (Object* p = find(id)) {
+                    if (!p->fixed) {
+                        physics_.activate(p->body);
+                        physics_.setVelocity(p->body, glm::vec3(vP + glm::cross(wP, p->pos - posP0)), glm::vec3(wP));
+                    }
+                    p->breakCooldown = simTime_ + 0.2;
+                }
+        } else {
+            idP = 0;
+        }
+    }
     T.breakCooldown = simTime_ + 0.2;
     const char* mark = tp.form == ToolForm::Point ? "hole" : tp.form == ToolForm::Edge ? "notch" : "dent";
-    const std::string depth = fmtNum(x * 1000, 0) + " mm deep (" + fmtNum(E, 1) + " J, " + formName(tp.form) + ")";
+    const std::string depth = fmtNum(x * 1000, 0) + " mm deep (" + fmtNum(E, 1) + " J, " + formName(tp.form) + ")" +
+                              (idP ? ", through into " + nameP + " " + fmtNum(depthP * 1000, 0) + " mm" : std::string());
     if (!stick) {
         events_.push_back(std::string(mark) + " in " + name + " from " + T.name + ": " + depth + note);
         return true;
@@ -497,17 +566,39 @@ bool World::toolImpact(Object& T, Object& O, const ImpactInfo& imp, bool toolIsA
     js.a = O.id;
     js.b = T.id;
     js.preset = kStuckPreset;
-    const glm::dvec3 mid = surf + n * (x * 0.5);
+    const double inO = std::min(x, thickO);  // geht die Spitze hinten heraus, steckt nur die Dicke des Teils darin
+    const glm::dvec3 mid = surf + n * (inO * 0.5);
     js.anchorA = glm::conjugate(O.rot) * (mid - O.pos);
     js.anchorB = glm::conjugate(T.rot) * (mid - T.pos);
     js.normalA = glm::normalize(glm::conjugate(O.rot) * -n);
     js.area = flank;
     js.ft = muS * clampMPa;
     js.fs = 2.0 * js.ft;  // seitlich stützt zusätzlich die Lochwand
-    js.lengthMm = x * 1000;
+    js.lengthMm = inO * 1000;
     Joint* j = addJoint(js, &err);
+    // im zweiten Teil genauso eingeklemmt: so hält ein Nagel zwei Bretter zusammen
+    Joint* jP = nullptr;
+    Object* Pn = idP ? find(idP) : nullptr;
+    if (Pn && depthP >= 0.004 && flankP > 1e-6) {
+        float muSP = 0, muKP = 0;
+        frictionPair(T.material, Pn->material, muSP, muKP);
+        for (int l : {T.lubricant, Pn->lubricant})
+            if (l > 0 && l < (int)lub.size()) muSP = std::min(muSP, lub[l].muS);
+        JointState jp = js;
+        jp.a = idP;
+        const glm::dvec3 midP = surf + n * (fromP + depthP * 0.5);
+        jp.anchorA = glm::conjugate(Pn->rot) * (midP - Pn->pos);
+        jp.anchorB = glm::conjugate(T.rot) * (midP - T.pos);
+        jp.normalA = glm::normalize(glm::conjugate(Pn->rot) * -n);
+        jp.area = flankP;
+        jp.ft = muSP * 0.03 * hardP;
+        jp.fs = 2.0 * jp.ft;
+        jp.lengthMm = depthP * 1000;
+        jP = addJoint(jp, &err);
+    }
     events_.push_back(T.name + " sticks in " + name + ": " + mark + " " + depth + note +
-                      (j ? ", held by friction up to " + fmtNum(j->rT, 0) + " N" : std::string()));
+                      (j ? ", held by friction up to " + fmtNum(j->rT, 0) + " N" : std::string()) +
+                      (jP ? " in " + name + " and " + fmtNum(jP->rT, 0) + " N in " + nameP : std::string()));
     return true;
 }
 
