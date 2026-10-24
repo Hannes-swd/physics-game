@@ -206,7 +206,10 @@ void App::buildInput(float) {
                 selection_.clear();
                 for (auto& o : world_->objects()) selection_.push_back(o->id);
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_S, false)) saveDialog(true);
+            if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+                if (haveWorld_) saveWorld(false);
+                else saveDialog(true);
+            }
             if (ImGui::IsKeyPressed(ImGuiKey_O, false)) saveDialog(false);
         } else {
             if (ImGui::IsKeyPressed(ImGuiKey_V, false) || ImGui::IsKeyPressed(ImGuiKey_Q, false)) tool_ = Tool::Select;
@@ -541,8 +544,8 @@ void App::playInput(float) {
     double cx, cy;
     glfwGetCursorPos(window_, &cx, &cy);
     if (cursorCaptured_) {
-        playYaw_ -= (cx - cursorX_) * 0.0024;
-        playPitch_ = std::clamp(playPitch_ - (cy - cursorY_) * 0.0024, -1.52, 1.52);
+        playYaw_ -= (cx - cursorX_) * 0.0024 * mouseSens_;
+        playPitch_ = std::clamp(playPitch_ - (cy - cursorY_) * 0.0024 * mouseSens_, -1.52, 1.52);
     }
     cursorX_ = cx;
     cursorY_ = cy;

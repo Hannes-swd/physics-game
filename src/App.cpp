@@ -110,16 +110,23 @@ bool App::init(const AppOptions& opt) {
     ImGui_ImplGlfw_InitForVulkan(window_, true);
     renderer_.initImGui();
 
-    if (!opt.emptyScene) world_->demoScene();
-    {  // Name im LAN: Windows-Benutzer
-        const char* user = std::getenv("USERNAME");
-        std::snprintf(netName_, sizeof(netName_), "%s", user && *user ? user : "Spieler");
+    std::snprintf(netName_, sizeof(netName_), "%s", defaultPlayerName().c_str());  // Name im LAN: Windows-Benutzer
+    if (opt.menu || !opt.worldDir.empty()) applySettings();  // Hauptmenü oder --world: Einstellungen gelten
+    if (!opt.worldDir.empty()) {  // Welt aus der Weltliste
+        std::string err;
+        if (!openWorld(&err)) {
+            exitMessage_ = "Die Welt konnte nicht geöffnet werden: " + err;
+            return false;
+        }
+    } else if (!opt.emptyScene && opt.joinAddress.empty()) {
+        world_->demoScene();
     }
     log("Welcome to the workshop! F1 = console, 'help' lists all commands.", 3);
 #ifndef NDEBUG
     log("Debug build: the game code is not optimized and runs slower. For playing use Release or RelWithDebInfo.", 2);
 #endif
-    if (remote_.start(opt.port))
+    if (opt.remote) remote_ = opt.remote;  // Hauptmenü: dessen Server läuft schon (und bleibt nach dem Spiel offen)
+    if (remote_->running() || remote_->start(opt.port))
         log("Remote control active: Werkstatt.exe --send \"command\" (port " + std::to_string(opt.port) + ")", 3);
     else
         log("Remote control not available (port " + std::to_string(opt.port) + " in use)", 2);
@@ -132,12 +139,29 @@ bool App::init(const AppOptions& opt) {
         while (std::getline(in, line)) scriptQueue_.push_back(line);
     }
     if (opt.play) enterPlay();
+    if (opt.lanHost) {  // Weltliste: "Im LAN öffnen"
+        std::string err;
+        if (netHost(&err)) showNet_ = true;
+        else toast("LAN: " + err, false);
+    }
+    if (!opt.joinAddress.empty()) {  // Hauptmenü: Mehrspieler -> Beitreten
+        std::string err;
+        if (netJoin(opt.joinAddress, &err)) {
+            joinPending_ = true;
+        } else {
+            exitMessage_ = "Beitreten fehlgeschlagen: " + err;
+            backToMenu_ = quit_ = true;
+        }
+    }
     return true;
 }
 
 void App::shutdown() {
     renderer_.waitIdle();
-    remote_.stop();
+    for (const Job& j : jobs_)  // Fernaufträge, die noch warten, bekommen eine Antwort (der Server bleibt beim Hauptmenü offen)
+        if (j.source == 2 && !j.peer) remote_->respond(j.client, "Error: the world was closed before the command finished");
+    jobs_.clear();
+    if (remote_ == &ownRemote_) remote_->stop();
     netStop("");
     renderer_.destroyMesh(avatarMesh_);
     world_.reset();
@@ -154,6 +178,7 @@ void App::shutdown() {
 int App::run(const AppOptions& opt) {
     if (!init(opt)) {
         shutdown();
+        backToMenu_ = opt.menu;  // mit der Meldung zurück ins Hauptmenü
         return 1;
     }
     double last = glfwGetTime();
@@ -165,8 +190,15 @@ int App::run(const AppOptions& opt) {
         time_ += dt;
 
         // Befehle kommen auch an, wenn das Fenster minimiert ist
-        remote_.poll([&](uint64_t client, const std::string& l) { submit(l, 2, client); });
+        remote_->poll([&](uint64_t client, const std::string& l) {
+            // Auf dem Weg ins Hauptmenü, oder ein Befehl für das Hauptmenü ("menu worlds", "menu play X"): das Hauptmenü
+            // bearbeitet die Zeile und antwortet (die Verbindung bleibt dabei offen)
+            if (!backToMenu_ && opt_.menu && isMenuAction(l)) leaveToMenu();
+            if (backToMenu_) remote_->hold(client, l);
+            else submit(l, 2, client);
+        });
         netUpdate(dt);  // LAN: Mitspieler bzw. Gastgeber (auch minimiert)
+        updateWorldSession(dt);  // automatisch speichern, Beitritt aus dem Hauptmenü
         processScriptQueue();
         stepJobs();
         for (const std::string& e : world_->takeEvents()) {  // Brüche usw.
@@ -236,6 +268,7 @@ int App::run(const AppOptions& opt) {
         ++frame_;
         if (!opt_.screenshotPath.empty() && frame_ >= (uint64_t)opt_.screenshotFrames) quit_ = true;
     }
+    endWorldSession();  // Welt speichern (auch beim Schließen des Fensters), Einstellungen zurückschreiben
     shutdown();
     return 0;
 }

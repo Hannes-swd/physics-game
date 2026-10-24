@@ -18,7 +18,9 @@
 #include "Remote.h"
 #include "Renderer.h"
 #include "Script.h"
+#include "Settings.h"
 #include "World.h"
+#include "Worlds.h"
 
 struct GLFWwindow;
 
@@ -102,6 +104,12 @@ struct AppOptions {
     std::string view;             // Startansicht
     bool play = false;
     bool emptyScene = false;
+    // Aus dem Hauptmenü (Menu.cpp)
+    bool menu = false;            // "Zurück zum Hauptmenü" möglich, Einstellungen gelten
+    std::string worldDir;         // diese Welt öffnen (Ordner, UTF-8); leer: Beispiel-Werkstatt wie bisher
+    bool lanHost = false;         // die Welt gleich im LAN öffnen
+    std::string joinAddress;      // gleich einem LAN-Spiel beitreten (ohne eigene Welt)
+    RemoteServer* remote = nullptr;  // Fernsteuerung des Hauptmenüs (bleibt zwischen Menü und Spiel offen); sonst eine eigene
 };
 
 class App : public CommandHost {
@@ -134,6 +142,10 @@ public:
     std::string wait(double seconds) override;
 
     NetRole netRole() const { return netRole_; }
+    bool backToMenu() const { return backToMenu_; }        // nach run(): ins Hauptmenü statt beenden
+    const std::string& exitMessage() const { return exitMessage_; }  // für das Hauptmenü (z.B. Beitritt fehlgeschlagen)
+    const std::string& menuCommand() const { return menuCommand_; }  // im Spiel getippt ("menu worlds"): führt das Hauptmenü aus
+    static bool isMenuAction(const std::string& line);  // "menu <etwas>" (nicht nur "menu"/"menu status")
 
 private:
     struct View {
@@ -243,6 +255,17 @@ private:
     void openImportDialog();
     void saveDialog(bool save);
 
+    // AppWorld.cpp (Welt öffnen, speichern, automatisch speichern, Einstellungen, zurück ins Hauptmenü)
+    bool openWorld(std::string* err);
+    bool saveWorld(bool quiet, bool evenAsClient = false);  // evenAsClient: kurz vor dem Beitritt zu einem LAN-Spiel
+    void updateWorldSession(float dt);
+    void endWorldSession();
+    void applySettings();
+    void storeSettings();
+    void leaveToMenu();
+    std::string worldCommand(const std::vector<std::string>& args);  // Befehl "world"
+    std::string menuCommandInGame(const std::vector<std::string>& args);  // Befehl "menu" im Spiel
+
     // AppNet.cpp (LAN-Mehrspieler: Gastgeber rechnet alles, Mitspieler zeigen seine Welt und schicken Eingaben/Befehle)
     bool netClient() const { return netRole_ == NetRole::Client; }
     void netUpdate(float dt);
@@ -290,7 +313,8 @@ private:
     Renderer renderer_;
     Physics physics_;
     std::unique_ptr<World> world_;
-    RemoteServer remote_;
+    RemoteServer ownRemote_;              // ohne Hauptmenü: eigene Fernsteuerung
+    RemoteServer* remote_ = &ownRemote_;  // mit Hauptmenü: dessen Server (bleibt zwischen Menü und Spiel offen)
     AppOptions opt_;
     bool quit_ = false;
     double time_ = 0;
@@ -302,7 +326,8 @@ private:
     std::vector<View> views_;
     glm::dvec3 orbitTarget_{0, 0.6, -0.5};
     double orbitYaw_ = 0.55, orbitPitch_ = 0.42, orbitDist_ = 3.4;
-    const double fov_ = glm::radians(55.0);
+    double fov_ = glm::radians(55.0);
+    double mouseSens_ = 1.0;      // Spiel-Modus: Faktor auf die Mausbewegung
     glm::dvec3 renderOrigin_{0};
     int activeView_ = 0;          // Ansicht unter der Maus
     int dragView_ = -1;           // Ansicht, in der gerade gezogen wird
@@ -499,4 +524,13 @@ private:
     double netInputAccum_ = 0, netInspectAt_ = 0;
     std::string netInspectText_;
     GpuMesh avatarMesh_;
+
+    // Welt (AppWorld.cpp)
+    WorldInfo worldInfo_;
+    bool haveWorld_ = false;          // eine Welt aus der Weltliste ist offen (wird gespeichert)
+    bool worldReadOnly_ = false;      // Laden fehlgeschlagen: nicht überschreiben
+    double autosaveAccum_ = 0, playTimeMark_ = 0;
+    GameSettings settings_;
+    bool backToMenu_ = false, joinPending_ = false;
+    std::string exitMessage_, menuCommand_;
 };

@@ -78,7 +78,7 @@ void App::submit(const std::string& line, int source, uint64_t client) {
         std::string msg = "Error: " + err;
         log(msg, 2);
         if (source == 2) {
-            remote_.respond(client, msg);
+            remote_->respond(client, msg);
             toast(msg, false);
         }
         if (source == 1) {
@@ -117,7 +117,7 @@ void App::stepJobs() {
         if (peer) {
             netSendResult(*peer, j.request, *j.job);
         } else if (j.source == 2) {
-            remote_.respond(j.client, out);
+            remote_->respond(j.client, out);
             std::string first;
             size_t p = 0;
             while (p < out.size()) {  // erste Ergebniszeile (ohne Echo "> ...")
@@ -358,6 +358,14 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         out = lanCommand(t);
         return true;
     }
+    if (cmd == "world") {
+        out = worldCommand(t);
+        return true;
+    }
+    if (cmd == "menu") {
+        out = menuCommandInGame(t);
+        return true;
+    }
     if (cmd == "tool") {
         std::string w = arg(t, 1);
         if (w == "heat" || w == "h") {  // Wärme-Werkzeug: im Spiel-Modus mit F, darum bleibt der Modus
@@ -482,7 +490,7 @@ std::string App::statusText() {
     s += "physics       " + fmtNum(ps.frameMs, 2) + " ms/frame, " + std::to_string(ps.steps) + " steps (240/s), " +
          std::to_string(ps.contacts) + " contacts, " + std::to_string(ps.activeBodies) + " active, max penetration " +
          fmtNum(std::max(0.0f, ps.maxPenetration) * 1000.0, 1) + " mm\n";
-    s += "remote        " + std::string(remote_.running() ? "active, port " + std::to_string(opt_.port) : "off") + "\n";
+    s += "remote        " + std::string(remote_->running() ? "active, port " + std::to_string(opt_.port) : "off") + "\n";
     if (netRole_ == NetRole::Host) s += "lan           host, " + std::to_string(peers_.size()) + " co-player(s) connected\n";
     else if (netClient()) s += "lan           co-player, connected to " + netHostName_ + "\n";
     return s;

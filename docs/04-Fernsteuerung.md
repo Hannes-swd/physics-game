@@ -6,6 +6,11 @@ Sobald das Spiel läuft, wartet es auf dem eigenen Rechner auf Befehle (TCP-Port
 Andere Programme, Skripte oder ein KI-Assistent können so **live** alles tun, was auch in der Konsole geht:
 Modus wechseln, Teile erstellen, verschieben, sägen, abrunden, die Spielfigur steuern, Werte auslesen, Fotos machen.
 
+Das gilt schon im **Hauptmenü**: Mit `menu` liest man aus, wo man ist (Seite, Dialog, Weltliste), mit
+`menu worlds`, `menu new <Name>`, `menu play <Welt>`, `menu join <Adresse>` usw. bedient man es, sofort und ohne Maus.
+Die Verbindung bleibt beim Wechsel zwischen Menü und Spiel offen. Alle Menübefehle:
+[15-Hauptmenue-und-Welten.md](15-Hauptmenue-und-Welten.md#menü-per-befehl-fernsteuerung-ki).
+
 ### Mit `--send`
 
 ```
@@ -45,9 +50,11 @@ Werkstatt.exe --send "if 17.y < 5 then print 'on the floor'"
 
 ### Einem Assistenten (z. B. Claude) Zugriff geben
 
-1. Spiel normal starten (`Werkstatt.exe`).
+1. Spiel normal starten (`Werkstatt.exe`). Es reicht das Hauptmenü.
 2. Dem Assistenten sagen, dass es läuft.
-3. Er schickt Befehle mit `Werkstatt.exe --send "..."` und liest die Antworten. Mit `screenshot bild.png` kann er sich auch das Bild ansehen.
+3. Er schickt Befehle mit `Werkstatt.exe --send "..."` und liest die Antworten: zuerst `menu` (wo bin ich?), dann z. B.
+   `menu play 1` und danach Spielbefehle. Mit `screenshot bild.png` kann er sich im Spiel auch das Bild ansehen,
+   nötig ist das nicht.
 
 Beispiel einer kompletten Live-Sitzung:
 
@@ -136,7 +143,10 @@ type commands.txt | Werkstatt.exe --headless
 
 | Option | Bedeutung |
 |---|---|
-| *(keine)* | Spiel mit Fenster und Beispiel-Werkstatt |
+| *(keine)* | Hauptmenü (Weltliste, Mehrspieler, Einstellungen), siehe [15](15-Hauptmenue-und-Welten.md) |
+| `--world <Name oder Ordner>` | diese Welt direkt öffnen |
+| `--no-menu` | ohne Hauptmenü: Spiel mit Fenster und Beispiel-Werkstatt (wie früher) |
+| `--menu-shot <bild.png> [Seite]` | Hauptmenü öffnen (`main`, `worlds`, `multiplayer`, `settings`), Bild speichern, beenden |
 | `--empty` | mit leerer Werkstatt starten |
 | `--script <file>` | Befehle aus der Datei nacheinander ausführen |
 | `--view <view>` | Startansicht (`perspective`, `top`, `front`, `side`, `quad`) |

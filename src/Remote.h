@@ -18,9 +18,13 @@ public:
     // wenn die vorige Zeile mit respond() beantwortet wurde.
     void poll(const std::function<void(uint64_t client, const std::string& line)>& onLine);
     void respond(uint64_t client, const std::string& text);
+    // Eine abgeholte Zeile noch nicht bearbeiten: der nächste poll() liefert sie erneut (z.B. kam sie, während das
+    // Hauptmenü schon ins Spiel wechselt; dann bearbeitet sie das Spiel). Der Client wartet so lange auf die Antwort
+    void hold(uint64_t client, const std::string& line) { held_.push_back({client, line}); }
     bool running() const { return listen_ != ~0ull; }
 
 private:
+    std::vector<std::pair<uint64_t, std::string>> held_;
     struct Client {
         unsigned long long sock;
         uint64_t id;

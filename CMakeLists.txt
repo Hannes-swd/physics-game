@@ -121,8 +121,35 @@ add_custom_command(
   COMMENT "Materialien materials.json")
 add_custom_target(assets DEPENDS ${AVATAR_OUT} ${MATERIALS_OUT})
 
+# ---------------------------------------------------------------- Qt (Hauptmenü, qml/)
+# Qt 6 mit Quick und QuickControls2. Gefunden über CMAKE_PREFIX_PATH bzw. Qt6_DIR, sonst wird die neueste Version unter
+# C:/Qt/6.*/msvc2022_64 genommen. Ohne Qt (oder mit -DWERKSTATT_MENU=OFF) startet das Spiel wie früher direkt in der
+# Werkstatt, ohne Hauptmenü.
+option(WERKSTATT_MENU "Hauptmenü mit Qt Quick" ON)
+if(WERKSTATT_MENU)
+  if(NOT Qt6_DIR)
+    file(GLOB _qt_kits "C:/Qt/6.*/msvc2022_64")
+    if(_qt_kits)
+      list(SORT _qt_kits COMPARE NATURAL ORDER DESCENDING)
+      list(GET _qt_kits 0 _qt_kit)
+      list(APPEND CMAKE_PREFIX_PATH "${_qt_kit}")
+    endif()
+  endif()
+  find_package(Qt6 6.5 QUIET COMPONENTS Quick QuickControls2)
+  if(Qt6_FOUND)
+    message(STATUS "Hauptmenü: Qt ${Qt6_VERSION} (${Qt6_DIR})")
+  else()
+    message(WARNING "Qt 6 (Quick, QuickControls2) nicht gefunden: das Spiel wird ohne Hauptmenü gebaut. "
+                    "Qt installieren oder -DCMAKE_PREFIX_PATH=C:/Qt/6.x.y/msvc2022_64 angeben.")
+    set(WERKSTATT_MENU OFF)
+  endif()
+endif()
+
 # ---------------------------------------------------------------- Spiel
 file(GLOB GAME_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h)
+# Das Hauptmenü ist eine eigene Bibliothek: Qt verlangt eigene Compiler-Schalter (/permissive- ...), die für den Rest
+# des Spiels nicht gelten sollen
+list(REMOVE_ITEM GAME_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/Menu.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/Menu.h)
 add_executable(Werkstatt ${GAME_SOURCES})
 add_dependencies(Werkstatt shaders assets)
 target_include_directories(Werkstatt PRIVATE ${SHADER_OUT} ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -135,4 +162,33 @@ if(MSVC)
   target_compile_options(imgui PRIVATE /utf-8)
   target_link_libraries(Werkstatt PRIVATE comdlg32)
   set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Werkstatt)
+endif()
+
+if(WERKSTATT_MENU)
+  set(MENU_QML qml/Main.qml qml/MainPage.qml qml/WorldsPage.qml qml/MultiplayerPage.qml qml/SettingsPage.qml)
+  add_library(WerkstattMenu STATIC src/Menu.cpp src/Menu.h)
+  set_target_properties(WerkstattMenu PROPERTIES AUTOMOC ON)
+  target_include_directories(WerkstattMenu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(WerkstattMenu PRIVATE Qt6::Quick Qt6::QuickControls2 glm::glm)
+  target_compile_definitions(WerkstattMenu PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN QT_NO_KEYWORDS GLM_ENABLE_EXPERIMENTAL)
+  # Die Oberfläche (qml/) wird eingebettet: qrc:/menu/Main.qml
+  qt_add_resources(WerkstattMenu menu_qml PREFIX "/menu" BASE qml FILES ${MENU_QML})
+  if(MSVC)
+    target_compile_options(WerkstattMenu PRIVATE /utf-8 /W3 /MP)
+  endif()
+  target_link_libraries(Werkstatt PRIVATE WerkstattMenu)
+  target_compile_definitions(Werkstatt PRIVATE WERKSTATT_MENU)
+  # vcpkg (falls in Visual Studio integriert) hier abschalten: es würde nach dem Bauen eigene Qt-DLLs (andere Version)
+  # neben das Programm kopieren und Qt startet dann nicht ("no Qt platform plugin")
+  set_target_properties(Werkstatt WerkstattMenu PROPERTIES VS_GLOBAL_VcpkgEnabled false)
+  # Qt-DLLs und QML-Module neben das Programm legen (nur was fehlt oder neuer ist)
+  find_program(WINDEPLOYQT windeployqt HINTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}" "${Qt6_DIR}/../../../bin" NO_DEFAULT_PATH)
+  if(WINDEPLOYQT)
+    add_custom_command(TARGET Werkstatt POST_BUILD
+      COMMAND "${WINDEPLOYQT}" --verbose 0 --no-translations --no-compiler-runtime --no-opengl-sw
+              --qmldir "${CMAKE_CURRENT_SOURCE_DIR}/qml" "$<TARGET_FILE:Werkstatt>"
+      COMMENT "Qt-Dateien neben Werkstatt.exe (windeployqt)")
+  else()
+    message(WARNING "windeployqt nicht gefunden: Qt-DLLs müssen von Hand neben Werkstatt.exe liegen")
+  endif()
 endif()

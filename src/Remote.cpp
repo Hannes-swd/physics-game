@@ -59,12 +59,18 @@ bool RemoteServer::start(int port) {
 void RemoteServer::stop() {
     for (auto& c : clients_) closesocket((SOCKET)c.sock);
     clients_.clear();
+    held_.clear();
     if (listen_ != ~0ull) closesocket((SOCKET)listen_);
     listen_ = ~0ull;
 }
 
 void RemoteServer::poll(const std::function<void(uint64_t, const std::string&)>& onLine) {
     if (listen_ == ~0ull) return;
+    if (!held_.empty()) {  // festgehaltene Zeilen zuerst (der Client ist noch "busy")
+        std::vector<std::pair<uint64_t, std::string>> held;
+        held.swap(held_);
+        for (const auto& [client, line] : held) onLine(client, line);
+    }
     for (;;) {
         SOCKET c = accept((SOCKET)listen_, nullptr, nullptr);
         if (c == INVALID_SOCKET) break;
@@ -95,6 +101,7 @@ void RemoteServer::poll(const std::function<void(uint64_t, const std::string&)>&
             std::string line = clients_[i].buffer.substr(0, nl);
             clients_[i].buffer.erase(0, nl + 1);
             if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.rfind("\xEF\xBB\xBF", 0) == 0) line.erase(0, 3);  // BOM (z.B. aus einer PowerShell-Pipe)
             clients_[i].busy = true;
             onLine(clients_[i].id, line);
         }

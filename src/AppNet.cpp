@@ -421,7 +421,7 @@ void App::netStop(const std::string& why) {
         netRole_ = NetRole::Off;
         hand_ = Hand();
         for (auto& [req, q] : netRequests_) {  // offene Anfragen beantworten
-            if (q.source == 2) remote_.respond(q.client, "Error: connection to the host closed");
+            if (q.source == 2) remote_->respond(q.client, "Error: connection to the host closed");
             if (q.source == 1) scriptBusy_ = false;
         }
         netRequests_.clear();
@@ -976,6 +976,11 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
         netHostName_ = r.str();
         netWelcomed_ = true;
         netStatus_.clear();
+        if (haveWorld_) {  // eigene Welt: noch speichern; das LAN-Spiel wird nicht in sie gespeichert
+            saveWorld(true, true);
+            haveWorld_ = false;
+            log("Your world \"" + worldInfo_.name + "\" was saved. The LAN game is not saved into it.", 3);
+        }
         world_->clear();  // gleich kommt die Welt des Gastgebers
         selection_.clear();
         hovered_ = 0;
@@ -1144,7 +1149,7 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
             std::fflush(stdout);
             scriptBusy_ = false;
         } else if (q.source == 2) {
-            remote_.respond(q.client, text);
+            remote_->respond(q.client, text);
         }
         break;
     }
@@ -1233,7 +1238,7 @@ bool App::localCommand(const std::string& line) const {
     static const char* local[] = {"help",   "?",        "materials", "mode",    "view",      "camera", "screenshot",
                                   "photo",  "tool",     "window",    "display", "log",       "select", "drawing",
                                   "threeview", "quit",  "exit",      "save",    "edges",     "list",   "ls",
-                                  "chunks", "lan",      "player"};
+                                  "chunks", "lan",      "player",    "menu",    "world"};
     const std::string w = firstWord(line);
     if (w.empty() || w[0] == '#') return true;
     for (const char* l : local)
@@ -1244,7 +1249,7 @@ bool App::localCommand(const std::string& line) const {
 void App::netSendCommand(const std::string& line, int source, uint64_t client, bool quiet) {
     auto fail = [&](const std::string& msg) {
         log(msg, 2);
-        if (source == 2) remote_.respond(client, msg);
+        if (source == 2) remote_->respond(client, msg);
         if (source == 1) {
             std::printf("%s\n", msg.c_str());
             scriptBusy_ = false;

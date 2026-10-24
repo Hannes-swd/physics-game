@@ -22,7 +22,9 @@
 
 | Datei | Aufgabe |
 |---|---|
-| `src/main.cpp` | Kommandozeile, Betrieb ohne Fenster, Fernsteuerungs-Client, `--bench [szene]` |
+| `src/main.cpp` | Kommandozeile, Ablauf Hauptmenü → Spiel → Hauptmenü, Betrieb ohne Fenster, Fernsteuerungs-Client, `--bench [szene]` |
+| `src/Menu.*`, `qml/` | Hauptmenü mit Qt Quick: Weltliste, Mehrspieler, Einstellungen (eigene Bibliothek `WerkstattMenu`, [15](15-Hauptmenue-und-Welten.md)) |
+| `src/Worlds.*`, `src/Settings.*`, `src/AppWorld.cpp` | Welten als Ordner (`world.json`, Szene, Sicherungen), Einstellungen, im Spiel: Welt öffnen, speichern, automatisch speichern |
 | `src/App.h`, `App.cpp` | Hauptschleife, Kameras (Perspektive/orthografisch), Sichtbarkeit und Detailstufen, Bild zusammenstellen |
 | `src/AppInput.cpp` | Maus/Tastatur, Bewegen per Ziehen (mit Anstoßen), Vorschau von Säge, Bohrer, Abrunden, Fräsen, Hobeln, Spielfigur, Tragen |
 | `src/AppUI.cpp` | Menüs, Werkzeug-/Eigenschaften-Fenster, Konsole, Inspektor, Zeichnungsfenster, Dateidialoge (Oberfläche deutsch) |
@@ -223,6 +225,8 @@ Luft, Wind, `breakage on/off`, Lufttemperatur und `heat on/off` gehören nicht z
 ## Bauen
 
 Benötigt: Visual Studio 2022 (C++), Vulkan SDK 1.3+, CMake 3.20+, Internet beim ersten Konfigurieren.
+Für das Hauptmenü: Qt 6.5+ für MSVC 2022 (Module Qt Quick, Qt Quick Controls), wird unter `C:/Qt/6.*/msvc2022_64`
+gefunden; ohne Qt startet das Spiel ohne Hauptmenü ([15](15-Hauptmenue-und-Welten.md)).
 
 ```
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64

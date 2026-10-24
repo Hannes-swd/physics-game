@@ -408,7 +408,10 @@ std::string commandHelp() {
         "  tool heat [lighter|gas|welding|spray|nitrogen]   hold the mouse on a part (build) or F (play) to heat/cool it\n"
         "  window inspector|drawing|console|help|materials [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"
         "  lan [status] | lan host | lan join <address> | lan leave       multiplayer in the local network\n"
-        "  lan accept [name|all] | lan decline <name> | lan kick <name> | lan confirm on|off | lan name <text>\n";
+        "  lan accept [name|all] | lan decline <name> | lan kick <name> | lan confirm on|off | lan name <text>\n"
+        "  world | world save | world menu         the open world (from the world list): info, save now, back to the main menu\n"
+        "  menu | menu <page|command>              where you are (game or main menu); 'menu worlds', 'menu play <world>' ... go to the\n"
+        "                                          main menu and run there ('menu help' in the main menu lists all menu commands)\n";
 }
 
 CommandResult runCommand(CommandHost& host, const std::string& lineIn) {

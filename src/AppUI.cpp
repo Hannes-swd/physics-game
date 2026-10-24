@@ -154,6 +154,12 @@ void App::saveDialog(bool save) {
 void App::drawMenuBar() {
     if (!ImGui::BeginMainMenuBar()) return;
     if (ImGui::BeginMenu("Datei")) {
+        if (haveWorld_) {  // Welt aus der Weltliste
+            if (ImGui::MenuItem("Welt speichern", "Strg+S", false, !worldReadOnly_ && !netClient())) saveWorld(false);
+            ImGui::TextDisabled("Welt: %s", worldInfo_.name.c_str());
+        }
+        if (opt_.menu && ImGui::MenuItem("Zurück zum Hauptmenü")) leaveToMenu();
+        if (haveWorld_ || opt_.menu) ImGui::Separator();
         if (ImGui::MenuItem("Leere Werkstatt")) runLine("scene empty", "konsole");
         if (ImGui::MenuItem("Beispiel-Werkstatt")) runLine("scene demo", "konsole");
         if (ImGui::MenuItem("Beispiel-Welt (alles)")) runLine("scene showcase", "konsole");
@@ -161,7 +167,7 @@ void App::drawMenuBar() {
         if (ImGui::MenuItem("Wasserbecken (Schwimmen, Sinken, Boote)")) runLine("scene water", "konsole");
         if (ImGui::MenuItem("Fluss (Strömung, Hindernisse, Treibgut)")) runLine("scene river", "konsole");
         ImGui::Separator();
-        if (ImGui::MenuItem("Speichern...", "Strg+S")) saveDialog(true);
+        if (ImGui::MenuItem(haveWorld_ ? "Szene speichern unter..." : "Speichern...", haveWorld_ ? nullptr : "Strg+S")) saveDialog(true);
         if (ImGui::MenuItem("Laden...", "Strg+O")) saveDialog(false);
         if (ImGui::MenuItem("Modell importieren (.obj)...")) openImportDialog();
         ImGui::Separator();
