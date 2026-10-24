@@ -504,15 +504,16 @@ bool Renderer::createPipelines() {
         }
 
         VkVertexInputBindingDescription bind{};
-        VkVertexInputAttributeDescription attrs[2] = {};
+        VkVertexInputAttributeDescription attrs[3] = {};
         VkPipelineVertexInputStateCreateInfo vin{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         if (c.meshInput) {
             bind = {0, sizeof(solid::Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
             attrs[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
             attrs[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12};
+            attrs[2] = {2, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(solid::Vertex, color)};  // Farbe je Eckpunkt (Gelände)
             vin.vertexBindingDescriptionCount = 1;
             vin.pVertexBindingDescriptions = &bind;
-            vin.vertexAttributeDescriptionCount = c.shadowPass ? 1 : 2;
+            vin.vertexAttributeDescriptionCount = c.shadowPass ? 1 : 3;
             vin.pVertexAttributeDescriptions = attrs;
         } else if (c.lineInput) {
             bind = {0, sizeof(LineVertex), VK_VERTEX_INPUT_RATE_VERTEX};
@@ -833,14 +834,26 @@ void Renderer::render(const FrameDesc& fd) {
     }
     if (mvBytes) std::memcpy(fr.meshVertices.mapped, fd.frameVertices.data(), mvBytes);
     // ein Netz zeichnen: eigenes Netz oder ein Stück der Dreiecke dieses Bilds
-    auto drawItem = [&](VkCommandBuffer c, const DrawItem& it, uint32_t index) {
+    // count > 1: dasselbe Netz mehrfach hintereinander (Bäume), ein Aufruf mit Instanzen (gl_InstanceIndex = index + i)
+    auto drawItem = [&](VkCommandBuffer c, const DrawItem& it, uint32_t index, uint32_t count = 1) {
         VkDeviceSize off = 0;
         if (it.mesh && it.mesh->valid()) {
             vkCmdBindVertexBuffers(c, 0, 1, &it.mesh->buffer, &off);
-            vkCmdDraw(c, it.mesh->vertexCount, 1, 0, index);
+            vkCmdDraw(c, it.mesh->vertexCount, count, 0, index);
         } else if (!it.mesh && it.frameCount && it.frameFirst + it.frameCount <= fd.frameVertices.size()) {
             vkCmdBindVertexBuffers(c, 0, 1, &fr.meshVertices.buffer, &off);
-            vkCmdDraw(c, it.frameCount, 1, it.frameFirst, index);
+            vkCmdDraw(c, it.frameCount, count, it.frameFirst, index);
+        }
+    };
+    // alle Einträge zeichnen; gleiches Netz direkt hintereinander gebündelt. shadow: nur die mit Schatten
+    auto drawAll = [&](VkCommandBuffer c, bool shadow) {
+        for (uint32_t i = 0; i < objCount;) {
+            const DrawItem& it = fd.items[i];
+            uint32_t n = 1;
+            if (it.mesh)
+                while (i + n < objCount && fd.items[i + n].mesh == it.mesh && fd.items[i + n].castShadow == it.castShadow) ++n;
+            if (!shadow || it.castShadow) drawItem(c, it, i, n);
+            i += n;
         }
     };
 
@@ -878,8 +891,7 @@ void Renderer::render(const FrameDesc& fd) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipe_);
             Push p{fd.lightViewProj, glm::vec4(0), glm::vec4(0)};
             vkCmdPushConstants(cmd, pipeLayout_, pcStages, 0, sizeof(Push), &p);
-            for (uint32_t i = 0; i < objCount; ++i)
-                if (fd.items[i].castShadow) drawItem(cmd, fd.items[i], i);
+            drawAll(cmd, true);
         }
         vkCmdEndRendering(cmd);
     }
@@ -948,7 +960,7 @@ void Renderer::render(const FrameDesc& fd) {
             vkCmdDraw(cmd, 3, 1, 0, 0);
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipe_);
-            for (uint32_t i = 0; i < objCount; ++i) drawItem(cmd, fd.items[i], i);
+            drawAll(cmd, false);
 
             if (nWater) {  // Wasseroberflächen: nach den Körpern (darunter schon gefärbt), vor Flammen und Linien
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, waterPipe_);

@@ -1,9 +1,11 @@
 // Welten: jede Welt ist ein Ordner unter %APPDATA%\Werkstatt\worlds\
 //   world.json        Name, Seed, Generator, erstellt, zuletzt geöffnet, Spielzeit, Kamera/Spielfigur, Umgebung
-//   scene.werkstatt   Teile, Verbindungen, Gewässer (Szenenformat, siehe docs/07-Engine-Aufbau.md)
+//   world.bin         Teile, Verbindungen, Gewässer, entfernte Bäume (binär, WorldBin.cpp); ältere Welten: scene.werkstatt
+//   generator.json, trees.json   Kopien von Biomen und Baumarten (die Welt sieht immer gleich aus)
+//   regions/          geänderte Gelände-Chunks
 //   *.bak             der Stand vor dem letzten Speichern (wird beim Laden genommen, wenn die Datei fehlt oder kaputt ist)
 // Geschrieben wird immer erst in eine .tmp-Datei, die dann die alte ersetzt: ein Absturz beim Speichern zerstört nichts.
-// Später kommen hier die Chunks dazu (regions/), der Generator erzeugt den Rest aus dem Seed.
+// Der Generator erzeugt den Rest aus dem Seed.
 #pragma once
 #include <glm/glm.hpp>
 
@@ -18,8 +20,9 @@ struct WorldInfo {
     std::string name;
     uint64_t seed = 0;
     std::string seedText;               // so wie eingegeben (leer: zufällig gewählt)
-    std::string generator = "flat";     // bis es einen Generator gibt: flache Welt
+    std::string generator = "flat";     // "flat": Ebene bei y = 0 (wie früher), "normal": Gelände mit Biomen
     int generatorVersion = 1;           // ändert sich der Generator, bleiben alte Welten beim alten
+    std::string biome = "all";          // "normal": alle Biome oder nur dieses (id aus biomes.json)
     int64_t created = 0, lastPlayed = 0;  // Unix-Zeit (s)
     double playTime = 0;                // gespielte Zeit (s)
     bool broken = false;                // world.json unlesbar (die Welt lässt sich nur löschen)
@@ -48,14 +51,25 @@ namespace worlds {
 
 std::filesystem::path dataDir();    // %APPDATA%\Werkstatt (wird angelegt)
 std::filesystem::path worldsDir();  // dataDir()\worlds
-std::filesystem::path sceneFile(const WorldInfo& w);
+std::filesystem::path sceneFile(const WorldInfo& w);  // alt: Textformat (wird noch gelesen)
+std::filesystem::path binFile(const WorldInfo& w);    // world.bin: Teile, Verbindungen, Gewässer (binär)
+std::filesystem::path generatorFile(const WorldInfo& w);  // Kopie von biomes.json, mit der die Welt erzeugt wird
+std::filesystem::path regionDir(const WorldInfo& w);      // Änderungen am Gelände (regions/)
 
 // Alle Welten, zuletzt geöffnete zuerst
 std::vector<WorldInfo> list();
 bool readInfo(const std::filesystem::path& dir, WorldInfo& out, std::string* err);
 bool writeInfo(const WorldInfo& w, std::string* err);
-// Neue Welt: eigener Ordner (aus dem Namen), Seed aus dem Text (Zahl, sonst Hash des Textes, leer: zufällig)
-bool create(const std::string& name, const std::string& seedText, WorldInfo& out, std::string* err);
+// Neue Welt: eigener Ordner (aus dem Namen), Seed aus dem Text (Zahl, sonst Hash des Textes, leer: zufällig).
+// generator "flat" oder "normal"; biome "all" oder eine id. generatorText: Inhalt von biomes.json (für "normal",
+// wird als generator.json in die Welt kopiert)
+struct CreateOptions {
+    std::string generator = "normal";
+    std::string biome = "all";
+    std::string generatorText;
+};
+bool create(const std::string& name, const std::string& seedText, const CreateOptions& options, WorldInfo& out, std::string* err);
+std::string randomSeedText();  // zufälliger Seed als Zahl (für das Feld "Seed" beim Erstellen)
 bool rename(const std::filesystem::path& dir, const std::string& name, std::string* err);
 bool remove(const std::filesystem::path& dir, std::string* err);  // in den Papierkorb
 

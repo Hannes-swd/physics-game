@@ -8,6 +8,7 @@ struct GameSettings {
     double mouseSensitivity = 1.0;   // Faktor auf die Mausbewegung im Spiel-Modus
     double fovDeg = 55.0;            // Sichtfeld (senkrecht)
     bool shadows = true, edges = true, grid = true;
+    bool biomeBorders = true;        // Gelände: Linien an den Biomgrenzen
     int autosaveMinutes = 5;         // Welt automatisch speichern (0 = nie)
 };
 

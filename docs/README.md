@@ -24,6 +24,8 @@ Anleitung sind deutsch.
 | [13-Materialien.md](13-Materialien.md) | Alle Materialien in der Datei `assets/materials.json`: jeder Wert erklärt, neue Materialien anlegen (Datei, Fenster, Befehle), Reibungspaare |
 | [14-Wasser.md](14-Wasser.md) | Wasser: Becken und Meer, Auftrieb, Boote und Becher, die volllaufen, Wellen, Strömung, Abschrecken, Schwimmen, Darstellung im Shader, Rechenzeit |
 | [15-Hauptmenue-und-Welten.md](15-Hauptmenue-und-Welten.md) | Hauptmenü (Qt Quick): Weltliste, neue Welt, Seed, Mehrspieler, Einstellungen; Ladebildschirm; Speichersystem der Welten, Sicherungen, automatisch speichern; das Menü per Befehl bedienen und auslesen (Fernsteuerung, KI) |
+| [16-Weltgenerierung.md](16-Weltgenerierung.md) | Weltgenerierung: Gelände und Biome (Ebene, Wald, Hügel, Wüste) aus dem Seed, Klima, **Flüsse** (mit Tal, echtes Wasser, keine in der Wüste), `biomes.json`, Kacheln und Detailstufen, Physik, Gelände ändern und speichern, Biomgrenzen, Karte (`terrain map`), Befehle `terrain` |
+| [17-Baeume.md](17-Baeume.md) | **Bäume**: Arten (`trees.json`), Wald aus dem Seed je Biom, fällen (Stumpf bleibt, Stamm mit Krone fällt), Holz gewinnen, Baumschule, Teile in der Nähe und Bild in der Ferne, Speichern, Befehle `trees`, `tree`, `tp tree` |
 
 ## Schnellstart
 
@@ -31,7 +33,8 @@ Anleitung sind deutsch.
 build\Release\Werkstatt.exe
 ```
 
-0. Im **Hauptmenü** auf **Spielen → Neue Welt**, Namen eingeben (Seed leer lassen = zufällig) → **Erstellen**, dann die
+0. Im **Hauptmenü** auf **Spielen → Neue Welt**, Namen eingeben, Welttyp *Normal* (Gelände mit Biomen, [16](16-Weltgenerierung.md))
+   oder *Flach* (Werkstattebene) → **Erstellen**, dann die
    Welt doppelklicken. Ein Ladebildschirm zeigt den Fortschritt ([15](15-Hauptmenue-und-Welten.md)).
 1. Im **Bau-Modus** links unter „Neues Teil“ Form, Material und Maße wählen → **Erstellen**.
 2. Mit **S** (Säge) oder **B** (Bohrer) auf das Teil klicken.
@@ -63,6 +66,6 @@ new box spruce 80 10 2 ; cut last x 30 ; drill last +y 0 0 8 ; mode play
 
 ## Koordinaten
 
-Y zeigt nach oben, der Boden liegt bei y = 0. X geht nach rechts, Z nach vorne (zur Kamera der Vorderansicht).
+Y zeigt nach oben, der Boden liegt bei y = 0 (Welttyp flach; mit Gelände ist der Boden die Geländeoberfläche, [16](16-Weltgenerierung.md)). X geht nach rechts, Z nach vorne (zur Kamera der Vorderansicht).
 Die rote Linie am Boden ist die X-Achse, die blaue die Z-Achse.
 Die Position eines Teils ist immer sein **Schwerpunkt**.

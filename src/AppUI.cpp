@@ -167,6 +167,7 @@ void App::drawMenuBar() {
         if (ImGui::MenuItem("Feuerstelle (Wärme, Feuer, Kälte)")) runLine("scene fire", "konsole");
         if (ImGui::MenuItem("Wasserbecken (Schwimmen, Sinken, Boote)")) runLine("scene water", "konsole");
         if (ImGui::MenuItem("Fluss (Strömung, Hindernisse, Treibgut)")) runLine("scene river", "konsole");
+        if (ImGui::MenuItem("Baumschule (alle Baumarten)")) runLine("scene trees", "konsole");
         ImGui::Separator();
         if (ImGui::MenuItem(haveWorld_ ? "Szene speichern unter..." : "Speichern...", haveWorld_ ? nullptr : "Strg+S")) saveDialog(true);
         if (ImGui::MenuItem("Laden...", "Strg+O")) saveDialog(false);
@@ -207,6 +208,7 @@ void App::drawMenuBar() {
         ImGui::MenuItem("Schatten", nullptr, &showShadows_);
         ImGui::MenuItem("Kanten", nullptr, &showEdges_);
         ImGui::MenuItem("Raster", nullptr, &showGrid_);
+        if (world_->terrain()) ImGui::MenuItem("Biomgrenzen", nullptr, &showBiomeBorders_);
         ImGui::Separator();
         ImGui::MenuItem("Physik-Inspektor", "F3", &showInspector_);
         ImGui::MenuItem("Materialien bearbeiten", nullptr, &showMaterials_);
@@ -248,7 +250,7 @@ void App::drawMenuBar() {
         if (ImGui::BeginMenu("Wasser")) {
             if (ImGui::MenuItem("Becken hier (2 x 1,5 m, 50 cm tief, mit Rand)")) runLine("water pool 200 150 50 walls", "konsole");
             bool sea = false;
-            for (const WaterBody& b : world_->waters()) sea |= b.sea;
+            for (const WaterBody& b : world_->waters()) sea |= b.sea && !b.generated();
             if (ImGui::MenuItem("Meer (Wasserspiegel 40 cm)", nullptr, &sea)) runLine(sea ? "water sea 40" : "water sea off", "konsole");
             if (ImGui::BeginMenu("Wellen", !world_->waters().empty())) {
                 const char* names[] = {"ruhig", "leicht (10 cm)", "bewegt (40 cm)", "Sturm (150 cm)"};
@@ -829,9 +831,11 @@ void App::drawStatusBar() {
     std::string left;
     if (!status_.empty() && time_ - statusTime_ < 6.0) {
         left = status_;
+    } else if (play_ && axe_) {
+        left = "AXT: Maus links hackt (auf Holz zielen, bis 2,6 m) · X Axt weglegen · WASD laufen · Tab Bauen";
     } else if (play_) {
         left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · F " +
-               std::string(heatTools()[heatTool_].label) + " · Tab Bauen";
+               std::string(heatTools()[heatTool_].label) + " · X Axt · Tab Bauen";
     } else if (Object* o = world_->find(hovered_)) {
         left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg";
         if (!o->heat.empty() && (std::abs(o->heatInfo.tMax - world_->ambient()) > 5 || o->heatInfo.tMin < world_->ambient() - 5))

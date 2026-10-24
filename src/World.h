@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "Chunks.h"
 #include "Collision.h"
@@ -21,6 +22,12 @@
 #include "Renderer.h"
 #include "Solid.h"
 #include "Water.h"
+
+class Terrain;
+class WorldGen;
+class TreeLibrary;
+class Forest;
+struct TreeConfig;
 
 enum class ObjKind : int { Solid = 0, Mesh = 1 };
 
@@ -102,6 +109,16 @@ struct ObjectState {
     std::vector<double> boreWear;                     // Abrieb je Bohrung: Wand weicht so weit zurück (m)
     HeatGrid heat;                                    // Temperatur, Verkohlung, Schmelze
     MeltForm meltForm = MeltForm::None;
+    // Baum (Trees.h): Art (id aus trees.json), Variante, Größe; treeOrigin = Stammfuß der Vorlage im Teil (lokal).
+    // crown: trägt die Krone (nur Bild); rooted: steht fest durch die Wurzel (beim Sägen bleibt nur das Stück mit dem
+    // Stammfuß fest, der Rest fällt); treeKey: Platz des Generators (0: gepflanzt); treeSig: Zustand beim Entstehen
+    // (unverändert und nicht entfernt: wird nicht gespeichert, der Generator erzeugt ihn wieder)
+    std::string treeType;
+    int treeVariant = 0;
+    float treeScale = 1.0f;
+    glm::dvec3 treeOrigin{0};
+    bool crown = false, rooted = false;
+    uint64_t treeKey = 0, treeSig = 0;
 };
 
 struct Object : ObjectState {
@@ -136,6 +153,7 @@ struct Object : ObjectState {
     std::vector<AeroFace> aero;     // Außenflächen für die Luftkräfte
     glm::dvec3 aeroForce{0}, aeroTorque{0};  // Luftkraft/-moment im letzten Schritt (ohne Auftrieb)
     double breakCooldown = 0;       // bis zu dieser Simulationszeit nicht erneut zerbrechen
+    glm::vec3 startSpin{0};         // Drehung beim Start der Physik (gefällter Baum im Bau-Modus: kippt dann)
     BodyHandle body = kNoBody;
     uint32_t hinge = 0;
     bool ccd = false;               // kontinuierliche Kollision gerade an (nur bei schnellen Teilen)
@@ -311,6 +329,9 @@ public:
     bool scalePart(uint32_t id, const glm::dvec3& f, std::string* err);
     // b in a aufgehen lassen (gleiches Material), b verschwindet
     bool mergeParts(uint32_t a, uint32_t b, std::string* err);
+    // Axt: ein Hieb schlägt eine Kerbe (Keil) in ein Holzteil. p: getroffene Stelle, toward: waagrecht zum Schlagenden.
+    // Ist ein Baum durch, fällt er vom Schlagenden weg. removed: weggeschlagenes Volumen (m³)
+    bool chop(uint32_t id, const glm::dvec3& p, glm::dvec3 toward, double* removed, std::string* err);
     // a minus b (intersect = false) oder Schnittmenge (true); b bleibt nur mit keepTool
     bool booleanCut(uint32_t a, uint32_t tool, bool intersect, bool keepTool, std::vector<uint32_t>* resultIds, double* removed,
                     std::string* err);
@@ -436,8 +457,41 @@ public:
     // ---------------------------------------------------------- Strahl
     bool raycast(const glm::dvec3& origin, const glm::dvec3& dir, RayHit& hit, uint32_t ignoreId = 0);
 
+    // ---------------------------------------------------------- Gelände (Terrain.cpp, WorldGen.cpp)
+    // Welt mit Gelände ("normal"): ersetzt die Ebene bei y = 0. regionDir: dort liegen die Änderungen (leer: keine Datei)
+    void setTerrain(std::shared_ptr<const WorldGen> gen, const std::filesystem::path& regionDir);
+    void clearTerrain();  // wieder flach (Ebene bei y = 0), z.B. Mitspieler bei einem Gastgeber ohne Gelände
+    void setTerrainGen(std::shared_ptr<const WorldGen> gen);  // neue Einstellungen ("terrain reload", vom Gastgeber)
+    // Gewässer "Flüsse" passend zum Gelände: anlegen, Wasserspiegel anpassen oder entfernen
+    void syncTerrainWater();
+    Terrain* terrain() { return terrain_.get(); }
+    const Terrain* terrain() const { return terrain_.get(); }
+    double groundHeight(double x, double z) const;   // Gelände bzw. 0 (flache Welt)
+    // Physik des Geländes um p sofort anlegen (z.B. bevor eine Spielfigur dort erscheint), Rückgabe: Bodenhöhe dort
+    double prepareGround(const glm::dvec3& p);
+    // Punkte, um die das Gelände Physik braucht, auch ohne Teil (Kamera, Spielfigur)
+    void setTerrainFocus(const std::vector<glm::dvec3>& points) { terrainFocus_ = points; }
+    void updateTerrainPhysics();  // Höhenfelder unter allen Teilen und um die Fokuspunkte
+
+    // ---------------------------------------------------------- Bäume (Trees.cpp, World.cpp)
+    // Baumarten dieser Welt (ohne Aufruf: die eingebauten); mit Gelände entstehen daraus die Bäume des Generators
+    void setTrees(std::shared_ptr<const TreeConfig> cfg);
+    const TreeLibrary& trees();
+    Forest* forest() { return forest_.get(); }
+    // Einen Baum als festes Teil aufstellen (Stammfuß bei base, Drehung um Y). key: Platz des Generators (0: gepflanzt)
+    Object* plantTree(int type, int variant, double scale, const glm::dvec3& base, double yaw, uint64_t key = 0);
+    // Bäume des Generators nahe der Punkte als Teile, unveränderte weit weg wieder weg (nur wer die Physik rechnet)
+    void updateTrees(const std::vector<glm::dvec3>& focus, int budget);
+    bool untouchedTree(const Object& o) const;  // vom Generator, noch wie gewachsen (wird nicht gespeichert)
+    uint64_t treeSignature(const Object& o) const;
+    const std::unordered_set<uint64_t>& treesTaken() const { return treesTaken_; }  // entfernte Bäume des Generators
+    void setTreesTaken(const std::unordered_set<uint64_t>& s) { treesTaken_ = s; }
+    // Bäume des Generators, die gerade Teile sind oder entfernt wurden (nicht zusätzlich zeichnen)
+    bool treeHidden(uint64_t key) const { return treesTaken_.count(key) || treeObjects_.count(key); }
+
     // ---------------------------------------------------------- Rückgängig
     void pushUndo();
+    void dropUndo() { if (!undo_.empty()) undo_.pop_back(); }  // letzten Merkpunkt verwerfen (es hat sich nichts geändert)
     bool undo();
     bool redo();
     void discardUndo() { if (!undo_.empty()) undo_.pop_back(); }
@@ -450,7 +504,12 @@ public:
     void fireScene();      // Feuerstelle: Wärme, Feuer, Schmelzen, Kälte (Showcase.cpp)
     void waterScene();     // Wasserbecken: Schwimmen, Sinken, Boote, Becher (Showcase.cpp)
     void riverScene();     // Fluss: Strömung um Hindernisse, Stau, Schaum, Treibgut (Showcase.cpp)
+    void treeScene();      // Baumschule: jede Baumart in jeder Form, nebeneinander (World.cpp)
     bool save(const std::filesystem::path& file, std::string* err) const;
+    // Weltdatei binär (WorldBin.cpp): klein, lädt ohne neue Zerlegung der Kollisionsformen
+    bool saveBinary(const std::filesystem::path& file, std::string* err) const;
+    bool loadBinary(const std::filesystem::path& file, std::string* err, const std::function<void(size_t, size_t)>& progress = nullptr);
+    static bool isBinaryScene(const std::filesystem::path& file);
     // progress(fertig, alle): beim Anlegen der Teile (für den Ladebildschirm)
     bool load(const std::filesystem::path& file, std::string* err, const std::function<void(size_t, size_t)>& progress = nullptr);
 
@@ -536,6 +595,14 @@ private:
     bool simulating_ = false;
     std::vector<Snapshot> undo_, redo_;
     BodyHandle groundBody_ = kNoBody;
+    std::unique_ptr<Terrain> terrain_;
+    std::vector<glm::dvec3> terrainFocus_;
+    std::shared_ptr<const TreeLibrary> trees_;
+    std::unique_ptr<Forest> forest_;
+    std::unordered_set<uint64_t> treesTaken_;                 // entfernte Bäume des Generators (gespeichert)
+    std::unordered_map<uint64_t, uint32_t> treeObjects_;      // Baum des Generators -> Teil (wird je Aufruf neu gezählt)
+    void rebuildForest();
+    glm::dvec3 fellHint_{0};  // Axt: Richtung, in die ein durchgehackter Baum fällt (einmal, dann wieder 0)
     GpuMesh groundMesh_, boxMesh_;
     ChunkGrid grid_;
     std::unordered_map<uint32_t, Object*> byId_;

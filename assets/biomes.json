@@ -1,0 +1,123 @@
+{
+  "_info": [
+    "Werkstatt - Weltgenerierung: Klima, Biome und Flüsse. Mehr: docs/16-Weltgenerierung.md",
+    "Aus dem Seed entstehen vier Klimafelder (Werte 0..1), die sich nur langsam über die Welt ändern. Jedes Biom sagt in",
+    "\"climate\", in welchen Bereichen es vorkommt (fehlt ein Wert: ganzer Bereich 0..1). An jedem Ort gewinnt das Biom,",
+    "dessen Bereiche am besten passen. Darum liegen nur Biome mit ähnlichem Klima nebeneinander: die Wüste (heiß und",
+    "trocken) grenzt an trockene Ebenen und Hügel, nie an feuchte Gegenden.",
+    "Flüsse folgen langen, gewundenen Linien aus dem Seed. Wie viele davon Wasser führen, bestimmt jedes Biom (\"rivers\");",
+    "in der Wüste keine: ein Fluss läuft vor ihrer Grenze aus.",
+    "Jede Welt bekommt beim Erstellen eine Kopie dieser Datei (generator.json im Weltordner) und sieht deshalb immer gleich",
+    "aus. Änderungen hier gelten für neue Welten; 'terrain reload' übernimmt sie in die offene Welt."
+  ],
+  "_keys": {
+    "climate.*.scale":       "Größe der Klimagebiete in m (größer = weiter auseinander)",
+    "climate.*.octaves":     "Feinheit der Ränder (mehr = unruhiger)",
+    "climate.*.contrast":    "Streckung: größer = Werte nahe 0 und 1 häufiger",
+    "border_blend":          "Übergangsbreite zwischen Biomen (in Klimaeinheiten, 0.04 = einige Dutzend Meter)",
+    "rivers.level":          "Wasserspiegel aller Flüsse (m). Außerhalb der Flüsse bleibt das Gelände mindestens 'floor' darüber",
+    "rivers.spacing":        "Größe des Linienmusters (m): größer = Flüsse weiter auseinander (seltener)",
+    "rivers.presence":       "Anteil der Linien, die Wasser führen (0..1), in Biomen mit 'rivers': 1",
+    "rivers.meander":        "Schlingen: wie weit (m) und wie groß die Bögen sind (meander_scale, m)",
+    "rivers.width":          "Breite der Rinne [schmal, breit] (m); depth: Tiefe in der Mitte [von, bis] (m)",
+    "rivers.bank":           "Ufer über dem Wasser (m)",
+    "rivers.valley":         "Breite des Tals je Seite (m); valley_slope: höchste Steigung der Talhänge (0.35 = 19°)",
+    "rivers.speed":          "Strömung [breiter Fluss, schmaler Fluss] (m/s)",
+    "rivers.bed_color":      "Farbe von Flussbett und Ufer",
+    "biomes[].climate":      "Bereiche [von, bis] je Klimawert (temperature, humidity, continentalness, erosion)",
+    "biomes[].height":       "Höhe: base (m) + amplitude (m) * Rauschen; scale = Größe der Formen (m), octaves, persistence",
+    "biomes[].surface":      "Oberfläche: Farbe, Farbe an steilen Hängen ab slope_start bis slope_end (1 - Normale.y), Material",
+    "biomes[].rivers":       "wie viele Flüsse hier Wasser führen: 0 = keine, 1 = alle (rivers.presence)",
+    "biomes[].trees":        "Bäume: per_ha = Bäume je Hektar (100 x 100 m), types = welche Arten aus trees.json, mit Gewicht",
+    "biomes[].border_color": "Farbe der Biomgrenze auf diesem Biom (Ansicht -> Biomgrenzen)"
+  },
+  "version": 1,
+  "climate": {
+    "temperature":     { "label": "Wärme",            "scale": 4500, "octaves": 3, "contrast": 1.7 },
+    "humidity":        { "label": "Feuchtigkeit",     "scale": 3800, "octaves": 3, "contrast": 1.7 },
+    "continentalness": { "label": "Kontinentalität",  "scale": 5000, "octaves": 4, "contrast": 1.5 },
+    "erosion":         { "label": "Zerklüftung",      "scale": 900,  "octaves": 3, "contrast": 1.9 }
+  },
+  "border_blend": 0.04,
+  "rivers": {
+    "level":         0.0,
+    "spacing":       2500,
+    "presence":      0.6,
+    "meander":       60,
+    "meander_scale": 260,
+    "width":         [5, 14],
+    "depth":         [1.0, 2.2],
+    "bank":          0.35,
+    "floor":         0.3,
+    "valley":        90,
+    "valley_slope":  0.35,
+    "speed":         [0.4, 1.1],
+    "bed_color":     [0.30, 0.26, 0.18]
+  },
+  "biomes": [
+    {
+      "id":      "plains",
+      "label":   "Ebene",
+      "climate": { "humidity": [0.35, 0.62], "erosion": [0.0, 0.5] },
+      "height":  { "base": 1.0, "amplitude": 1.2, "scale": 180, "octaves": 3, "persistence": 0.5 },
+      "surface": {
+        "color":       [0.19, 0.29, 0.10],
+        "slope_color": [0.29, 0.24, 0.17],
+        "slope_start": 0.35,
+        "slope_end":   0.6,
+        "material":    "soil"
+      },
+      "rivers":       1.0,
+      "trees":        { "per_ha": 4, "types": { "oak_big": 2, "oak_young": 1 } },
+      "border_color": [1.0, 0.85, 0.2]
+    },
+    {
+      "id":      "forest",
+      "label":   "Wald",
+      "climate": { "humidity": [0.62, 1.0], "erosion": [0.0, 0.5] },
+      "height":  { "base": 1.5, "amplitude": 2.5, "scale": 150, "octaves": 4, "persistence": 0.5 },
+      "surface": {
+        "color":       [0.11, 0.18, 0.06],
+        "slope_color": [0.22, 0.17, 0.11],
+        "slope_start": 0.35,
+        "slope_end":   0.6,
+        "material":    "soil"
+      },
+      "rivers":       1.0,
+      "trees":        { "per_ha": 150, "types": { "oak_big": 1, "oak_young": 2, "spruce_big": 2, "spruce_mid": 2, "spruce_young": 3 } },
+      "border_color": [0.3, 1.0, 0.35]
+    },
+    {
+      "id":      "hills",
+      "label":   "Hügellandschaft",
+      "climate": { "humidity": [0.35, 1.0], "erosion": [0.5, 1.0] },
+      "height":  { "base": 4.0, "amplitude": 16.0, "scale": 140, "octaves": 5, "persistence": 0.45 },
+      "surface": {
+        "color":       [0.16, 0.25, 0.09],
+        "slope_color": [0.33, 0.31, 0.27],
+        "slope_start": 0.3,
+        "slope_end":   0.55,
+        "material":    "soil"
+      },
+      "rivers":       1.0,
+      "trees":        { "per_ha": 18, "types": { "spruce_big": 1, "spruce_mid": 2, "spruce_young": 2 } },
+      "border_color": [1.0, 0.45, 0.15]
+    },
+    {
+      "id":      "desert",
+      "label":   "Wüste",
+      "climate": { "temperature": [0.55, 1.0], "humidity": [0.0, 0.35] },
+      "height":  { "base": 2.0, "amplitude": 4.0, "scale": 60, "octaves": 3, "persistence": 0.35 },
+      "surface": {
+        "color":       [0.58, 0.44, 0.24],
+        "slope_color": [0.50, 0.36, 0.20],
+        "slope_start": 0.35,
+        "slope_end":   0.6,
+        "material":    "sand"
+      },
+      "rivers":       0.0,
+      "trees":        { "per_ha": 0 },
+      "border_color": [1.0, 0.2, 0.2]
+    }
+  ]
+}

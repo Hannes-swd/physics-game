@@ -42,10 +42,12 @@ Dokumentation sind deutsch.
 | Wärme & Feuer | `heat`, `ignite`, `extinguish`, `torch`, `tool heat` (siehe [12](12-Waerme-und-Feuer.md)) |
 | Wasser | `water`, `water pool`, `water sea`, `water land`, `water ground`, `water waves`, `water fill` … (siehe [14](14-Wasser.md)) |
 | Ansicht & Bild | `view`, `camera`, `screenshot`, `window`, `display`, `tool` |
-| Spielfigur | `player ...` |
+| Spielfigur | `player ...`, `tp` (zu Biom, Fluss, Wasser, Mitspieler, Stelle) |
 | Zeichnung | `drawing` |
 | Szene & Dateien | `scene`, `save`, `load`, `quit` |
 | Welt & Hauptmenü | `world`, `world save`, `world menu`, `menu ...` (siehe [15](15-Hauptmenue-und-Welten.md)) |
+| Gelände | `terrain`, `terrain at`, `terrain biomes`, `terrain find`, `terrain goto`, `terrain raise`/`lower`/`flatten`/`reset`, `terrain reload`, `terrain borders`, `terrain map` (siehe [16](16-Weltgenerierung.md)) |
+| Bäume | `trees`, `tree plant`, `tree nearest`, `tp tree`, `scene trees`, `trees reload` (siehe [17](17-Baeume.md)) |
 | Befehlssprache | `wait`, `wait until`, `if`, `repeat`, `print`, `set` (siehe [03](03-Befehlssprache.md)) |
 
 Ausführliche Erklärungen zu allen Bearbeitungen (wie sie rechnen, was realistisch erlaubt ist, Mauswerkzeuge):
@@ -716,6 +718,38 @@ looking_at    #16 Ramp 30° (1.68 m)
 mode          play
 ```
 
+### Teleportieren: `tp`
+
+Versetzt die Figur an die **nächste** passende Stelle, immer **auf die Oberfläche** (auf den Boden oder oben auf Teile,
+nie hinein). Im Bau-Modus wandert stattdessen die Kamera dorthin; **Tab** setzt die Figur dann genau an diese Stelle.
+Ein getragenes Teil bleibt zurück. Anderer Name: `teleport`.
+
+| Befehl | Ziel |
+|---|---|
+| `tp` | listet, was es in dieser Welt gibt: Biome, Flüsse, Gewässer, Mitspieler |
+| `tp <biom>` | nächste Stelle, an der das Biom ganz es selbst ist (hinter dem Übergang, auf 0,5 m genau, bis 20 km). Name oder Bezeichnung: `tp hills`, `tp ebene`. Blick tiefer ins Biom hinein. Ist man schon drin: `Already in ...` |
+| `tp river` | ans Ufer des nächsten Flusses (die Flüsse des Geländes oder ein Gewässer mit Strömung), Blick aufs Wasser |
+| `tp tree [art]` | neben den nächsten Baum (eine Art oder jeder), Blick auf den Stamm ([17](17-Baeume.md)) |
+| `tp water` | ans Ufer des nächsten Gewässers (Becken, Meer, Fluss). Auch `sea`, `pool`, `lake` |
+| `tp <spieler>` | zu einem Mitspieler im LAN (Name, Anfang des Namens oder Nummer aus `tp`): 1,5 m vor ihn, Blick auf ihn; ist dort kein Platz, daneben oder dahinter |
+| `tp spawn` | zum Ursprung der Welt (0, 0) |
+| `tp <x> <z>` | oben auf die Oberfläche an dieser Stelle (cm) |
+| `tp <x> <y> <z>` | genau dorthin (cm), aber nie unter das Gelände |
+| `tp biome <name>`, `tp player <name>` | eindeutig, falls ein Spieler wie ein Biom heißt |
+
+```
+> tp plains
+Teleported to plains (Ebene): 80429 116 72957 cm, 211 m away
+> tp river
+Teleported to river: -2883 36 12328 cm, 127 m away
+> tp tree oak_big
+Teleported to tree oak_big: 12355 140 64697 cm, 12 m away
+> tp B
+Teleported to player B: 1988 127 9195 cm, 72 m away
+```
+
+Im LAN läuft `tp` auf dem eigenen Rechner (der Gastgeber setzt die Figur ab, siehe [11](11-Mehrspieler.md)).
+
 ---
 
 ## Zeichnung
@@ -750,8 +784,9 @@ SVG saved: board.svg
 | `scene showcase` | große Beispielwelt mit allem (siehe unten) |
 | `scene water` | Wasserbecken: Holz, Stahl, Gummi, Floß, Stahlboot, Becher, glühender Stahl ([14](14-Wasser.md)) |
 | `scene river` | Fluss: Kanal mit Strömung, Felsen, Brückenpfeiler, Treibgut ([14](14-Wasser.md)) |
+| `scene trees` | Baumschule: jede Baumart in jeder Form ([17](17-Baeume.md)) |
 | `scene fire` | Feuerstelle: Lagerfeuer, Stahlstab darüber, Aluminium, Kunststoff, Gummi, geleimtes Brett, gefrorener Stahl ([12](12-Waerme-und-Feuer.md)) |
-| `save <file>` | Szene speichern (Textformat `.werkstatt`) |
+| `save <file>` | Szene speichern: Textformat `.werkstatt` (lesbar), mit Endung `.bin` binär wie die Weltdatei (klein, lädt sehr schnell) |
 | `load <file>` | Szene laden (auch Dateien aus der Zeit vor den englischen Befehlen) |
 | `quit` | Programm beenden. Anderer Name: `exit` |
 
@@ -776,6 +811,53 @@ Liste mit Beispielen: [15](15-Hauptmenue-und-Welten.md#menü-per-befehl-fernsteu
 screen        game, world "Insel", build mode
 loading       world: Kollisionsformen berechnen: noch 3 (84 %)
 menu          'menu main|worlds|multiplayer|settings' saves and goes back to that page of the main menu; ...
+```
+
+## Gelände
+
+Nur in Welten vom Typ *normal* (Gelände mit Biomen). Alles dazu: [16-Weltgenerierung.md](16-Weltgenerierung.md).
+Positionen und Längen in cm.
+
+| Befehl | Wirkung |
+|---|---|
+| `terrain` | Seed, Biome, Kacheln (gezeichnet, fertig, fehlend, in Arbeit), Physik-Chunks, geänderte Chunks |
+| `terrain at [x z]` | Höhe, Steigung, Biom, Klimawerte, Scores der Biome und die vier Rasterpunkte an dieser Stelle (ohne Angabe: vor der Kamera) |
+| `terrain biomes` | alle Biome mit Klimabereichen, Höhe, Material |
+| `terrain find <biom>` / `terrain goto <biom>` | nächste Stelle mit diesem Biom / dorthin schauen (hingehen: `tp <biom>`, siehe [Spielfigur](#teleportieren-tp)) |
+| `terrain raise\|lower <x> <z> <radius> <cm>` | Hügel bzw. Mulde, weich auslaufend (gespeichert mit der Welt) |
+| `terrain flatten <x> <z> <radius> [höhe]` | eben machen (ohne Höhe: die Höhe in der Mitte) |
+| `terrain reset` | alle Änderungen am Gelände zurück |
+| `terrain reload` | `assets/biomes.json` neu lesen und in diese Welt übernehmen (zum Ausprobieren von Werten) |
+| `terrain borders on\|off` | Linien an den Biomgrenzen |
+| `terrain map <bild.png> [größe_m] [pixel]` | Karte von oben um die Kamera: Biome, Höhe, Flüsse (blau), Raster je km; Anteil jedes Bioms und der Flüsse |
+
+`terrain at` zeigt auch die Zeile `river` (Abstand zur Flussmitte, Breite, Tiefe, Strömung, Wasser an der Stelle).
+
+```
+terrain goto hills ; terrain at
+terrain raise 0 0 800 300 ; new sphere granite 80 0 1200 0
+terrain map karte.png 20000
+```
+
+## Bäume
+
+Arten in `assets/trees.json`, Wald aus dem Seed. Alles dazu: [17-Baeume.md](17-Baeume.md).
+
+| Befehl | Wirkung |
+|---|---|
+| `trees` | Arten (Höhe, Holz, Gewicht), Baum-Teile, Wald |
+| `tree plant <art> [form] [x z] [größe]` | Baum als festes Teil aufstellen (ohne Ort: vor der Kamera) |
+| `tree nearest [art]` | nächster Baum des Generators |
+| `chop <id> <x y z> [dx dz]` | Axt: ein Hieb schlägt eine Kerbe in Holz (Stelle in cm, Richtung zum Hackenden); im Spiel-Modus **X** und Linksklick |
+| `tp tree [art]` | neben den nächsten Baum |
+| `scene trees` | Baumschule: jede Art in jeder Form nebeneinander |
+| `trees reload` | `assets/trees.json` neu lesen und in die Welt übernehmen |
+
+Fällen: den Stamm durchsägen (`cut <id> y <cm>`, gemessen vom Wurzelende 40 cm im Boden). Der Stumpf bleibt fest, der
+Rest fällt mit der Krone.
+
+```
+tree plant oak_big ; cut selected y 140 ; mode play ; wait 5
 ```
 
 ### Teile der Beispiel-Werkstatt

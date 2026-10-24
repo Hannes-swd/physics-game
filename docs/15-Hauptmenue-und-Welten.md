@@ -19,8 +19,14 @@ Beim Start öffnet sich das **Hauptmenü**, nicht gleich eine Welt. Es ist mit *
   - **Löschen**: nach einer Rückfrage in den **Papierkorb** (lässt sich wiederherstellen)
 - **Doppelklick** öffnet die Welt sofort.
 - Tastatur: Pfeile wählen, **Enter** öffnet, **Entf** löscht.
-- **Neue Welt**: Name und Seed (leer = zufällig). Gleicher Seed bedeutet gleiche Welt; als Seed geht eine Zahl oder
-  ein beliebiger Text. Bis es den Weltgenerator gibt, sind alle Welten flach und leer.
+- **Neue Welt**:
+  - **Name**
+  - **Seed**: steht beim Öffnen schon fest (Zufallszahl), lässt sich ändern (Zahl oder Text, leer = zufällig);
+    **Zufällig** würfelt neu. Gleicher Seed bedeutet gleiche Welt.
+  - **Welttyp**: *Normal* (Gelände mit Biomen) oder *Flach* (Ebene wie bisher)
+  - **Biome** (nur bei *Normal*): *Alle Biome* oder *Nur …* ein einzelnes Biom
+  - Mehr zum Gelände: [16](16-Weltgenerierung.md)
+- In der Liste steht neben jeder Welt ihr Typ („normal, alle Biome“, „normal, nur Ebene“, „flach“).
 
 Im Spiel (Menü *Datei*):
 
@@ -72,9 +78,13 @@ Umbenennen bleibt er gleich.
   worlds\
     Meine Welt\
       world.json                Name, Seed, Generator, Zeiten, Ansicht, Umgebung
-      scene.werkstatt           Teile, Verbindungen, Gewässer (Szenenformat, siehe 07-Engine-Aufbau.md)
+      world.bin                 Teile, Verbindungen, Gewässer, entfernte Bäume (binär, siehe 07-Engine-Aufbau.md);
+                                ältere Welten: scene.werkstatt (Text), wird beim nächsten Speichern zu world.bin
+      trees.json                Kopie der Baumarten, mit denen die Welt erzeugt wird (17-Baeume.md)
+      generator.json            nur Welttyp normal: Kopie von biomes.json, mit der die Welt erzeugt wird
+      regions\r.<x>.<z>.bin     nur Welttyp normal: geänderte Gelände-Chunks (16-Weltgenerierung.md)
       world.json.bak            Stand vor dem letzten Speichern
-      scene.werkstatt.bak
+      world.bin.bak
 ```
 
 **`world.json`:**
@@ -84,7 +94,8 @@ Umbenennen bleibt er gleich.
 | `format` | Aufbau der Datei (1) |
 | `name` | angezeigter Name |
 | `seed`, `seedText` | Seed als Text (64 Bit passen in keine JSON-Zahl) und wie er eingegeben wurde (leer: zufällig gewählt) |
-| `generator`, `generatorVersion` | `flat` 1. Ändert sich später der Generator, bleiben alte Welten bei ihrer Version und sehen gleich aus |
+| `generator`, `generatorVersion` | `normal` (Gelände mit Biomen) oder `flat` (Ebene), Version 1. Ändert sich später der Generator, bleiben alte Welten bei ihrer Version und sehen gleich aus |
+| `biome` | `all` oder die `id` eines Bioms, wenn die Welt nur aus diesem besteht |
 | `created`, `lastPlayed` | Unix-Zeit in Sekunden (`lastPlayed`: beim Öffnen und bei jedem Speichern) |
 | `playTime` | gespielte Zeit in Sekunden |
 | `view` | Kamera im Bau-Modus, Ansicht, Spiel-Modus mit Lage und Blick der Spielfigur |
@@ -109,6 +120,7 @@ man verändert hat; der Rest entsteht aus dem Seed jedes Mal gleich neu.
 | `mouseSensitivity` | 1 | Faktor auf die Mausbewegung im Spiel-Modus (0,2–3) |
 | `fov` | 55 | Sichtfeld in Grad (40–100) |
 | `shadows`, `edges`, `grid` | an | Schatten, Kanten, Raster (auch im Spiel unter *Ansicht*, das wird beim Verlassen übernommen) |
+| `biomeBorders` | an | Linien an den Biomgrenzen (Gelände; auch im Spiel unter *Ansicht → Biomgrenzen*) |
 | `autosaveMinutes` | 5 | automatisch speichern (0 = nie) |
 
 Die Einstellungen gelten, wenn eine Welt geöffnet wird.
@@ -120,7 +132,7 @@ Die Einstellungen gelten, wenn eine Welt geöffnet wird.
 | *(keine)* | Hauptmenü |
 | `--world <Name oder Ordner>` | diese Welt direkt öffnen (ohne Hauptmenü) |
 | `--no-menu` | wie früher: direkt in die Beispiel-Werkstatt |
-| `--menu-shot <bild.png> [main\|worlds\|multiplayer\|settings\|loading]` | Hauptmenü auf dieser Seite öffnen (`loading`: die Ladeseite), Bild speichern, beenden |
+| `--menu-shot <bild.png> [main\|worlds\|new-world\|multiplayer\|settings\|loading]` | Hauptmenü auf dieser Seite öffnen (`new-world`: Weltliste mit offenem Dialog „Neue Welt“, `loading`: die Ladeseite), Bild speichern, beenden |
 
 `--script`, `--shot`, `--play`, `--empty` und `--view` starten wie bisher direkt ohne Hauptmenü (Tests, Fernsteuerung).
 
@@ -144,12 +156,12 @@ bleibt beim Wechsel offen. Befehle, die mitten im Wechsel ankommen, bearbeitet d
 | `menu select <n\|Name>` | Welt auswählen (n = Nummer aus `menu`) |
 | `menu play [n\|Name]` | Welt öffnen (ohne Angabe: die ausgewählte) |
 | `menu lan [n\|Name]` | Welt öffnen und gleich im LAN freigeben |
-| `menu new <Name> [Seed]` | Welt anlegen und auswählen (nicht öffnen) |
+| `menu new <Name> [Seed] [normal\|flat] [all\|<Biom>]` | Welt anlegen und auswählen (nicht öffnen). Nach dem Namen in beliebiger Reihenfolge: Seed, Welttyp (Standard `normal`), Biome (Standard `all`, sonst die `id` eines Bioms). Ohne Seed: zufällig |
 | `menu rename <n\|Name> <neuer Name>` | umbenennen |
 | `menu delete <n\|Name>` | in den Papierkorb |
 | `menu games` | LAN-Spiele im Netz (wechselt auf `multiplayer`, dort wird gesucht) |
 | `menu join <Adresse\|n\|Name>` | einem LAN-Spiel beitreten. Klappt es nicht, ist man wieder im Menü, und `menu` zeigt die Meldung |
-| `menu set <Schlüssel> <Wert>` | `name`, `mouse` (0,2–3), `fov` (40–100), `shadows`/`edges`/`grid` `on\|off`, `autosave` (Minuten, 0 = nie) |
+| `menu set <Schlüssel> <Wert>` | `name`, `mouse` (0,2–3), `fov` (40–100), `shadows`/`edges`/`grid`/`borders` `on\|off`, `autosave` (Minuten, 0 = nie) |
 | `menu close` | offenen Dialog schließen |
 | `menu quit` | Programm beenden |
 | `menu help` | diese Liste |
@@ -171,13 +183,13 @@ Werkstatt.exe --send "menu new Testwelt 4711" "menu play Testwelt" "new box oak 
 
 ```
 > menu new Testwelt 4711
-created world 1 "Testwelt", seed 4711, selected. 'menu play' opens it.
+created world 1 "Testwelt", seed 4711, normal, alle Biome, selected. 'menu play' opens it.
 > menu play Testwelt
 opening world "Testwelt". The game window opens; then all game commands work ('world', 'status', 'help'). 'world menu' comes back here.
 > new box oak 40 40 40
 Created: #1  Block  [oak]  40.0 x 40.0 x 40.0 cm  46.080 kg  pos -0.0 20.0 -50.0 cm  free
 > world save
-world saved: ...\worlds\Testwelt\scene.werkstatt
+world saved: ...\worlds\Testwelt\world.bin
 > world menu
 back to the main menu
 > menu

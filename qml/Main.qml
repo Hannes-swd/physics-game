@@ -21,6 +21,7 @@ ApplicationWindow {
         const op = immediate ? StackView.Immediate : StackView.Transition
         stack.pop(null, op)
         if (name === "worlds") stack.push(worldsPage, {}, op)
+        else if (name === "new-world") stack.push(worldsPage, {}, op).openCreate()  // Weltliste mit "Neue Welt"
         else if (name === "multiplayer") stack.push(multiplayerPage, {}, op)
         else if (name === "settings") stack.push(settingsPage, {}, op)
     }

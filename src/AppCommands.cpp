@@ -9,10 +9,35 @@
 #include <cstdlib>
 
 #include "Materials.h"
+#include "Terrain.h"
+#include "Trees.h"
+#include "WorldGen.h"
 
 namespace {
 
 constexpr double kReach = 3.5;  // so weit kann die Figur greifen (m)
+
+// Nächster Punkt (Raster "step" in quadratischen Ringen um from), für den pred gilt; sucht weiter bis zum Ring, der
+// nichts Näheres mehr enthalten kann. false: keiner bis maxDist
+template <class Pred>
+bool nearestSpot(const glm::dvec2& from, double step, double maxDist, Pred pred, glm::dvec2& out) {
+    const int rings = (int)std::ceil(maxDist / step);
+    int last = rings;
+    double best = maxDist * maxDist;
+    bool found = false;
+    for (int ring = 1; ring <= last; ++ring)
+        for (int j = -ring; j <= ring; ++j)
+            for (int i = -ring; i <= ring; i += (std::abs(j) == ring ? 1 : 2 * ring)) {
+                const glm::dvec2 p = from + glm::dvec2(i, j) * step;
+                const double d2 = glm::dot(p - from, p - from);
+                if (d2 >= best || !pred(p)) continue;
+                best = d2;
+                out = p;
+                found = true;
+                last = std::min(rings, (int)std::floor(std::sqrt(best) / step));
+            }
+    return found;
+}
 
 bool parseNum(const std::vector<std::string>& t, size_t i, double& v) {
     if (i >= t.size()) return false;
@@ -347,11 +372,287 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
     return "Error: unknown. player [position|look|turn|walk|run|stop|jump|grab|release|throw|view]";
 }
 
+// ============================================================================ Teleportieren ("tp")
+
+double App::standHeight(double x, double z, double fromY) {
+    const double ground = world_->groundHeight(x, z);
+    double y = ground;
+    RayHit h;
+    if (world_->raycast(glm::dvec3(x, std::max(fromY, ground + 0.5), z), glm::dvec3(0, -1, 0), h) && std::isfinite(h.point.y))
+        y = std::max(y, h.point.y);
+    return y;
+}
+
+std::string App::teleportTo(glm::dvec3 feet, const glm::dvec3& look, double camDist) {
+    glm::dvec3 dir = look - feet;
+    dir.y = 0;
+    const bool hasDir = glm::length(dir) > 1e-6;
+    if (!play_) {
+        // Bau-Modus: die Kamera schaut von schräg oben hin. Ihr Ziel liegt 2,5 m voraus, so setzt Tab die Figur genau
+        // auf feet (enterPlay)
+        const glm::dvec3 f = hasDir ? glm::normalize(dir) : glm::normalize(glm::dvec3(-std::sin(orbitYaw_), 0, -std::cos(orbitYaw_)));
+        orbitTarget_ = feet + f * 2.5 + glm::dvec3(0, 0.9, 0);
+        orbitYaw_ = std::atan2(-f.x, -f.z);
+        orbitPitch_ = std::clamp(orbitPitch_, 0.2, 0.9);
+        orbitDist_ = camDist;
+        return "camera";
+    }
+    hand_.grabbed = 0;  // Getragenes bleibt hier (die Hand zöge es sonst quer durch die Welt)
+    autoMoveTime_ = 0;
+    eyeLag_ = 0;
+    if (netClient()) {  // die Figur steht beim Gastgeber: dort absetzen lassen (wie beim Wechsel in den Spiel-Modus)
+        netSpawn_ = true;
+        netSpawnFeet_ = netFeet_ = netFeetTarget_ = feet;
+        netSpawnUntil_ = time_ + 2.0;
+    } else {
+        feet.y = std::max(feet.y, world_->prepareGround(feet) + 0.05);  // Gelände: Physik dort schon jetzt
+        physics_.setCharacterPosition(feet);
+        lastFeetY_ = feet.y;
+    }
+    if (hasDir) lookAtPoint(look);
+    return "player";
+}
+
+std::string App::teleportCommand(const std::vector<std::string>& t) {
+    Terrain* tr = world_->terrain();
+    const glm::dvec3 here = !play_ ? orbitTarget_ : netClient() ? netFeet_ : physics_.characterPosition();
+    const glm::dvec2 here2(here.x, here.z);
+    const std::string w = arg(t, 1);
+    std::string rest;  // alles nach "tp" bzw. "tp player" (Namen mit Leerzeichen)
+    for (size_t i = (w == "player" || w == "biome") ? 2 : 1; i < t.size(); ++i) rest += (rest.empty() ? "" : " ") + normalizeWord(t[i]);
+    auto cm = [](const glm::dvec3& p) { return fmtNum(p.x * 100, 0) + " " + fmtNum(p.y * 100, 0) + " " + fmtNum(p.z * 100, 0); };
+    auto done = [&](const glm::dvec3& feet, const glm::dvec3& look, double camDist, const std::string& what) {
+        const std::string who = teleportTo(feet, look, camDist);
+        return std::string(who == "player" ? "Teleported to " : "Camera moved to ") + what + ": " + cm(feet) + " cm, " +
+               fmtNum(glm::length(glm::dvec2(feet.x, feet.z) - here2), 0) + " m away" +
+               (who == "camera" ? " (build mode: Tab puts the player there)" : "");
+    };
+    auto onTop = [&](double x, double z) { return glm::dvec3(x, standHeight(x, z, world_->groundHeight(x, z) + 100.0) + 0.05, z); };
+
+    // Ziele: Biome (Name oder Bezeichnung), Mitspieler (Name, Anfang des Namens oder Nummer)
+    auto biomeIndex = [&](const std::string& s) -> int {
+        if (!tr || s.empty()) return -1;
+        const auto& bs = tr->gen().config().biomes;
+        for (size_t i = 0; i < bs.size(); ++i)
+            if (normalizeWord(bs[i].id) == s || normalizeWord(bs[i].label) == s) return (int)i;
+        return -1;
+    };
+    auto biomeList = [&]() {
+        std::string s;
+        if (tr)
+            for (const auto& b : tr->gen().config().biomes) s += (s.empty() ? "" : ", ") + b.id + " (" + b.label + ")";
+        return s.empty() ? std::string("none (this world is flat)") : s;
+    };
+    const uint32_t self = netClient() ? netSelfId_ : 1;
+    auto others = [&]() {
+        std::vector<const NetPlayer*> v;
+        if (netRole_ != NetRole::Off)
+            for (const NetPlayer& p : netPlayers_)
+                if (p.id != self) v.push_back(&p);
+        return v;
+    };
+    auto findPlayer = [&](const std::string& s) -> const NetPlayer* {
+        if (s.empty()) return nullptr;
+        const NetPlayer* prefix = nullptr;
+        int prefixes = 0;
+        for (const NetPlayer* p : others()) {
+            const std::string n = normalizeWord(p->name);
+            if (n == s || std::to_string(p->id) == s) return p;
+            if (n.compare(0, s.size(), s) == 0) {
+                prefix = p;
+                ++prefixes;
+            }
+        }
+        return prefixes == 1 ? prefix : nullptr;
+    };
+    const bool riverWord = w == "river" || w == "fluss";
+    const bool waterWord = riverWord || w == "water" || w == "wasser" || w == "sea" || w == "meer" || w == "lake" || w == "see" ||
+                           w == "pool" || w == "becken";
+
+    if (w.empty() || w == "list" || w == "help") {
+        int rivers = 0;
+        bool terrainRivers = false;
+        for (const WaterBody& b : world_->waters())
+            if (b.generated()) terrainRivers = true;
+            else if (b.river()) ++rivers;
+        std::string riverText = terrainRivers ? "the rivers of the terrain" : "";
+        if (rivers) riverText += (riverText.empty() ? "" : " + ") + std::to_string(rivers) + " water bod" + (rivers == 1 ? "y" : "ies") + " with a current";
+        std::string players;
+        for (const NetPlayer* p : others()) players += (players.empty() ? "" : ", ") + p->name + " (" + std::to_string(p->id) + ")";
+        return "tp <target>   moves the player (build mode: the camera) to the nearest such spot, always onto the surface\n"
+               "biomes        " + biomeList() + "\n"
+               "river         " + (riverText.empty() ? std::string("none") : riverText) + "\n"
+               "water         " + std::to_string(world_->waters().size()) + " body/bodies (pools, sea, rivers)\n"
+               "players       " + (players.empty() ? std::string(netRole_ == NetRole::Off ? "none (not in a LAN game)" : "none") : players) + "\n"
+               "also          tp spawn | tp <x> <z> | tp <x> <y> <z>   (cm) | tp biome <name> | tp player <name>";
+    }
+
+    // Koordinaten (cm): x z = oben auf der Oberfläche, x y z = genau dort (aber nie unter dem Gelände)
+    double x, y, z;
+    if (parseNum(t, 1, x) && parseNum(t, 2, y)) {
+        glm::dvec3 feet;
+        if (parseNum(t, 3, z)) {
+            feet = glm::dvec3(x, y, z) / 100.0;
+            feet.y = std::max(feet.y, world_->groundHeight(feet.x, feet.z) + 0.05);
+        } else {
+            feet = onTop(x / 100.0, y / 100.0);
+        }
+        return done(feet, feet, 8.0, "position");
+    }
+    if (w == "spawn" || w == "start") return done(onTop(0, 0), onTop(0, 0), 8.0, "spawn");
+
+    // Baum: neben den nächsten (eine Art oder jeder), Blick auf den Stamm
+    if (w == "tree" || w == "baum") {
+        Forest* f = world_->forest();
+        if (!f || !f->any()) return "Error: this world has no forest (flat world, or made before trees)";
+        int type = -1;
+        if (t.size() > 2) {
+            const TreeLibrary& lib = f->library();
+            for (int k = 0; k < lib.types(); ++k)
+                if (normalizeWord(lib.config().types[(size_t)k].id) == arg(t, 2) || normalizeWord(lib.config().types[(size_t)k].label) == arg(t, 2)) type = k;
+            if (type < 0) return "Error: tp tree [type]   ('trees' lists the types)";
+        }
+        TreeSpot s;
+        if (!f->nearest(here2, 5000.0, type, s)) return "Error: no tree within 5 km";
+        glm::dvec2 away = here2 - glm::dvec2(s.pos.x, s.pos.z);
+        away = glm::length(away) > 1e-6 ? glm::normalize(away) : glm::dvec2(1, 0);
+        const glm::dvec2 at = glm::dvec2(s.pos.x, s.pos.z) + away * (2.0 + f->library().config().types[(size_t)s.type].diameter * s.scale);
+        const glm::dvec3 feet(at.x, world_->groundHeight(at.x, at.y) + 0.05, at.y);
+        return done(feet, glm::dvec3(s.pos.x, feet.y + 1.0, s.pos.z), 6.0, "tree " + f->library().config().types[(size_t)s.type].id);
+    }
+
+    // Biom: die nächste Stelle, an der es ganz es selbst ist; man schaut tiefer hinein
+    const int bArg = biomeIndex(w == "biome" ? rest : w);
+    if (w == "biome" || (bArg >= 0 && !waterWord)) {
+        if (!tr) return "Error: this world is flat (no terrain, no biomes)";
+        if (bArg < 0) return "Error: tp <biome>   (biomes: " + biomeList() + ")";
+        const GenConfig& cfg = tr->gen().config();
+        const GenConfig::Biome& bio = cfg.biomes[(size_t)bArg];
+        const std::string what = bio.id + " (" + bio.label + ")";
+        glm::dvec2 f;
+        if (!tr->findBiome(bArg, here2, 20000.0, f)) {
+            const int single = tr->gen().singleBiome();
+            return "Error: no " + bio.id + " within 20 km" +
+                   (single >= 0 ? " (this world has only " + cfg.biomes[(size_t)single].id + ")" : std::string());
+        }
+        if (f == here2) return "Already in " + what + " here";
+        const glm::dvec3 feet = onTop(f.x, f.y);
+        const glm::dvec2 d = glm::normalize(f - here2);
+        return done(feet, feet + glm::dvec3(d.x * 20.0, 1.65, d.y * 20.0), 25.0, what);
+    }
+
+    // Gewässer (river: nur mit Strömung): auf das Ufer an der nächsten Stelle, Blick aufs Wasser
+    if (waterWord) {
+        const WaterBody* best = nullptr;
+        double bestD = 1e300;
+        glm::dvec2 shore(0), into(0, 1);  // Uferlinie und Richtung ins Wasser
+        for (const WaterBody& b : world_->waters()) {
+            if (riverWord && !b.river()) continue;
+            double d;
+            glm::dvec2 s, n;
+            if (b.shape) {  // Flüsse des Geländes: nächste Stelle mit Wasser, dann zurück bis zum Ufer
+                glm::dvec2 f;
+                if (!tr || !tr->findRiver(here2, 5000.0, f)) continue;
+                if (f == here2) {
+                    d = 0;
+                    s = here2;
+                    n = glm::dvec2(0, 1);
+                } else {
+                    glm::dvec2 a = here2, c = f;
+                    for (int k = 0; k < 24; ++k) {
+                        const glm::dvec2 m = (a + c) * 0.5;
+                        (b.covers(m.x, m.y) ? c : a) = m;
+                    }
+                    s = c;
+                    n = glm::normalize(f - here2);
+                    d = glm::length(s - here2);
+                }
+            } else if (!b.sea) {
+                const glm::dvec2 lo(b.lo.x, b.lo.z), hi(b.hi.x, b.hi.z);
+                const glm::dvec2 q = glm::clamp(here2, lo, hi);
+                d = glm::length(here2 - q);
+                if (d < 1e-6) {  // schon über dem Wasser
+                    d = 0;
+                    s = here2;
+                    n = glm::dvec2(0, 1);
+                } else {
+                    s = q;
+                    n = (q - here2) / d;
+                }
+            } else if (b.covers(here2.x, here2.y)) {
+                d = 0;
+                s = here2;
+                n = glm::dvec2(0, 1);
+            } else {
+                glm::dvec2 f;
+                if (!nearestSpot(here2, 8.0, 3000.0, [&](const glm::dvec2& p) { return b.covers(p.x, p.y); }, f)) continue;
+                glm::dvec2 a = here2, c = f;  // Uferlinie zwischen trocken (a) und nass (c)
+                for (int k = 0; k < 24; ++k) {
+                    const glm::dvec2 m = (a + c) * 0.5;
+                    (b.covers(m.x, m.y) ? c : a) = m;
+                }
+                s = c;
+                n = glm::normalize(f - here2);
+                d = glm::length(s - here2);
+            }
+            if (d < bestD) {
+                bestD = d;
+                best = &b;
+                shore = s;
+                into = n;
+            }
+        }
+        const std::string kind = riverWord ? "river" : "water";
+        if (!best)
+            return riverWord ? "Error: no river within 5 km (flat worlds, deserts and worlds made before rivers have none; 'scene river' builds a test river)"
+                             : "Error: no water in this world ('water pool ...', 'water sea ...', 'scene water')";
+        const std::string what = best->generated() ? std::string("river") : kind + " #" + std::to_string(best->id) + (best->sea ? " (sea)" : "");
+        if (bestD < 1.0) return "Already at " + what + " here";
+        const glm::dvec2 bank = shore - into * 0.7;
+        const double top = std::max(world_->groundHeight(bank.x, bank.y), best->level()) + 30.0;
+        const glm::dvec3 feet(bank.x, standHeight(bank.x, bank.y, top) + 0.05, bank.y);
+        const glm::dvec3 look(shore.x + into.x * 2.0, best->level(), shore.y + into.y * 2.0);
+        return done(feet, look, 6.0, what);
+    }
+
+    // Mitspieler: neben ihn (vor ihm, sonst rechts, links, dahinter), Blick auf ihn
+    if (const NetPlayer* p = findPlayer(rest)) {
+        const glm::dvec3 base = p->play ? p->feet : glm::dvec3(p->camEye.x, standHeight(p->camEye.x, p->camEye.z, p->camEye.y), p->camEye.z);
+        const glm::dvec3 fwd(-std::sin(p->yaw), 0, -std::cos(p->yaw)), right(std::cos(p->yaw), 0, -std::sin(p->yaw));
+        glm::dvec3 feet(0), first(0);
+        bool ok = false;
+        for (const glm::dvec3& off : {fwd * 1.5, right * 1.5, -right * 1.5, -fwd * 1.5, fwd * 3.0}) {
+            const glm::dvec3 c = base + off;
+            const double top = standHeight(c.x, c.z, base.y + 1.2);
+            const glm::dvec3 at(c.x, top + 0.05, c.z);
+            if (off == fwd * 1.5) first = at;
+            RayHit h;  // Platz für die Figur: nicht zu hoch oder tief, darüber frei
+            if (top > base.y + 0.6 || top < base.y - 2.0) continue;
+            if (world_->raycast(at + glm::dvec3(0, 0.05, 0), glm::dvec3(0, 1, 0), h) && h.t < 1.8) continue;
+            feet = at;
+            ok = true;
+            break;
+        }
+        if (!ok) feet = first;
+        return done(feet, base + glm::dvec3(0, 1.6, 0), 5.0, "player " + p->name);
+    }
+    if (w == "player") return "Error: tp player <name|number>   (players: 'tp')";
+    return "Error: tp <biome> | tp river | tp water | tp <player> | tp spawn | tp <x> <z> | tp <x> <y> <z>   (cm; 'tp' lists the targets)";
+}
+
 // ============================================================================ App-Befehle
 
 bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, std::string& out) {
     if (cmd == "player") {
         out = playerCommand(t);
+        return true;
+    }
+    if ((cmd == "trees" || cmd == "tree") && arg(t, 1) == "reload") {
+        out = reloadTrees();
+        return true;
+    }
+    if (cmd == "tp" || cmd == "teleport") {
+        out = teleportCommand(t);
         return true;
     }
     if (cmd == "lan") {
@@ -362,6 +663,7 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         out = worldCommand(t);
         return true;
     }
+    if (cmd == "terrain" && terrainAppCommand(t, out)) return true;  // borders, goto, reload (der Rest: Commands.cpp)
     if (cmd == "menu") {
         out = menuCommandInGame(t);
         return true;

@@ -502,3 +502,49 @@ bool World::bendPart(uint32_t id, int a, double at, double angleDeg, double radi
                 fmtNum(L * 1000, 1) + " mm (thickness " + fmtNum(T * 1000, 1) + " mm)";
     return applyResult(*o, std::move(out), nullptr, err);
 }
+
+// ============================================================================ Axt
+
+bool World::chop(uint32_t id, const glm::dvec3& p, glm::dvec3 toward, double* removed, std::string* err) {
+    Object* o = solidPart(*this, id, err, "chopped");
+    if (!o) return false;
+    const Material& m = materials()[(size_t)o->material];
+    if (m.cls != MaterialClass::Wood) {
+        if (err) *err = "the axe only bites into wood (" + std::string(m.name) + " is too hard or too soft)";
+        return false;
+    }
+    toward.y = 0;
+    toward = glm::length(toward) > 1e-6 ? glm::normalize(toward) : glm::dvec3(1, 0, 0);
+    // die Klinge trifft dort, wo das Holz in Schlagrichtung jetzt ist (in einer Kerbe: ihr Grund)
+    glm::dvec3 hitP = p;
+    {
+        RayHit h;
+        const uint32_t self = o->id;
+        if (raycast(p + toward * 0.6 + glm::dvec3(0, 1e-4, 0), -toward, h) && h.obj && h.obj->id == self && h.t < 1.2) hitP = h.point;
+        o = find(self);
+        if (!o) return false;
+    }
+    const glm::dvec3& pt = hitP;
+    // Keil: Schneide innen, waagrecht quer zum Hieb; öffnet sich nach außen. Leichtes Holz gibt mehr nach
+    const double depth = std::clamp(0.06 - m.density * 0.00003, 0.025, 0.06), half = 0.05, w = 0.3, out = 0.3;
+    const glm::dvec3 up(0, 1, 0), side = glm::normalize(glm::cross(up, toward));
+    const glm::dvec3 edge = pt - toward * depth, outer = pt + toward * out;
+    const double hh = half * (depth + out) / depth;
+    std::vector<glm::dvec3> pts = {edge + side * w, edge - side * w};
+    for (double a : {-1.0, 1.0})
+        for (double b : {-1.0, 1.0}) pts.push_back(outer + side * (w * a) + up * (hh * b));
+    solid::Piece wedge = solid::hullPiece(pts);
+    if (wedge.faces.empty()) return false;
+    solid::transform(wedge, glm::inverse(frameOf(*o)));
+    double rem = 0;
+    solid::Solid res = solid::subtract(o->solid, solid::planesOf(wedge), &rem);
+    if (rem < 1e-9) {
+        if (err) *err = "the axe misses (aim at the part)";
+        return false;
+    }
+    if (removed) *removed = rem;
+    fellHint_ = -toward;  // fällt der Baum, dann vom Schlagenden weg
+    const bool ok = applyResult(*o, std::move(res), nullptr, err);
+    fellHint_ = glm::dvec3(0);
+    return ok;
+}

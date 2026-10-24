@@ -162,6 +162,7 @@ vec3 waterView(vec3 color, vec3 a, vec3 b, vec2 waveAt) {
     for (int w = 0; w < n; ++w) {
         vec3 lo, hi;
         waterBox(w, waveAt, lo, hi);
+        if (lo.y >= hi.y) continue;  // Grund über dem Spiegel (Land, Ufer): hier kein Wasser
         // Strecke im Quader (Slab-Methode)
         vec3 inv = 1.0 / mix(d, vec3(1e-9), lessThan(abs(d), vec3(1e-9)));
         vec3 t0 = (lo - a) * inv, t1 = (hi - a) * inv;

@@ -21,6 +21,7 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/PlaneShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -695,6 +696,32 @@ BodyHandle Physics::createGroundPlane(double y, int material, float restitution)
 }
 
 BodyHandle Physics::groundBody() const { return m->ground; }
+
+BodyHandle Physics::createHeightField(const std::vector<float>& heights, int count, const glm::dvec2& corner, double cell, int material) {
+    if (count < 4 || (count & 1) || heights.size() != (size_t)count * count) return kNoBody;
+    // Höhen relativ zur niedrigsten (Form in float), der Körper steht in doppelter Genauigkeit an der Ecke
+    const float base = *std::min_element(heights.begin(), heights.end());
+    std::vector<float> rel(heights.size());
+    for (size_t i = 0; i < heights.size(); ++i) rel[i] = heights[i] - base;
+    HeightFieldShapeSettings hs(rel.data(), Vec3::sZero(), Vec3((float)cell, 1.0f, (float)cell), (uint32)count);
+    hs.mBlockSize = 2;
+    hs.mBitsPerSample = 8;
+    ShapeSettings::ShapeResult r = hs.Create();
+    if (!r.IsValid()) {
+        std::fprintf(stderr, "terrain: height field rejected: %s\n", r.GetError().c_str());
+        return kNoBody;
+    }
+    BodyCreationSettings bcs(r.Get(), RVec3(Real(corner.x), Real(base), Real(corner.y)), Quat::sIdentity(), EMotionType::Static, Layers::STATIC);
+    const Material& mat = materials()[std::clamp(material, 0, (int)materials().size() - 1)];
+    bcs.mFriction = mat.frictionKinetic;
+    bcs.mRestitution = mat.restitution;
+    bcs.mUserData = packUser(0, material);  // wie der Boden: kein Teil (Nummer 0), Reibung nach Material
+    BodyInterface& bi = m->system->GetBodyInterface();
+    Body* body = bi.CreateBody(bcs);
+    if (!body) return kNoBody;
+    bi.AddBody(body->GetID(), EActivation::DontActivate);
+    return body->GetID().GetIndexAndSequenceNumber();
+}
 
 void Physics::destroyBody(BodyHandle h) {
     if (h == kNoBody) return;

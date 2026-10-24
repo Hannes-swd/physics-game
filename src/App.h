@@ -94,6 +94,11 @@ struct Peer {
     std::unordered_map<uint32_t, Sent> sent;
     std::string sentJoints, sentLoads;
     std::unordered_map<uint32_t, uint64_t> sentGround;  // Grund je Meer: zuletzt geschickter Stand (GroundMap::rev)
+    bool terrainSent = false;           // Gelände: zuletzt geschickter Generator und Stand der Änderungen
+    const void* sentTerrainGen = nullptr;
+    uint64_t sentTerrainRev = 0;
+    const void* sentTreeLib = nullptr;  // Bäume: zuletzt geschickte Arten und Zahl der entfernten
+    size_t sentTaken = 0;
 };
 
 struct AppOptions {
@@ -188,6 +193,10 @@ private:
 
     // AppCommands.cpp (Live-Steuerung per Befehl)
     std::string playerCommand(const std::vector<std::string>& args);
+    std::string teleportCommand(const std::vector<std::string>& args);  // Befehl "tp": Biom, Fluss, Wasser, Mitspieler, Stelle
+    // Spieler (Spiel-Modus) bzw. Baukamera an die Stelle feet (Füße), Blick auf look. "player" oder "camera"
+    std::string teleportTo(glm::dvec3 feet, const glm::dvec3& look, double camDist);
+    double standHeight(double x, double z, double fromY);  // oberste Fläche (Teile oder Boden) unter x, z, ab fromY abwärts
     void lookAtPoint(const glm::dvec3& p);
     bool grabObject(uint32_t id, double dist, const glm::dvec3& localPoint);
     void throwHeld(double impulse);
@@ -226,6 +235,9 @@ private:
 
     // AppWater.cpp (Gewässer für die Shader, Spritzer und Dampf, Schwimmen)
     void addWaterData(FrameDesc& fd);
+    // AppTrees.cpp: Bäume des Generators (Vorlagen), Krone eines Baum-Teils (false: hat keine)
+    void addTrees(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
+    bool addCrown(FrameDesc& fd, const Object& o, const glm::mat4& model, bool low, bool shadow);
     struct GroundWindow {  // Meer: Grund um die Kamera für die Shader, nur neu, wenn die Kamera weit wandert oder er sich ändert
         uint32_t water = 0;
         uint64_t rev = 0;
@@ -261,6 +273,9 @@ private:
     bool openWorld(std::string* err);
     bool saveWorld(bool quiet, bool evenAsClient = false);  // evenAsClient: kurz vor dem Beitritt zu einem LAN-Spiel
     void updateWorldSession(float dt);
+    void updateTerrain();  // Gelände je Bild: Kacheln um die Kamera, Physik um Teile und Spielfiguren
+    bool terrainAppCommand(const std::vector<std::string>& args, std::string& out);  // terrain borders|goto|reload
+    std::string reloadTrees();  // "trees reload": assets/trees.json in die offene Welt übernehmen
     void endWorldSession();
     void applySettings();
     void storeSettings();
@@ -365,6 +380,9 @@ private:
     float planeMm_ = 1.0f;                 // Hobeln: Abnahme je Klick
     Preview preview_;
     bool showEdges_ = true, showShadows_ = true, showGrid_ = true;
+    bool showBiomeBorders_ = true;  // Gelände: Linien an den Biomgrenzen
+    size_t terrainDrawn_ = 0;       // Geländekacheln im letzten Bild
+    size_t treesDrawn_ = 0;         // Bäume des Generators im letzten Bild (ohne die Teile)
 
     // Wärme-Werkzeug (Bau-Modus: Werkzeug H, Spiel-Modus: F halten) und Effekte
     int heatTool_ = 1;                     // Index in heatTools()
@@ -390,6 +408,8 @@ private:
     bool prevLmb_ = false, prevRmb_ = false;
     glm::dvec2 autoMove_{0};      // per Befehl: x = vorwärts, y = rechts
     double autoMoveTime_ = 0;
+    bool axe_ = false;            // Spiel-Modus: Axt in der Hand (X), Linksklick hackt
+    double axeReady_ = 0;         // nächster Hieb frühestens dann (Spielzeit)
     bool autoRun_ = false, jumpRequest_ = false;
     double playYaw_ = 0, playPitch_ = 0;
     Hand hand_;
@@ -518,6 +538,7 @@ private:
     glm::vec3 netWish_{0};
     bool netJump_ = false, netSpawn_ = false;
     glm::dvec3 netSpawnFeet_{0};
+    double netSpawnUntil_ = 0;  // tp: bis dahin gilt eine Lage vom Gastgeber weit weg von netSpawnFeet_ als veraltet
     glm::dvec3 netFeet_{0}, netFeetTarget_{0};  // eigene Figur laut Gastgeber (geglättet)
     bool netUndoPending_ = false;
     // Selbst verschobene Teile: Lagen vom Gastgeber kurz zurückhalten (sie sind älter als die eigene Bewegung)
@@ -551,6 +572,7 @@ private:
         double since = 0;                 // Spielzeit beim Start
         float fade = 0;                   // größer 0: blendet aus (Sekunden übrig), Eingaben gehen schon durch
         size_t jobsAtStart = 0;           // Kollisionsformen im Hintergrund, als das Laden fertig war
+        size_t tilesAtStart = 0;          // fehlende Geländekacheln (höchster Stand, für den Balken)
         double lastFrame = -1;            // glfwGetTime des letzten Ladebilds (während synchroner Arbeit)
     } loading_;
     bool loadingBlocks() const { return loading_.kind != LoadKind::None && loading_.fade <= 0; }

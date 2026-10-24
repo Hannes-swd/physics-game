@@ -16,6 +16,9 @@
 #include "Materials.h"
 #include "ObjLoader.h"
 #include "Jobs.h"
+#include "Terrain.h"
+#include "Trees.h"
+#include "WorldGen.h"
 #include "Profile.h"
 
 namespace {
@@ -630,11 +633,14 @@ glm::dvec3 World::findFreeSpot(const glm::dvec3& half, const glm::dvec3& ref) co
             for (int j = -ring; j <= ring; ++j) {
                 if (std::max(std::abs(i), std::abs(j)) != ring) continue;
                 glm::dvec3 c(ref.x + i * step, half.y, ref.z + j * step);
+                // Gelände: auf den höchsten Punkt darunter (das Teil steckt nicht im Hang)
+                const double base = terrain_ ? terrain_->maxHeightUnder(c.x - half.x, c.z - half.z, c.x + half.x, c.z + half.z) : 0.0;
+                c.y = base + half.y;
                 bool free = true;
                 for (auto& o : objects_) {
                     glm::dvec3 mn, mx;
                     worldBounds(*o, mn, mx);
-                    if (mn.y > half.y * 2 + 0.01) continue;
+                    if (mn.y > base + half.y * 2 + 0.01) continue;
                     if (c.x + half.x + 0.02 > mn.x && c.x - half.x - 0.02 < mx.x && c.z + half.z + 0.02 > mn.z &&
                         c.z - half.z - 0.02 < mx.z) {
                         free = false;
@@ -644,7 +650,7 @@ glm::dvec3 World::findFreeSpot(const glm::dvec3& half, const glm::dvec3& ref) co
                 if (free) return c;
             }
     }
-    return glm::dvec3(ref.x, half.y, ref.z);
+    return glm::dvec3(ref.x, groundHeight(ref.x, ref.z) + half.y, ref.z);
 }
 
 // ============================================================================ Zugriff
@@ -679,6 +685,7 @@ void World::remove(uint32_t id) {
         if (joints_[k]->a == id || joints_[k]->b == id) removeJoint(joints_[k]->id);
     for (size_t i = 0; i < objects_.size(); ++i)
         if (objects_[i]->id == id) {
+            if (objects_[i]->treeKey) treesTaken_.insert(objects_[i]->treeKey);  // Baum des Generators weg: wächst nicht nach
             releaseAll(*objects_[i]);
             objects_.erase(objects_.begin() + i);
             grid_.remove(id);
@@ -706,7 +713,7 @@ void World::clear() {
     fires_.clear();
     heatSources_.clear();
     frictionHeat_.clear();
-    waters_.clear();
+    waters_.erase(std::remove_if(waters_.begin(), waters_.end(), [](const WaterBody& b) { return !b.generated(); }), waters_.end());
     nextWaterId_ = 1;
     flowGrids_.clear();
     splashes_.clear();
@@ -722,6 +729,7 @@ Object* World::duplicate(uint32_t id, const glm::dvec3& offset) {
     o->name = nextName(src->name + " copy");
     o->pos += offset;
     o->seed = randomSeed();
+    o->treeKey = 0;  // eine Kopie ist kein Baum des Generators
     lastCreated_ = o->id;
     return insert(std::move(o));
 }
@@ -833,6 +841,33 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     const float seed = o.seed;
     const HeatGrid heat = o.heat;  // Temperatur gilt im alten Koordinatensystem des Teils
     const MeltForm meltForm = o.meltForm;
+    // Baum: das Stück am Stammfuß bleibt durch die Wurzel fest (der Rest fällt), das Stück an der Krone trägt sie weiter
+    const std::string treeType = o.treeType;
+    const int treeVariant = o.treeVariant;
+    const float treeScale = o.treeScale;
+    const glm::dvec3 treeOrigin = o.treeOrigin;
+    const bool isTree = !o.treeType.empty(), wasRooted = o.rooted && o.fixed;
+    int rootPiece = -1, crownPiece = -1;
+    if (isTree) {
+        glm::dvec3 anchor = o.treeOrigin;
+        const TreeLibrary& lib = trees();
+        if (const int ti = lib.find(o.treeType); ti >= 0) anchor += lib.model(ti, o.treeVariant).crownAnchor * (double)o.treeScale;
+        const glm::dvec3 root = o.treeOrigin + glm::dvec3(0, 0.05, 0);
+        double bestRoot = 1e300, bestCrown = 1e300;
+        for (size_t i = 0; i < parts.size(); ++i) {
+            glm::dvec3 mn, mx;
+            solid::bounds(parts[i], mn, mx);
+            const double dr = glm::length(glm::clamp(root, mn, mx) - root), dc = glm::length(glm::clamp(anchor, mn, mx) - anchor);
+            if (o.rooted && dr < bestRoot) {
+                bestRoot = dr;
+                rootPiece = (int)i;
+            }
+            if (o.crown && dc < bestCrown) {
+                bestCrown = dc;
+                crownPiece = (int)i;
+            }
+        }
+    }
 
     // größtes Stück bleibt das ursprüngliche Teil
     glm::dvec3 com;
@@ -843,6 +878,11 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     o.pos = framePos + frameRot * com;
     o.edits = edits;
     o.heat.origin -= com;
+    o.treeOrigin -= com;
+    if (isTree) {
+        o.rooted = rootPiece == 0;
+        o.crown = crownPiece == 0;
+    }
     for (auto& j : joints_) {  // Anker liegen relativ zum (verschobenen) Schwerpunkt
         if (j->a == id) j->anchorA -= com;
         if (j->b == id) j->anchorB -= com;
@@ -851,9 +891,34 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     const int lub = o.lubricant;
     rebuildGeometry(o);
     rebuildBody(o);
+    // Ein abgesägtes Stück eines stehenden Baums fällt: Anstoß zum Kippen in Richtung seiner Neigung (ein gerader Stamm
+    // stünde sonst genau auf dem Stumpf). Ohne Neigung nach der Maserung des Baums (gleich bei jedem Rechner)
+    auto topple = [&](Object& p) {
+        if (p.body == kNoBody) return;
+        const glm::dvec3 root = framePos + frameRot * treeOrigin;
+        glm::dvec3 lean = p.pos - root;
+        lean.y = 0;
+        if (glm::length(fellHint_) > 0.5) lean = fellHint_;  // Axt: vom Schlagenden weg
+        if (glm::length(lean) < 0.03) lean = frameRot * glm::dvec3(std::cos(seed * 6.2832), 0, std::sin(seed * 6.2832));
+        const glm::dvec3 axis = glm::normalize(glm::cross(glm::dvec3(0, 1, 0), glm::normalize(lean)));
+        // Axt: kräftiger, sonst rutscht er über die schräge Kerbe zum Schlagenden hin (so fällt ein echter Baum)
+        const double spin = glm::length(fellHint_) > 0.5 ? 0.8 : 0.25;
+        if (simulating_) {
+            physics_.setVelocity(p.body, glm::vec3(0), glm::vec3(axis * spin));
+            physics_.activate(p.body);
+        } else {
+            p.startSpin = glm::vec3(axis * spin);  // Bau-Modus: kippt, sobald die Physik läuft
+        }
+    };
+    if (wasRooted && rootPiece != 0) {  // der Stammfuß ist ein anderes Stück: dieses fällt
+        setFixed(o, false);
+        topple(o);
+    }
     if (resultIds) resultIds->push_back(id);
 
     for (size_t i = 1; i < parts.size(); ++i) {
+        glm::dvec3 ci;
+        solid::volume(parts[i], &ci);
         Object* n = addSolid(std::move(parts[i]), mat, framePos, frameRot, baseName + " (piece " + std::to_string(i + 1) + ")", shape);
         if (!n) continue;
         n->edits = edits;
@@ -864,7 +929,16 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
             n->heat.origin -= glm::conjugate(frameRot) * (n->pos - framePos);
             fitHeat(*n);
         }
-        if (fixed) setFixed(*n, true);
+        if (isTree) {
+            n->treeType = treeType;
+            n->treeVariant = treeVariant;
+            n->treeScale = treeScale;
+            n->treeOrigin = treeOrigin - ci;
+            n->rooted = rootPiece == (int)i;
+            n->crown = crownPiece == (int)i;
+        }
+        if (wasRooted ? rootPiece == (int)i : fixed) setFixed(*n, true);
+        else if (wasRooted) topple(*n);
         if (lub) setLubricant(*n, lub);
         if (resultIds) resultIds->push_back(n->id);
     }
@@ -1012,7 +1086,8 @@ void World::setSimulating(bool on) {
     simulating_ = on;
     for (auto& o : objects_) {
         if (o->body == kNoBody || o->fixed) continue;
-        physics_.setVelocity(o->body, glm::vec3(0), glm::vec3(0));
+        physics_.setVelocity(o->body, glm::vec3(0), on ? o->startSpin : glm::vec3(0));
+        o->startSpin = glm::vec3(0);
         o->hasSafe = false;
         if (on) physics_.activate(o->body);
         else physics_.deactivate(o->body);
@@ -1062,7 +1137,208 @@ void World::syncAwake() {
             if (Object* o = fromBody(b)) syncObject(*o);
 }
 
+void World::setTerrain(std::shared_ptr<const WorldGen> gen, const std::filesystem::path& regionDir) {
+    std::unique_ptr<Terrain> old = std::move(terrain_);  // erst weg, wenn das Gewässer der alten Flüsse weg ist
+    terrain_ = std::make_unique<Terrain>(physics_, renderer_, std::move(gen), regionDir);
+    syncTerrainWater();
+    rebuildForest();
+    if (groundBody_ != kNoBody) {  // statt der Ebene bei y = 0
+        physics_.destroyBody(groundBody_);
+        groundBody_ = kNoBody;
+    }
+}
+
+void World::clearTerrain() {
+    if (!terrain_) return;
+    std::unique_ptr<Terrain> old = std::move(terrain_);
+    syncTerrainWater();
+    rebuildForest();
+    old.reset();
+    groundBody_ = physics_.createGroundPlane(0.0, materialIndex("concrete"), 0.2f);
+}
+
+void World::setTerrainGen(std::shared_ptr<const WorldGen> gen) {
+    if (!terrain_) return;
+    terrain_->setGen(std::move(gen));
+    syncTerrainWater();
+    rebuildForest();
+}
+
+// ============================================================================ Bäume
+
+void World::setTrees(std::shared_ptr<const TreeConfig> cfg) {
+    trees_ = std::make_shared<TreeLibrary>(renderer_, std::move(cfg));
+    rebuildForest();
+}
+
+const TreeLibrary& World::trees() {
+    if (!trees_) trees_ = std::make_shared<TreeLibrary>(renderer_, loadTreesFile());
+    return *trees_;
+}
+
+void World::rebuildForest() {
+    forest_.reset();
+    if (!terrain_) return;
+    trees();
+    forest_ = std::make_unique<Forest>(terrain_->genPtr(), trees_);
+}
+
+void World::treeScene() {
+    // Baumschule: je Art eine Reihe (nach vorn die Formen), so weit auseinander, wie die Kronen breit sind
+    clear();
+    undo_.clear();
+    redo_.clear();
+    const TreeLibrary& lib = trees();
+    double x = 0;
+    for (int t = 0; t < lib.types(); ++t) {
+        const double w = std::max(2.0 * lib.model(t, 0).radius + 3.0, 6.0);
+        if (t > 0) x += w / 2;
+        for (int v = 0; v < lib.variants(t); ++v) {
+            const double z = -v * w;
+            plantTree(t, v, 1.0, glm::dvec3(x, groundHeight(x, z), z), 0.0);
+        }
+        x += w / 2;
+    }
+    undo_.clear();
+}
+
+uint64_t World::treeSignature(const Object& o) const {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](double v, double unit) { h = (h ^ (uint64_t)std::llround(v / unit)) * 1099511628211ull; };
+    for (int k = 0; k < 3; ++k) mix(o.pos[k], 1e-3);
+    for (int k = 0; k < 4; ++k) mix(o.rot[k], 1e-4);
+    mix(o.volume, 1e-7);
+    mix(o.fixed, 1);
+    mix(o.heat.empty(), 1);
+    mix(o.edits, 1);
+    mix(o.material, 1);
+    mix((double)o.solid.pieces.size(), 1);
+    return h | 1;
+}
+
+bool World::untouchedTree(const Object& o) const {
+    return o.treeKey != 0 && o.treeSig == treeSignature(o) && !treesTaken_.count(o.treeKey);
+}
+
+Object* World::plantTree(int type, int variant, double scale, const glm::dvec3& base, double yaw, uint64_t key) {
+    const TreeLibrary& lib = trees();
+    if (type < 0 || type >= lib.types()) return nullptr;
+    const TreeType& tt = lib.config().types[(size_t)type];
+    const TreeModel& m = lib.model(type, variant);
+    solid::Solid s = m.wood;
+    if (std::abs(scale - 1.0) > 1e-9) solid::transformAffine(s, glm::dmat3(scale));
+    glm::dvec3 com;
+    solid::volume(s, &com);
+    int mat = findMaterialIndex(tt.wood.c_str());
+    if (mat < 0) mat = materialIndex("oak");
+    const uint32_t last = lastCreated_;
+    Object* o = addSolid(std::move(s), mat, base, glm::angleAxis(yaw, glm::dvec3(0, 1, 0)), tt.label, "tree " + tt.id);
+    if (key) lastCreated_ = last;  // Bäume des Generators sind nicht "last" für Befehle
+    if (!o) return nullptr;
+    o->treeType = tt.id;
+    o->treeVariant = std::clamp(variant, 0, lib.variants(type) - 1);
+    o->treeScale = (float)scale;
+    o->treeOrigin = -com;
+    o->crown = o->rooted = true;
+    o->treeKey = key;
+    setFixed(*o, true);
+    o->treeSig = treeSignature(*o);
+    if (key) treeObjects_[key] = o->id;
+    return o;
+}
+
+void World::updateTrees(const std::vector<glm::dvec3>& focus, int budget) {
+    treeObjects_.clear();
+    for (const auto& op : objects_)
+        if (op->treeKey) treeObjects_[op->treeKey] = op->id;
+    if (!forest_ || !forest_->any() || focus.empty()) return;  // Mitspieler: nur zählen (die Teile kommen vom Gastgeber)
+    const double R = trees().config().solidDistance;
+    auto nearest = [&](const glm::dvec3& p) {
+        double d = 1e300;
+        for (const glm::dvec3& f : focus) d = std::min(d, glm::length(glm::dvec2(p.x - f.x, p.z - f.z)));
+        return d;
+    };
+    // Unveränderte, die keiner mehr braucht: wieder nur Bild (ohne sie als entfernt zu merken)
+    std::vector<uint32_t> drop;
+    for (const auto& [key, id] : treeObjects_)
+        if (const Object* o = find(id); o && untouchedTree(*o) && nearest(o->pos) > R + 20.0) drop.push_back(id);
+    for (uint32_t id : drop) {
+        Object* o = find(id);
+        treeObjects_.erase(o->treeKey);
+        o->treeKey = 0;
+        remove(id);
+    }
+    // Neue in der Nähe: die nächsten zuerst
+    std::vector<std::pair<double, TreeSpot>> want;
+    std::vector<TreeSpot> spots;
+    for (const glm::dvec3& f : focus) {
+        forest_->around(glm::dvec2(f.x, f.z), R, spots);
+        for (const TreeSpot& s : spots)
+            if (!treeHidden(s.key)) want.push_back({glm::length(glm::dvec2(s.pos.x - f.x, s.pos.z - f.z)), s});
+    }
+    std::sort(want.begin(), want.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [d, s] : want) {
+        if (budget-- <= 0) break;
+        if (treeHidden(s.key)) continue;  // von zwei Fokuspunkten aus gefunden
+        plantTree(s.type, s.variant, s.scale, glm::dvec3(s.pos.x, groundHeight(s.pos.x, s.pos.z), s.pos.z), s.yaw, s.key);
+    }
+}
+
+void World::syncTerrainWater() {
+    // Die Form des Gewässers zeigt auf das Gelände: bei jedem neuen Gelände neu anlegen
+    std::vector<WaterBody> old;
+    for (auto it = waters_.begin(); it != waters_.end();)
+        if (it->generated()) {
+            old.push_back(*it);
+            it = waters_.erase(it);
+        } else {
+            ++it;
+        }
+    if (terrain_ && terrain_->hasRivers()) {
+        WaterBody b;
+        b.id = kTerrainWaterId;
+        b.liquid = 0;
+        b.sea = true;
+        b.hi.y = b.lo.y = terrain_->riverLevel();
+        b.shape = terrain_->waterShape();
+        waters_.push_back(b);
+        changedWater(waters_.back());
+    }
+    for (const WaterBody& b : old)
+        if (waters_.empty() || !waters_.back().generated() || waters_.back().level() != b.level()) changedWater(b);
+}
+
+double World::groundHeight(double x, double z) const { return terrain_ ? terrain_->surfaceHeight(x, z) : 0.0; }
+
+double World::prepareGround(const glm::dvec3& p) {
+    if (!terrain_) return 0.0;
+    terrain_->updatePhysics({{p - glm::dvec3(4.0), p + glm::dvec3(4.0)}});
+    return terrain_->surfaceHeight(p.x, p.z);
+}
+
+void World::updateTerrainPhysics() {
+    if (!terrain_) return;
+    std::vector<std::pair<glm::dvec3, glm::dvec3>> boxes;
+    boxes.reserve(objects_.size() + terrainFocus_.size());
+    for (const auto& o : objects_)
+        if (!o->fixed && o->body != kNoBody) boxes.push_back({o->wMin, o->wMax});  // Festes stößt nicht an Festes
+    for (const glm::dvec3& p : terrainFocus_) boxes.push_back({p - glm::dvec3(4.0), p + glm::dvec3(4.0)});
+    terrain_->updatePhysics(boxes);
+}
+
+// Vorgemerkte Drehung (gefällter Baum) anwenden, sobald die Physik läuft
+static void applyStartSpin(Physics& physics, std::vector<std::unique_ptr<Object>>& objects) {
+    for (auto& o : objects)
+        if (o->body != kNoBody && !o->fixed && glm::length(o->startSpin) > 0) {
+            physics.setVelocity(o->body, glm::vec3(0), o->startSpin);
+            physics.activate(o->body);
+            o->startSpin = glm::vec3(0);
+        }
+}
+
 void World::step(float dt, const std::function<void(float)>& preStep) {
+    updateTerrainPhysics();  // Höhenfelder dort, wo sich etwas bewegen kann
+    applyStartSpin(physics_, objects_);
     physics_.step(
         dt,
         [&](float h) {
@@ -1078,8 +1354,10 @@ void World::simulateSeconds(double seconds, bool wakeAll) {
     if (wakeAll)
         for (auto& o : objects_)
             if (o->body != kNoBody && !o->fixed) physics_.activate(o->body);
+    applyStartSpin(physics_, objects_);
     int steps = (int)std::ceil(seconds / physics_.fixedDt());
-    for (int i = 0; i < steps; ++i)
+    for (int i = 0; i < steps; ++i) {
+        if (terrain_ && i % 24 == 0) updateTerrainPhysics();  // Teile können in neue Chunks fallen oder rollen
         physics_.step(
             physics_.fixedDt(),
             [&](float h) {
@@ -1087,6 +1365,7 @@ void World::simulateSeconds(double seconds, bool wakeAll) {
                 beforeStep(h);
             },
             [&](float h) { afterStep(h); });
+    }
     syncAwake();
 }
 
@@ -1605,8 +1884,18 @@ bool World::raycast(const glm::dvec3& origin, const glm::dvec3& dir, RayHit& hit
             found = true;
         }
     }
-    // Boden
-    if (dir.y < -1e-9) {
+    // Boden: das Gelände bzw. die Ebene bei y = 0
+    if (terrain_) {
+        double t = 0;
+        glm::dvec3 n(0, 1, 0);
+        if (terrain_->raycast(origin, dir, std::min(best, 5000.0), t, n) && t < best) {
+            best = t;
+            hit.obj = nullptr;
+            hit.t = t;
+            hit.normal = n;
+            found = true;
+        }
+    } else if (dir.y < -1e-9) {
         double t = -origin.y / dir.y;
         if (t >= 0 && t < best) {
             best = t;
@@ -1637,6 +1926,7 @@ void World::restore(const Snapshot& s) {
     clear();
     nextId_ = s.nextId;
     waters_ = s.waters;
+    syncTerrainWater();  // die Flüsse gehören zum Gelände, wie es jetzt ist
     nextWaterId_ = s.nextWaterId;
     for (const ObjectState& st : s.objects) {
         auto o = std::make_unique<Object>();
@@ -1791,9 +2081,13 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
     out << "next_id " << nextId_ << "\n";
     for (auto& op : objects_) {
         const Object& o = *op;
+        if (untouchedTree(o)) continue;  // Baum des Generators wie gewachsen: entsteht beim Laden wieder aus dem Seed
         out << "object " << o.id << " " << (int)o.kind << " " << o.fixed << " " << o.hingeAxis << " " << o.motorRpm << " "
             << o.motorTorque << " " << o.edits << " " << o.seed << "\n";
         out << "material " << materials()[o.material].name << "\n";
+        if (!o.treeType.empty())
+            out << "tree " << o.treeType << " " << o.treeVariant << " " << o.treeScale << " " << o.treeOrigin.x << " " << o.treeOrigin.y << " "
+                << o.treeOrigin.z << " " << o.crown << " " << o.rooted << " " << o.treeKey << " " << o.treeSig << "\n";
         out << "name " << quoteFree(o.name) << "\n";
         out << "shape " << quoteFree(o.shape) << "\n";
         out << "pos " << o.pos.x << " " << o.pos.y << " " << o.pos.z << "\n";
@@ -1852,8 +2146,8 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
             << j.motorRpm << " " << j.motorTorque << " " << j.unbreakable << " " << (j.preset.empty() ? "-" : j.preset) << "\n";
     }
     out << "next_joint " << nextJointId_ << "\n";
-    for (const WaterBody& b : waters_)  // Gewässer
-        out << "water " << b.id << " " << liquids()[b.liquid].name << " " << b.sea << " " << b.lo.x << " " << b.lo.y << " " << b.lo.z << " "
+    for (const WaterBody& b : waters_)  // Gewässer (ohne die Flüsse: sie entstehen aus dem Gelände)
+        if (!b.generated()) out << "water " << b.id << " " << liquids()[b.liquid].name << " " << b.sea << " " << b.lo.x << " " << b.lo.y << " " << b.lo.z << " "
             << b.hi.x << " " << b.hi.y << " " << b.hi.z << " " << b.waves << " " << b.flow.x << " " << b.flow.y << " " << b.flow.z << " "
             << b.ownTemp << " " << b.tempC << "\n";
     for (const WaterBody& b : waters_) {  // Grund des Meers: Standard und die Kacheln mit eigenem Grund (je Zelle in m)
@@ -1869,7 +2163,9 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
         }
         out.precision(17);
     }
-    if (!waters_.empty()) out << "next_water " << nextWaterId_ << "\n";
+    if (std::any_of(waters_.begin(), waters_.end(), [](const WaterBody& b) { return !b.generated(); }))
+        out << "next_water " << nextWaterId_ << "\n";
+    for (uint64_t k : treesTaken_) out << "tree_taken " << k << "\n";  // entfernte Bäume des Generators
     return true;
 }
 
@@ -1899,6 +2195,7 @@ bool World::load(const std::filesystem::path& file, std::string* err, const std:
     std::vector<JointState> loadedJoints;
     uint32_t nextJointIdLoaded = 1;
     std::vector<WaterBody> loadedWaters;
+    std::unordered_set<uint64_t> takenLoaded;  // entfernte Bäume des Generators
     std::unordered_map<uint32_t, std::shared_ptr<GroundMap>> loadedGround;  // Grund je Meer
     uint32_t nextWaterIdLoaded = 1;
     std::vector<std::pair<std::string, double>> meshFiles;  // pro Zustand (leer = Festkörper)
@@ -1926,6 +2223,12 @@ bool World::load(const std::filesystem::path& file, std::string* err, const std:
             int kind = 0;
             ss >> cur.id >> kind >> cur.fixed >> cur.hingeAxis >> cur.motorRpm >> cur.motorTorque >> cur.edits >> cur.seed;
             cur.kind = (ObjKind)kind;
+        } else if (tag == "tree") {
+            ss >> cur.treeType >> cur.treeVariant >> cur.treeScale >> cur.treeOrigin.x >> cur.treeOrigin.y >> cur.treeOrigin.z >> cur.crown >>
+                cur.rooted >> cur.treeKey >> cur.treeSig;
+        } else if (tag == "tree_taken") {
+            uint64_t k = 0;
+            if (ss >> k) takenLoaded.insert(k);
         } else if (tag == "material") {
             cur.material = materialIndex(rest().c_str());
         } else if (tag == "name") {
@@ -2054,6 +2357,7 @@ bool World::load(const std::filesystem::path& file, std::string* err, const std:
             b.ground = it->second;
         }
     setWaters(loadedWaters);
+    treesTaken_ = takenLoaded;
     nextWaterId_ = std::max(nextWaterId_, nextWaterIdLoaded);
     nextId_ = nextId;
     for (size_t i = 0; i < states.size(); ++i) {

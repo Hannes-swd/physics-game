@@ -12,10 +12,14 @@
 #include "Commands.h"
 #include "Drawing.h"
 #include "Materials.h"
+#include "Noise.h"
 #include "Physics.h"
 #include "Script.h"
 #include "Solid.h"
+#include "Terrain.h"
+#include "Trees.h"
 #include "World.h"
+#include "WorldGen.h"
 
 namespace {
 
@@ -25,6 +29,7 @@ void check(bool ok, const std::string& what, const std::string& detail = "") {
     ++checks;
     if (!ok) ++failures;
     std::printf("[%s] %s%s%s\n", ok ? " OK " : "FAIL", what.c_str(), detail.empty() ? "" : "  -> ", detail.c_str());
+    std::fflush(stdout);  // stürzt etwas ab, steht trotzdem da, wie weit es kam
 }
 
 bool approx(double a, double b, double tol) { return std::abs(a - b) <= tol; }
@@ -478,6 +483,27 @@ int runSelfTest() {
         double vol2 = 0;
         for (auto& o : w.objects()) vol2 += o->volume;
         check(w.objects().size() == count && approx(vol, vol2, 1e-12), "saved scene is identical", std::to_string(w.objects().size()));
+        {  // Weltdatei binär: dasselbe, kleiner, mit den fertigen Kollisionsformen
+            auto bin = std::filesystem::temp_directory_path() / "werkstatt_selftest.bin";
+            const size_t joints = w.joints().size();
+            std::vector<std::string> before;
+            for (auto& o : w.objects())
+                before.push_back(std::to_string(o->id) + o->name + fmtNum(o->pos.x * 1e4, 0) + fmtNum(o->mass * 1e6, 0) + std::to_string(o->fixed));
+            const bool saved = w.saveBinary(bin, &err);
+            const auto textSize = std::filesystem::file_size(file), binSize = saved ? std::filesystem::file_size(bin) : 0;
+            const bool loaded = World::isBinaryScene(bin) && w.loadBinary(bin, &err);
+            std::vector<std::string> after;
+            int cached = 0;
+            for (auto& o : w.objects()) {
+                after.push_back(std::to_string(o->id) + o->name + fmtNum(o->pos.x * 1e4, 0) + fmtNum(o->mass * 1e6, 0) + std::to_string(o->fixed));
+                cached += o->hullCache != nullptr;
+            }
+            check(saved && loaded && before == after && w.joints().size() == joints && binSize < textSize && cached > 0,
+                  "the binary world file holds the same parts and joints, smaller, with ready collision shapes",
+                  std::to_string(binSize / 1024) + " KB instead of " + std::to_string(textSize / 1024) + " KB, " + std::to_string(cached) +
+                      " shapes not recomputed, " + err);
+            std::filesystem::remove(bin);
+        }
         std::filesystem::remove(file);
 
         w.demoScene();
@@ -737,6 +763,340 @@ int runSelfTest() {
         // Pfeiler weg: das Wasser fließt wieder gerade
         run("delete 1 ; wait 1");
         check(approx(glm::length(std::get<0>(at(-0.22, 0.0))), 1.0, 0.05), "after removing the pier the river flows straight again");
+    }
+
+    std::printf("== Terrain ==\n");
+    {
+        // Rauschen: nur Seed und Ort zählen
+        double a = 0, b = 0, maxAbs = 0;
+        bool same = true;
+        for (int i = 0; i < 2000; ++i) {
+            const double x = i * 0.731 - 300.0, z = i * 1.917 + 50.0;
+            a = noise::fbm(42, x, z, 4);
+            b = noise::fbm(42, x, z, 4);
+            same &= a == b;
+            maxAbs = std::max(maxAbs, std::abs(a));
+        }
+        check(same && maxAbs <= 1.0 && maxAbs > 0.3 && noise::fbm(42, 3.3, 7.7, 4) != noise::fbm(43, 3.3, 7.7, 4),
+              "noise depends only on seed and place", "largest " + num(maxAbs));
+
+        auto cfg = std::make_shared<GenConfig>(builtinGenConfig());
+        const int plains = cfg->findBiome("plains"), hills = cfg->findBiome("hills"), desert = cfg->findBiome("desert");
+        const int forest = cfg->findBiome("forest");
+        WorldGen g1(4711, cfg, -1), g2(4711, cfg, -1), g3(4712, cfg, -1);
+        int equal = 0, differ = 0, plainsN = 0, hillsN = 0, desertN = 0, forestN = 0, wrong = 0;
+        for (int i = 0; i < 900; ++i) {
+            const double x = (i % 30) * 157.0 - 2300.0, z = (i / 30) * 163.0 - 2300.0;
+            GenSample s1, s2, s3;
+            g1.sample(x, z, s1);
+            g2.sample(x, z, s2);
+            g3.sample(x, z, s3);
+            equal += s1.height == s2.height && s1.biome == s2.biome;
+            differ += s1.height != s3.height;
+            (s1.biome == plains ? plainsN : s1.biome == hills ? hillsN : s1.biome == forest ? forestN : desertN)++;
+            // biomes.json: feucht -> wenig Zerklüftung Ebene (sehr feucht: Wald), viel Zerklüftung Hügel; heiß und trocken -> Wüste
+            const Climate c = g1.climate(x, z);
+            const double e = c.v[kErosion], hum = c.v[kHumidity], tmp = c.v[kTemperature];
+            if (hum > 0.37 && hum < 0.6 && e < 0.48 && s1.biome != plains) ++wrong;
+            if (hum > 0.64 && e < 0.48 && s1.biome != forest) ++wrong;
+            if (hum > 0.37 && e > 0.52 && s1.biome != hills) ++wrong;
+            if (hum < 0.33 && tmp > 0.57 && s1.biome != desert) ++wrong;
+            if (s1.biome == desert && hum > 0.37) ++wrong;
+        }
+        check(plains >= 0 && hills >= 0 && desert >= 0 && equal == 900 && differ > 850, "same seed, same terrain and biomes; other seed, other terrain",
+              std::to_string(equal) + " equal, " + std::to_string(differ) + " different");
+        check(wrong == 0 && plainsN > 30 && hillsN > 60 && desertN > 20 && forestN > 30,
+              "biomes sit where their climate fits (plains, forest, hills by humidity and erosion; desert hot and dry)",
+              std::to_string(plainsN) + " plains, " + std::to_string(forestN) + " forest, " + std::to_string(hillsN) + " hills, " + std::to_string(desertN) + " desert, " +
+                  std::to_string(wrong) + " wrong");
+        WorldGen only(4711, cfg, hills);
+        int onlyHills = 0;
+        for (int i = 0; i < 200; ++i) {
+            GenSample s;
+            only.sample(i * 97.0 - 9000.0, i * 53.0, s);
+            onlyHills += s.biome == hills;
+        }
+        check(onlyHills == 200, "a world with one biome has only that biome");
+        // Grenze ohne Stufe: entlang einer Linie über mehrere Grenzen 0,5 m weit gehen
+        double steepest = 0;
+        int borders = 0, last = -1;
+        for (int i = 0; i < 6000; ++i) {
+            GenSample s0, s1;
+            g1.sample(i * 0.5, 211.0, s0);
+            g1.sample(i * 0.5 + 0.5, 211.0, s1);
+            steepest = std::max(steepest, std::abs(s1.height - s0.height));
+            if (last >= 0 && s0.biome != last) ++borders;
+            last = s0.biome;
+        }
+        check(borders > 0 && steepest < 0.6, "biome borders blend smoothly (no cliffs)",
+              std::to_string(borders) + " borders crossed, steepest step " + num(steepest * 100) + " cm per 50 cm");
+
+        // Flüsse: nicht selten, nicht überall; nie in der Wüste; außerhalb der Flussbetten bleibt der Boden über dem Wasser
+        {
+            const GenConfig::Rivers& rv = cfg->rivers;
+            int crossings = 0, lowDry = 0, desertSamples = 0, desertRiver = 0;
+            bool inRiver = false;
+            double lowestDry = 1e9;
+            for (const double lineZ : {-6234.0, -2234.0, 1234.0, 5234.0})  // vier Linien je 20 km, Schritte von 0,5 m
+                for (int i = 0; i < 40000; ++i) {
+                    GenSample s;
+                    g1.sample(-10000.0 + i * 0.5, lineZ, s);
+                    const bool water = s.wet && s.height < rv.level;
+                    if (water && !inRiver) ++crossings;
+                    inRiver = water;
+                    if (!s.wet) {
+                        lowestDry = std::min(lowestDry, s.height);
+                        lowDry += s.height < rv.level + rv.floor - 0.01;
+                    }
+                }
+            for (int i = 0; i < 6400; ++i) {
+                GenSample s;
+                g1.sample((i % 80) * 75.0 - 3000.0, (i / 80) * 75.0 - 3000.0, s);
+                if (s.biome != desert) continue;
+                ++desertSamples;
+                desertRiver += s.river.strength > 0 || (s.wet && s.height < rv.level);
+            }
+            check(rv.enabled && crossings >= 8 && crossings <= 60, "rivers: not rare, not everywhere",
+                  std::to_string(crossings) + " rivers crossed on 80 km (about every " + num(80.0 / std::max(crossings, 1)) + " km)");
+            check(desertSamples > 100 && desertRiver == 0, "no rivers in the desert",
+                  std::to_string(desertSamples) + " desert spots, " + std::to_string(desertRiver) + " with a river");
+            check(lowDry == 0 && lowestDry >= rv.level + rv.floor - 0.01, "outside the river beds the ground stays above the water",
+                  "lowest dry ground " + num((lowestDry - rv.level) * 100) + " cm above the river level");
+            GenConfig old;
+            std::string perr;
+            const bool parsed = parseGenConfig("{\"biomes\": [{\"id\": \"flat\", \"height\": {\"base\": -3, \"amplitude\": 0}}]}", old, &perr);
+            GenSample s;
+            WorldGen(1, std::make_shared<GenConfig>(old), -1).sample(10, 10, s);
+            check(parsed && !old.rivers.enabled && approx(s.height, -3.0, 1e-9) && !s.wet,
+                  "worlds made before rivers stay as they were (no rivers, ground not lifted)", perr);
+        }
+
+        // Gelände in einer Welt: Physik als Höhenfeld, Strahl, Änderungen
+        World w(physics, nullptr);
+        w.setSimulating(true);
+        const std::filesystem::path dir = std::filesystem::temp_directory_path() / "werkstatt_terrain_test";
+        std::filesystem::remove_all(dir);
+        w.setTerrain(std::make_shared<WorldGen>(4711, cfg, -1), dir);
+        Terrain& tr = *w.terrain();
+        TestHost host(w);
+        auto run = [&](const std::string& line) { return runScriptSync(host, line); };
+        auto val = [&](const std::string& expr) {
+            std::string o = runScriptSync(host, "print " + expr);
+            size_t p = o.rfind("= ");
+            return p == std::string::npos ? -1e30 : std::atof(o.c_str() + p + 2);
+        };
+        {  // Nächste Stelle eines Bioms (tp, terrain goto): ganz das Biom, auf Kreisen weiter innen liegt keine
+            const glm::dvec2 from(37.0, -51.0);
+            const int other = g1.classify(g1.climate(from.x, from.y), nullptr) == plains ? hills : plains;
+            double sc[kMaxBiomes];
+            auto pure = [&](const glm::dvec2& p) { return g1.classify(g1.climate(p.x, p.y), sc) == other && sc[other] >= cfg->blend; };
+            glm::dvec2 f(0), again(0);
+            const bool found = tr.findBiome(other, from, 20000.0, f);
+            const double d = glm::length(f - from);
+            int nearer = 0;
+            for (int k = 0; k < 720; ++k)
+                for (const double r : {d * 0.5, d - 1.0}) {
+                    const double a = k * 3.14159265358979 / 360.0;
+                    if (pure(from + r * glm::dvec2(std::cos(a), std::sin(a)))) ++nearer;
+                }
+            check(found && d > 2.0 && pure(f) && nearer == 0 && tr.findBiome(other, f, 100.0, again) && again == f,
+                  "the nearest spot of a biome is found (fully that biome, nothing nearer)",
+                  cfg->biomes[(size_t)other].id + " " + num(d) + " m away, " + std::to_string(nearer) + " nearer spots");
+        }
+        {  // Fluss in der Welt: Wasser im Flussbett (Gewässer des Geländes), ein Holzball schwimmt und treibt mit
+            const double L = tr.riverLevel();
+            glm::dvec2 f(0), mid(0);
+            const bool found = tr.findRiver(glm::dvec2(0, 0), 5000.0, f);
+            double deepest = 1e9;  // Mitte: tiefste Stelle in der Nähe
+            for (int b = -16; b <= 16 && found; ++b)
+                for (int a = -16; a <= 16; ++a) {
+                    const glm::dvec2 q = f + glm::dvec2(a, b) * 0.5;
+                    const double d = tr.waterBottom(q.x, q.y);
+                    if (d < deepest) {
+                        deepest = d;
+                        mid = q;
+                    }
+                }
+            double surface = 0;
+            const WaterBody* wb = found ? w.waterColumn(glm::dvec3(mid.x, L - 0.1, mid.y), surface) : nullptr;
+            check(found && wb && wb->generated() && deepest < L - 0.5 && approx(surface, L, 0.05),
+                  "rivers hold water (the water body of the terrain)", "found " + num(glm::length(f)) + " m away, " + num((L - deepest) * 100) + " cm deep");
+            const glm::dvec3 flow = tr.riverFlow(mid.x, mid.y);
+            run("new sphere spruce 30 " + num(mid.x * 100) + " " + num((L + 0.3) * 100) + " " + num(mid.y * 100) + " ; set rb = last");
+            w.setWaterFocus(glm::dvec3(mid.x, L, mid.y));
+            run("sim 6");
+            const glm::dvec3 rp(val("rb.x") / 100, val("rb.y") / 100, val("rb.z") / 100);
+            const glm::dvec2 dir = glm::length(flow) > 0 ? glm::normalize(glm::dvec2(flow.x, flow.z)) : glm::dvec2(0);
+            const double along = glm::dot(glm::dvec2(rp.x - mid.x, rp.z - mid.y), dir);
+            check(found && rp.y > L - 0.15 && rp.y < L + 0.15 && along > 0.5, "a wooden ball floats on a river and drifts downstream",
+                  "center " + num((rp.y - L) * 100) + " cm above the water, " + num(along) + " m downstream (current " + num(glm::length(flow)) + " m/s)");
+            run("delete rb");
+        }
+        // Hang suchen (Steigung 10..20°)
+        glm::dvec2 slope(0);
+        for (int i = 0; i < 4000 && slope == glm::dvec2(0); ++i) {
+            const double x = (i % 64) * 9.0, z = (i / 64) * 9.0;
+            glm::dvec3 n;
+            tr.surfaceHeight(x, z, &n);
+            if (n.y < std::cos(10.0 * 3.14159265 / 180) && n.y > std::cos(20.0 * 3.14159265 / 180)) slope = glm::dvec2(x, z);
+        }
+        const double top = tr.surfaceHeight(slope.x, slope.y) + 1.0;
+        run("new box oak 30 30 30 " + num(slope.x * 100) + " " + num(top * 100) + " " + num(slope.y * 100) + " ; set b = last ; sim 4");
+        const glm::dvec3 bp(val("b.x") / 100, val("b.y") / 100, val("b.z") / 100);
+        const double under = tr.surfaceHeight(bp.x, bp.z);
+        check(slope != glm::dvec2(0) && val("b.v") < 0.05 && bp.y - under > 0.1 && bp.y - under < 0.26,
+              "a block on a slope comes to rest on the terrain (height field)", "center " + num((bp.y - under) * 100) + " cm above the ground");
+        // Kugel auf den Hang: rollt bergab und bleibt dabei auf der Oberfläche
+        run("delete b ; new sphere oak 40 " + num(slope.x * 100) + " " + num((top + 0.5) * 100) + " " + num(slope.y * 100) + " ; set ball = last");
+        const double startY = val("ball.y") / 100;
+        run("sim 3");
+        const glm::dvec3 kp(val("ball.x") / 100, val("ball.y") / 100, val("ball.z") / 100);
+        const double gap = kp.y - 0.2 - tr.surfaceHeight(kp.x, kp.z);  // Unterkante der Kugel über dem Gelände (auf dem Hang etwas mehr)
+        check(kp.y < startY - 1.0 && gap > -0.03 && gap < 0.08, "a ball on a hill rolls down and stays on the surface",
+              "rolled " + num(glm::length(glm::dvec2(kp.x - slope.x, kp.z - slope.y))) + " m, " + num(startY - kp.y) + " m down, gap " +
+                  num(gap * 100) + " cm");
+        RayHit hit;
+        const bool hitOk = w.raycast(glm::dvec3(slope.x + 3, top + 50, slope.y + 2), glm::dvec3(0, -1, 0), hit);
+        check(hitOk && !hit.obj && approx(hit.point.y, tr.surfaceHeight(slope.x + 3, slope.y + 2), 0.002), "a ray finds the terrain surface");
+        const double h0 = tr.surfaceHeight(40.0, 40.0);
+        run("terrain raise 4000 4000 500 200");
+        const double h1 = tr.surfaceHeight(40.0, 40.0), side = tr.surfaceHeight(46.0, 40.0) - tr.latticeHeight(92, 80);
+        check(approx(h1 - h0, 2.0, 0.01) && approx(side, 0.0, 1e-9), "terrain raise lifts the ground (2 m in the middle, nothing outside)",
+              num((h1 - h0) * 100) + " cm");
+        std::string err;
+        check(tr.save(&err) && std::filesystem::exists(dir / "r.0.0.bin"), "changed chunks are saved in a region file", err);
+        {
+            Terrain again(physics, nullptr, std::make_shared<WorldGen>(4711, cfg, -1), dir);
+            check(approx(again.surfaceHeight(40.0, 40.0), h1, 1e-6) && again.editedChunks() == tr.editedChunks(),
+                  "a reloaded world has the same changes", std::to_string(again.editedChunks()) + " chunk(s)");
+        }
+        run("terrain reset");
+        check(approx(tr.surfaceHeight(40.0, 40.0), h0, 1e-6) && tr.save(&err) && !std::filesystem::exists(dir / "r.0.0.bin"),
+              "terrain reset brings back the generated ground (and removes the region file)");
+        std::filesystem::remove_all(dir);
+    }
+
+    std::printf("== Trees ==\n");
+    {
+        auto tcfg = std::make_shared<TreeConfig>(builtinTreeConfig());
+        auto lib = std::make_shared<TreeLibrary>(nullptr, tcfg);
+        const int oakBig = tcfg->find("oak_big"), oakYoung = tcfg->find("oak_young"), spruceBig = tcfg->find("spruce_big");
+        const double oakRho = materials()[(size_t)materialIndex("oak")].density;
+        const TreeModel& mb = lib->model(oakBig, 0);
+        const TreeModel& my = lib->model(oakYoung, 0);
+        const TreeModel again = buildTreeModel(tcfg->types[(size_t)oakBig], noise::subSeed(0x7EE5, "tree/oak_big/0"));
+        check(oakBig >= 0 && oakYoung >= 0 && spruceBig >= 0 && mb.volume * oakRho > 2000 && my.volume * oakRho < 300 && mb.height > 15 &&
+                  again.volume == mb.volume && again.leaves.size() == mb.leaves.size(),
+              "tree types: big ones worth felling, small ones for small houses, same form every time",
+              "big oak " + num(mb.volume * oakRho) + " kg, " + num(mb.height) + " m; young oak " + num(my.volume * oakRho) + " kg");
+
+        // Wald aus dem Seed: dicht im Wald, fast keine in der Ebene, keine in der Wüste, keiner im Fluss
+        auto bcfg = std::make_shared<GenConfig>(builtinGenConfig());
+        auto gen = std::make_shared<WorldGen>(4711, bcfg, -1);
+        Forest f1(gen, lib), f2(std::make_shared<WorldGen>(4711, bcfg, -1), lib);
+        const int forestB = bcfg->findBiome("forest"), plainsB = bcfg->findBiome("plains"), desertB = bcfg->findBiome("desert");
+        std::vector<int> cells(bcfg->biomes.size(), 0), trees(bcfg->biomes.size(), 0);
+        int same = 0, total = 0, wet = 0;
+        const double s = tcfg->spacing;
+        for (int j = 0; j < 160; ++j)
+            for (int i = 0; i < 160; ++i) {
+                const int64_t cx = (int64_t)i * 3 - 240, cz = (int64_t)j * 3 - 240;  // jedes dritte Feld, 2,9 km
+                GenSample g;
+                gen->sample((cx + 0.5) * s, (cz + 0.5) * s, g);
+                ++cells[(size_t)g.biome];
+                TreeSpot a, b;
+                const bool ha = f1.spotOf(cx, cz, a), hb = f2.spotOf(cx, cz, b);
+                same += ha == hb && (!ha || (a.pos == b.pos && a.type == b.type && a.variant == b.variant && a.scale == b.scale));
+                ++total;
+                if (!ha) continue;
+                ++trees[(size_t)g.biome];
+                GenSample at;
+                gen->sample(a.pos.x, a.pos.z, at);
+                wet += at.wet && at.height < bcfg->rivers.level;
+            }
+        auto perHa = [&](int b) { return cells[(size_t)b] ? trees[(size_t)b] / (cells[(size_t)b] * s * s) * 10000.0 : -1.0; };
+        check(same == total && perHa(forestB) > 80 && perHa(forestB) < 220 && perHa(plainsB) < 15 && trees[(size_t)desertB] == 0 &&
+                  cells[(size_t)desertB] > 50 && wet == 0,
+              "trees grow by biome from the seed (dense forest, few in the plains, none in the desert or in rivers)",
+              "per hectare: forest " + num(perHa(forestB)) + ", plains " + num(perHa(plainsB)) + ", desert " + std::to_string(trees[(size_t)desertB]) +
+                  "; " + std::to_string(same) + "/" + std::to_string(total) + " cells the same with the same seed");
+
+        // In einer Welt: nahe Bäume werden feste Teile mit Krone und Wurzel
+        World w(physics, nullptr);
+        w.setSimulating(true);
+        w.setTrees(tcfg);
+        w.setTerrain(std::make_shared<WorldGen>(4711, bcfg, -1), {});
+        TestHost host(w);
+        auto run = [&](const std::string& line) { return runScriptSync(host, line); };
+        TreeSpot spot;
+        const bool found = w.forest()->nearest(glm::dvec2(0, 0), 5000.0, spruceBig, spot);
+        w.updateTrees({spot.pos}, 10000);
+        int parts = 0, good = 0;
+        Object* tree = nullptr;
+        for (const auto& op : w.objects()) {
+            if (!op->treeKey) continue;
+            ++parts;
+            good += op->fixed && op->rooted && op->crown && w.untouchedTree(*op);
+            if (op->treeKey == spot.key) tree = op.get();
+        }
+        check(found && tree && parts > 5 && good == parts && w.treeHidden(spot.key), "trees near a player become fixed parts (crown, root)",
+              std::to_string(parts) + " trees within " + num(tcfg->solidDistance) + " m");
+
+        // Fällen: Schnitt 1 m über dem Boden, der Stumpf bleibt fest, der Stamm mit der Krone fällt
+        const uint32_t treeId = tree ? tree->id : 0;
+        const double treeMass = tree ? tree->mass : 0;
+        run("cut " + std::to_string(treeId) + " y " + num((0.4 * spot.scale + 1.0) * 100));
+        run("sim 10");
+        const Object *stump = nullptr, *trunk = nullptr;
+        for (const auto& op : w.objects()) {
+            if (op->treeType.empty() || glm::length(glm::dvec2(op->pos.x - spot.pos.x, op->pos.z - spot.pos.z)) > 35.0) continue;
+            if (op->rooted && op->fixed && op->wMax.y < spot.pos.y + 2.0) stump = op.get();
+            if (op->crown && !op->fixed && op->mass > treeMass * 0.3) trunk = op.get();
+        }
+        check(stump && trunk && trunk->wMax.y - trunk->wMin.y < 6.0 && !w.untouchedTree(*trunk),
+              "a cut tree falls: the stump stays rooted, the trunk with its crown lies on the ground",
+              trunk ? "trunk " + num(trunk->mass) + " kg, " + num(trunk->wMax.y - trunk->wMin.y) + " m high now" : std::string("no falling trunk"));
+
+        // Weit weg: unveränderte Bäume verschwinden wieder, der gefällte bleibt; Speichern ohne die unveränderten
+        w.updateTrees({spot.pos + glm::dvec3(3000, 0, 0)}, 0);
+        int left = 0, cut = 0;
+        for (const auto& op : w.objects()) {
+            if (op->treeType.empty()) continue;
+            ++left;
+            cut += op->treeKey == spot.key;
+        }
+        // einen anderen Baum ganz entfernen: wächst nicht nach
+        w.updateTrees({spot.pos}, 10000);
+        uint32_t other = 0;
+        uint64_t otherKey = 0;
+        for (const auto& op : w.objects())
+            if (op->treeKey && op->treeKey != spot.key && w.untouchedTree(*op)) {
+                other = op->id;
+                otherKey = op->treeKey;
+            }
+        run("delete " + std::to_string(other));
+        const std::string file = (std::filesystem::temp_directory_path() / "werkstatt_trees_test.werkstatt").string();
+        std::string err;
+        const bool saved = w.save(std::filesystem::u8path(file), &err);
+        World w2(physics, nullptr);
+        w2.setTrees(tcfg);
+        w2.setTerrain(std::make_shared<WorldGen>(4711, bcfg, -1), {});
+        const bool loaded = w2.load(std::filesystem::u8path(file), &err);
+        w2.updateTrees({}, 0);  // vorhandene Baum-Teile zählen
+        int loadedTrees = 0;
+        for (const auto& op : w2.objects()) loadedTrees += !op->treeType.empty();
+        check(cut == 1 && saved && loaded && loadedTrees == left && w2.treeHidden(otherKey) && w2.treeHidden(spot.key),
+              "far away untouched trees go away again; cut and removed trees are saved",
+              std::to_string(left) + " tree part(s) kept, " + std::to_string(loadedTrees) + " loaded, " + err);
+        std::filesystem::remove(file);
+
+        // flache Welt: Baumschule
+        World flat(physics, nullptr);
+        flat.setTrees(tcfg);
+        flat.treeScene();
+        int nursery = 0;
+        for (const auto& op : flat.objects()) nursery += op->fixed && op->crown && !op->treeKey;
+        check(nursery == (int)tcfg->types.size() * 3, "the tree nursery shows every type in every form", std::to_string(nursery) + " trees");
     }
 
     std::printf("== Material file ==\n");

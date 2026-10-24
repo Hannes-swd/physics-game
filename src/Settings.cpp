@@ -41,6 +41,7 @@ GameSettings loadSettings() {
     if (j["shadows"].type == Json::Bool) s.shadows = j["shadows"].num != 0;
     if (j["edges"].type == Json::Bool) s.edges = j["edges"].num != 0;
     if (j["grid"].type == Json::Bool) s.grid = j["grid"].num != 0;
+    if (j["biomeBorders"].type == Json::Bool) s.biomeBorders = j["biomeBorders"].num != 0;
     if (j["autosaveMinutes"].type == Json::Number) s.autosaveMinutes = std::clamp((int)j["autosaveMinutes"].num, 0, 120);
     return s;
 }
@@ -53,6 +54,7 @@ bool saveSettings(const GameSettings& s, std::string* err) {
     j.set("shadows", makeBool(s.shadows));
     j.set("edges", makeBool(s.edges));
     j.set("grid", makeBool(s.grid));
+    j.set("biomeBorders", makeBool(s.biomeBorders));
     j.set("autosaveMinutes", Json::makeNumber(s.autosaveMinutes));
     const std::filesystem::path file = settingsFile();
     std::filesystem::path tmp = file;

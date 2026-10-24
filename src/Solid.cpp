@@ -1518,9 +1518,10 @@ void buildTriangles(const Solid& s, std::vector<Vertex>& out) {
     for (const Piece& p : s.pieces)
         for (const Face& f : p.faces) {
             if (f.internal || f.v.size() < 3) continue;
+            const uint32_t color = f.smooth == Smooth::Bark ? 0x00ffffffu : 0xffffffffu;  // Rinde: a = 0 (mesh.frag)
             auto vert = [&](const dvec3& v) {
                 dvec3 n = f.smooth == Smooth::None ? f.n : smoothNormal(f, v);
-                out.push_back({float(v.x), float(v.y), float(v.z), float(n.x), float(n.y), float(n.z)});
+                out.push_back({float(v.x), float(v.y), float(v.z), float(n.x), float(n.y), float(n.z), color});
             };
             auto fan = [&](const std::vector<dvec3>& poly) {
                 for (size_t i = 1; i + 1 < poly.size(); ++i) {

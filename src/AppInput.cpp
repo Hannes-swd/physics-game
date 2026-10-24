@@ -499,9 +499,10 @@ void App::enterPlay() {
     fwd = glm::length(fwd) > 1e-6 ? glm::normalize(fwd) : glm::dvec3(0, 0, -1);
     glm::dvec3 feet = orbitTarget_ - fwd * 2.5;
     RayHit h;
-    double groundY = 0;
-    if (world_->raycast(glm::dvec3(feet.x, orbitTarget_.y + 20.0, feet.z), glm::dvec3(0, -1, 0), h)) groundY = h.point.y;
+    double groundY = world_->groundHeight(feet.x, feet.z);  // Gelände (flache Welt: 0)
+    if (world_->raycast(glm::dvec3(feet.x, std::max(orbitTarget_.y, groundY) + 20.0, feet.z), glm::dvec3(0, -1, 0), h)) groundY = std::max(groundY, h.point.y);
     feet.y = groundY + 0.05;
+    if (!netClient()) world_->prepareGround(feet);  // Gelände: Physik dort schon jetzt, die Figur fällt nicht durch
     if (netClient()) {  // die Figur steht beim Gastgeber: dort absetzen lassen
         netSpawn_ = true;
         netSpawnFeet_ = netFeet_ = netFeetTarget_ = feet;
@@ -574,9 +575,23 @@ void App::playInput(float) {
     // Maustasten direkt von GLFW (ImGui ignoriert die Maus, solange sie gefangen ist)
     const bool lmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     const bool rmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    // Axt: X nimmt sie (oder legt sie weg); dann hackt die linke Maustaste statt zu tragen
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_X, false)) {
+        axe_ = !axe_;
+        toast(axe_ ? "Axt in der Hand: Linksklick auf Holz hackt (X legt sie weg)" : "Axt weggelegt");
+    }
+    if (axe_ && lmbDown && !prevLmb_ && time_ >= axeReady_) {
+        axeReady_ = time_ + 0.4;  // ein Hieb braucht etwas Zeit
+        if (lookHit_.obj && lookHit_.t < 2.6) {
+            const glm::dvec3 p = lookHit_.point, back = eye - p;
+            runLine("chop " + std::to_string(lookHit_.obj->id) + " " + fmtNum(p.x * 100, 1) + " " + fmtNum(p.y * 100, 1) + " " +
+                        fmtNum(p.z * 100, 1) + " " + fmtNum(back.x, 3) + " " + fmtNum(back.z, 3),
+                    "axe");
+        }
+    }
     HandInput in;
-    in.lmbDown = lmbDown;
-    in.lmbPresses = lmbDown && !prevLmb_;
+    in.lmbDown = lmbDown && !axe_;
+    in.lmbPresses = lmbDown && !prevLmb_ && !axe_;
     in.rmbPresses = rmbDown && !prevRmb_;
     prevLmb_ = lmbDown;
     prevRmb_ = rmbDown;

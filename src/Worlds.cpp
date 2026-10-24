@@ -126,6 +126,9 @@ fs::path worldsDir() {
 }
 
 fs::path sceneFile(const WorldInfo& w) { return w.dir / L"scene.werkstatt"; }
+fs::path binFile(const WorldInfo& w) { return w.dir / L"world.bin"; }
+fs::path generatorFile(const WorldInfo& w) { return w.dir / L"generator.json"; }
+fs::path regionDir(const WorldInfo& w) { return w.dir / L"regions"; }
 
 fs::path existingOrBackup(const fs::path& file) {
     std::error_code ec;
@@ -234,6 +237,7 @@ bool readInfo(const fs::path& dir, WorldInfo& w, std::string* err) {
     w.seed = std::strtoull(seed.c_str(), nullptr, 10);
     w.generator = strOf(j["generator"], "flat");
     w.generatorVersion = (int)numOf(j["generatorVersion"], 1);
+    w.biome = strOf(j["biome"], "all");
     w.created = (int64_t)numOf(j["created"], 0);
     w.lastPlayed = (int64_t)numOf(j["lastPlayed"], 0);
     w.playTime = numOf(j["playTime"], 0);
@@ -270,6 +274,7 @@ bool writeInfo(const WorldInfo& w, std::string* err) {
     j.set("seedText", Json::makeString(w.seedText));
     j.set("generator", Json::makeString(w.generator));
     j.set("generatorVersion", Json::makeNumber(w.generatorVersion));
+    j.set("biome", Json::makeString(w.biome));
     j.set("created", Json::makeNumber((double)w.created));
     j.set("lastPlayed", Json::makeNumber((double)w.lastPlayed));
     j.set("playTime", Json::makeNumber(std::floor(w.playTime)));
@@ -317,10 +322,14 @@ std::vector<WorldInfo> list() {
     return out;
 }
 
-bool create(const std::string& nameIn, const std::string& seedText, WorldInfo& w, std::string* err) {
+bool create(const std::string& nameIn, const std::string& seedText, const CreateOptions& opt, WorldInfo& w, std::string* err) {
     const std::string name = cleanName(nameIn);
     if (name.empty()) {
         if (err) *err = "Bitte einen Namen eingeben.";
+        return false;
+    }
+    if (opt.generator != "flat" && opt.generator != "normal") {
+        if (err) *err = "Unbekannter Welttyp '" + opt.generator + "' (flat, normal).";
         return false;
     }
     const std::string folder = folderName(name);
@@ -336,13 +345,23 @@ bool create(const std::string& nameIn, const std::string& seedText, WorldInfo& w
     w.name = name;
     w.seedText = cleanName(seedText);
     w.seed = seedFromText(seedText);
+    w.generator = opt.generator;
+    w.biome = opt.generator == "normal" ? (opt.biome.empty() ? "all" : opt.biome) : "all";
     w.created = w.lastPlayed = now();
-    if (!writeInfo(w, err)) {
+    // Die Welt bekommt ihre eigene Kopie der Biome: spätere Änderungen an assets/biomes.json verändern sie nicht
+    bool ok = true;
+    if (opt.generator == "normal" && !opt.generatorText.empty()) {
+        const fs::path tmp = dir / L"generator.json.tmp";
+        ok = writeText(tmp, opt.generatorText, err) && replaceFile(tmp, generatorFile(w), err);
+    }
+    if (!ok || !writeInfo(w, err)) {
         fs::remove_all(dir, ec);
         return false;
     }
     return true;
 }
+
+std::string randomSeedText() { return std::to_string(seedFromText("")); }
 
 bool rename(const fs::path& dir, const std::string& nameIn, std::string* err) {
     const std::string name = cleanName(nameIn);

@@ -1206,7 +1206,7 @@ void World::heatShapes(bool cells) {
                 const glm::dvec3 p = o->pos + o->rot * cellCenter(g, i);
                 const double below = 0.5 * std::abs(glm::dot(downL, g.cell)) + 0.01;
                 RayHit h;
-                if (p.y < below || (raycast(p, glm::dvec3(0, -1, 0), h, o->id) && h.t < below)) continue;
+                if (p.y - groundHeight(p.x, p.z) < below || (raycast(p, glm::dvec3(0, -1, 0), h, o->id) && h.t < below)) continue;  // Boden bzw. Gelände
                 molten.push_back(i);
             }
         }

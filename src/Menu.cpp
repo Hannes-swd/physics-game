@@ -24,6 +24,7 @@
 #include "Net.h"
 #include "Remote.h"
 #include "Settings.h"
+#include "WorldGen.h"
 #include "Worlds.h"
 
 namespace {
@@ -99,12 +100,13 @@ const char* kMenuHelp =
     "  menu select <n|name>                   select a world in the list (n = number from 'menu')\n"
     "  menu play [n|name]                     open the world (without: the selected one); the game window opens\n"
     "  menu lan [n|name]                      open the world and host a LAN game\n"
-    "  menu new <name> [seed]                 create a world and select it (not opened); seed: number or text, none = random\n"
+    "  menu new <name> [seed] [normal|flat] [all|<biome>]   create a world and select it (not opened). seed: number or\n"
+    "                                         text, none = random; normal = terrain with biomes (all, or only one), flat = level floor\n"
     "  menu rename <n|name> <new name>        rename a world (names with spaces in \"quotes\")\n"
     "  menu delete <n|name>                   move the world to the recycle bin\n"
     "  menu games                             LAN games in the network (switches to page multiplayer, it searches there)\n"
     "  menu join <address|n|name>             join a LAN game (address like 192.168.1.20[:port], or number/name from 'menu games')\n"
-    "  menu set <key> <value>                 name <text>, mouse <0.2-3>, fov <40-100>, shadows|edges|grid on|off, autosave <minutes, 0 = never>\n"
+    "  menu set <key> <value>                 name <text>, mouse <0.2-3>, fov <40-100>, shadows|edges|grid|borders on|off, autosave <minutes, 0 = never>\n"
     "  menu close                             close an open dialog\n"
     "  menu quit                              quit the program\n"
     "In the game: 'menu' tells where you are; 'menu <...>' saves the world, goes back to the main menu and runs the command there\n"
@@ -120,6 +122,8 @@ class MenuBackend : public QObject {
     Q_PROPERTY(QVariantList lanGames READ lanGames NOTIFY lanGamesChanged)
     Q_PROPERTY(QString message READ message NOTIFY messageChanged)
     Q_PROPERTY(QString worldsFolder READ worldsFolder CONSTANT)
+    // Biome aus assets/biomes.json (Auswahl "nur ein Biom" beim Erstellen): je {id, label}
+    Q_PROPERTY(QVariantList biomes READ biomes CONSTANT)
     // Zustand der Oberfläche: QML meldet Seite und Dialog, die Auswahl teilen sich QML und die Befehle
     Q_PROPERTY(QString page READ page WRITE setPage NOTIFY pageChanged)
     Q_PROPERTY(QString dialog READ dialog WRITE setDialog NOTIFY dialogChanged)
@@ -127,6 +131,15 @@ class MenuBackend : public QObject {
 
 public:
     MenuBackend(const std::string& message, RemoteServer* remote) : message_(qs(message)), remote_(remote) {
+        std::string report;
+        gen_ = loadBiomesFile(&report);  // Biome für neue Welten (die Welt bekommt eine Kopie)
+        if (!report.empty() && message_.isEmpty()) message_ = qs(report);
+        for (const GenConfig::Biome& b : gen_->biomes) {
+            QVariantMap m;
+            m["id"] = qs(b.id);
+            m["label"] = qs(b.label);
+            biomes_.push_back(m);
+        }
         refresh();
         loadSettingsMap();
         connect(&searchTimer_, &QTimer::timeout, this, &MenuBackend::pollLan);
@@ -184,16 +197,29 @@ public:
             m["seed"] = qs(std::to_string(w.seed));
             m["seedText"] = qs(w.seedText);
             m["generator"] = qs(w.generator);
+            m["biome"] = qs(w.biome);
+            m["typeText"] = qs(typeText(w));
             worlds_.push_back(m);
         }
         Q_EMIT worldsChanged();
     }
-    // Ergebnis: {error: "" oder Meldung, dir: Ordner der neuen Welt}
-    Q_INVOKABLE QVariantMap createWorld(const QString& name, const QString& seed) {
+    QVariantList biomes() const { return biomes_; }
+    // Zufälliger Seed fürs Feld "Seed" (die Welt ist damit schon festgelegt, man kann ihn noch ändern)
+    Q_INVOKABLE QString randomSeed() const { return qs(worlds::randomSeedText()); }
+    // Ergebnis: {error: "" oder Meldung, dir: Ordner der neuen Welt}. type "normal" oder "flat", biome "all" oder eine id
+    Q_INVOKABLE QVariantMap createWorld(const QString& name, const QString& seed, const QString& type = "normal", const QString& biome = "all") {
         QVariantMap r;
         WorldInfo w;
         std::string err;
-        if (!worlds::create(ss(name), ss(seed), w, &err)) {
+        worlds::CreateOptions opt;
+        opt.generator = ss(type);
+        opt.biome = ss(biome).empty() ? "all" : ss(biome);
+        opt.generatorText = gen_->text;
+        if (opt.biome != "all" && gen_->findBiome(opt.biome) < 0) {
+            r["error"] = qs("Unbekanntes Biom '" + opt.biome + "'.");
+            return r;
+        }
+        if (!worlds::create(ss(name), ss(seed), opt, w, &err)) {
             r["error"] = qs(err);
             return r;
         }
@@ -253,6 +279,7 @@ public:
         else if (k == "shadows") s.shadows = value.toBool();
         else if (k == "edges") s.edges = value.toBool();
         else if (k == "grid") s.grid = value.toBool();
+        else if (k == "biomeBorders") s.biomeBorders = value.toBool();
         else if (k == "autosaveMinutes") s.autosaveMinutes = std::clamp(value.toInt(), 0, 120);
         else return;
         saveSettings(s);
@@ -315,6 +342,7 @@ private:
         settings_["shadows"] = s.shadows;
         settings_["edges"] = s.edges;
         settings_["grid"] = s.grid;
+        settings_["biomeBorders"] = s.biomeBorders;
         settings_["autosaveMinutes"] = s.autosaveMinutes;
         Q_EMIT settingsChanged();
     }
@@ -368,6 +396,20 @@ private:
         return 0;
     }
 
+    std::string biomeIds() const {
+        std::string s;
+        for (const GenConfig::Biome& b : gen_->biomes) s += (s.empty() ? "" : ", ") + b.id;
+        return s;
+    }
+
+    // "flach", "normal, alle Biome", "normal, nur Ebene"
+    std::string typeText(const WorldInfo& w) const {
+        if (w.generator != "normal") return "flach";
+        if (w.biome == "all" || w.biome.empty()) return "normal, alle Biome";
+        const int b = gen_->findBiome(w.biome);
+        return "normal, nur " + (b >= 0 ? gen_->biomes[(size_t)b].label : w.biome);
+    }
+
     std::string worldLine(size_t i) const {
         const WorldInfo& w = infos_[i];
         char num[8];
@@ -376,6 +418,7 @@ private:
         if (name.size() < 26) name.resize(26, ' ');
         return std::string(qs(w.dir.u8string()) == selectedDir_ ? " >" : "  ") + num + "  " + name + "  last opened " +
                worlds::formatTime(w.lastPlayed) + ", played " + worlds::formatDuration(w.playTime) + ", seed " + std::to_string(w.seed) +
+               ", " + (w.generator == "normal" ? "normal" + (w.biome == "all" ? std::string() : " (" + w.biome + ")") : std::string("flat")) +
                (w.broken ? "  BROKEN (can only be deleted)" : "");
     }
 
@@ -399,7 +442,7 @@ private:
         const GameSettings s = loadSettings();
         o << "settings      name " << quoted(s.playerName.empty() ? defaultPlayerName() + " (default)" : s.playerName) << ", mouse "
           << s.mouseSensitivity << ", fov " << s.fovDeg << ", shadows " << (s.shadows ? "on" : "off") << ", edges " << (s.edges ? "on" : "off")
-          << ", grid " << (s.grid ? "on" : "off") << ", autosave " << (s.autosaveMinutes ? std::to_string(s.autosaveMinutes) + " min" : "never")
+          << ", grid " << (s.grid ? "on" : "off") << ", borders " << (s.biomeBorders ? "on" : "off") << ", autosave " << (s.autosaveMinutes ? std::to_string(s.autosaveMinutes) + " min" : "never")
           << "\n";
         o << "commands      'menu help'";
         return o.str();
@@ -449,16 +492,28 @@ private:
                    ". The game window opens; then all game commands work ('world', 'status', 'help'). 'world menu' comes back here.";
         }
         if (sub == "new" || sub == "create") {
-            if (arg(2).empty()) return "Error: menu new <name> [seed]   (names with spaces in \"quotes\")";
+            // menu new <name> [seed] [normal|flat] [all|<biome>]: nach dem Namen in beliebiger Reihenfolge
+            if (arg(2).empty()) return "Error: menu new <name> [seed] [normal|flat] [all|<biome>]   (names with spaces in \"quotes\")";
+            std::string seed, type = "normal", biome = "all";
+            for (size_t i = 3; i < t.size(); ++i) {
+                const std::string a = lower(t[i]);
+                if (a == "normal" || a == "flat" || a == "flach") type = a == "flach" ? "flat" : a;
+                else if (a == "all" || a == "alle") biome = "all";
+                else if (gen_->findBiome(a) >= 0) biome = a;
+                else if (seed.empty()) seed = t[i];
+                else return "Error: menu new: unknown option '" + t[i] + "' (normal, flat, all, biomes: " + biomeIds() + ")";
+            }
+            if (type == "flat" && biome != "all") return "Error: a flat world has no biomes (use 'normal " + biome + "')";
+            if (seed.empty()) seed = worlds::randomSeedText();  // wie im Dialog: der Seed steht schon vorher fest
             Q_EMIT closeDialogs();
-            const QVariantMap r = createWorld(qs(arg(2)), qs(arg(3)));
+            const QVariantMap r = createWorld(qs(arg(2)), qs(seed), qs(type), qs(biome));
             if (!r["error"].toString().isEmpty()) return "Error: " + ss(r["error"].toString());
             if (page_ != "worlds") requestPage("worlds");
             setSelectedDir(r["dir"].toString());
             const int i = indexOf(selectedDir_);
             const WorldInfo& w = infos_[(size_t)i - 1];
             return "created world " + std::to_string(i) + " " + quoted(w.name) + ", seed " + std::to_string(w.seed) +
-                   (w.seedText.empty() ? " (random)" : "") + ", selected. 'menu play' opens it.";
+                   ", " + typeText(w) + ", selected. 'menu play' opens it.";
         }
         if (sub == "rename") {
             const WorldInfo* w = findWorld(arg(2), err);
@@ -515,6 +570,7 @@ private:
             else if ((key == "mouse" || key == "mousesensitivity") && parseNum(v, d)) setSetting("mouseSensitivity", std::clamp(d, 0.2, 3.0));
             else if (key == "fov" && parseNum(v, d)) setSetting("fov", std::clamp(d, 40.0, 100.0));
             else if ((key == "shadows" || key == "edges" || key == "grid") && parseBool(v, b)) setSetting(qs(key), b);
+            else if ((key == "borders" || key == "biomeborders") && parseBool(v, b)) setSetting("biomeBorders", b);
             else if ((key == "autosave" || key == "autosaveminutes") && parseNum(v, d)) setSetting("autosaveMinutes", (int)std::clamp(d, 0.0, 60.0));
             else return "Error: menu set " + key + " <value>: unknown key or bad value (name <text>, mouse <0.2-3>, fov <40-100>, shadows|edges|grid on|off, autosave <minutes>)";
             const std::string s = status();
@@ -537,6 +593,8 @@ private:
     std::vector<WorldInfo> infos_;
     QVariantMap settings_;
     QString message_, page_ = "main", dialog_, selectedDir_;
+    std::shared_ptr<const GenConfig> gen_;  // Biome für neue Welten (assets/biomes.json)
+    QVariantList biomes_;
     net::Search search_;
     QTimer searchTimer_, remoteTimer_;
     QElapsedTimer clock_;

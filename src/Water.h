@@ -59,26 +59,43 @@ struct GroundMap {
 };
 uint64_t newGroundRev();
 
+// Grund und Strömung eines Gewässers, die von außen kommen: die Flüsse des Geländes (Terrain). Wasser ist dort, wo der
+// Grund unter dem Spiegel liegt. Wird auch aus mehreren Threads gefragt (Wasserphysik)
+struct WaterShape {
+    virtual ~WaterShape() = default;
+    virtual double bottom(double x, double z) const = 0;                          // Grund (m); kein Wasser: über dem Spiegel
+    virtual glm::dvec3 flow(double x, double z) const = 0;                        // Strömung ohne Hindernisse (m/s)
+    virtual double lowest(double x0, double z0, double x1, double z1) const = 0;  // tiefster Grund im Rechteck (ungefähr)
+    virtual uint64_t revision() const = 0;                                        // neu, wenn sich der Grund ändert
+};
+
 // Ein Gewässer. Becken: Quader (lo..hi), Wasserspiegel hi.y. Meer: unbegrenzt in der Fläche, Wasser zwischen dem Grund
-// (ground) und dem Wasserspiegel; lo und hi.xz zählen beim Meer nicht.
+// (ground) und dem Wasserspiegel; lo und hi.xz zählen beim Meer nicht. Flüsse des Geländes: wie ein Meer, Grund und
+// Strömung aus shape; sie entstehen mit dem Gelände (World::syncTerrainWater), werden nicht gespeichert und nicht übertragen
 struct WaterBody {
     uint32_t id = 0;
     int liquid = 0;
     bool sea = false;
     glm::dvec3 lo{0}, hi{0};
     std::shared_ptr<const GroundMap> ground;  // nur Meer (nullptr: Grund 10 m unter dem Spiegel)
+    std::shared_ptr<const WaterShape> shape;  // Flüsse des Geländes (dann sea = true)
     double waves = 0;          // Wellenhöhe: Tal bis Kamm der größten Welle (m)
     glm::dvec3 flow{0};        // Strömung (m/s), z.B. ein Fluss
     bool ownTemp = false;      // false: hat die Lufttemperatur
     double tempC = 20;
     double level() const { return hi.y; }
-    // Grund (Becken: der Boden, Meer: die Karte)
-    double bottomAt(double x, double z) const { return !sea ? lo.y : ground ? ground->at(x, z) : hi.y - 10.0; }
+    bool generated() const { return shape != nullptr; }  // Flüsse des Geländes
+    bool river() const { return shape || flow.x * flow.x + flow.z * flow.z >= 0.0025; }  // fließt (tp river)
+    // Grund (Becken: der Boden, Meer: die Karte, Flüsse: das Gelände)
+    double bottomAt(double x, double z) const {
+        return shape ? shape->bottom(x, z) : !sea ? lo.y : ground ? ground->at(x, z) : hi.y - 10.0;
+    }
     // Punkt (waagrecht) gehört zum Gewässer: im Becken, beim Meer überall, wo der Grund unter dem Spiegel liegt
     bool covers(double x, double z) const {
         return sea ? bottomAt(x, z) < hi.y : x >= lo.x && x <= hi.x && z >= lo.z && z <= hi.z;
     }
 };
+constexpr uint32_t kTerrainWaterId = 0x7fff0001u;  // Nummer des Gewässers "Flüsse" (gleich bei allen Mitspielern)
 // Standardgrund eines neuen Meers: der Boden der Welt (0), liegt der Spiegel darunter, 10 m unter dem Spiegel
 double defaultSeaBottom(double level);
 
@@ -95,7 +112,7 @@ struct FlowGrid {
     glm::dvec2 base{0};               // Strömung ohne Hindernisse (m/s)
     std::vector<glm::vec2> u;         // Geschwindigkeit je Zelle (x, z)
     std::vector<float> foam, rise, p; // Schaum 0..1, Stau (m), Druck (Startwert der nächsten Rechnung)
-    std::vector<uint8_t> solid;       // Hindernis
+    std::vector<uint8_t> solid;       // Hindernis: 1 Teil, 2 Grund (Küste, Ufer)
     uint64_t solidSig = 0;            // Lage aller Hindernisse: unverändert -> nicht neu rastern
     size_t index(int x, int z) const { return (size_t)x + (size_t)nx * (size_t)z; }
 };

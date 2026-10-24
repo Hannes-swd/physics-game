@@ -143,6 +143,10 @@ public:
     BodyHandle createBody(const BodyDesc& d);
     BodyHandle createGroundPlane(double y, int material, float restitution);  // (fast) unendliche Ebene
     BodyHandle groundBody() const;
+    // Gelände: statisches Höhenfeld aus count × count Höhen (Zeile für Zeile entlang z, je Zeile entlang x), Abstand
+    // cell, Ecke (x, z) = corner. Höhen in m (Welt). count muss gerade sein (Jolt: Vielfaches der Blockgröße 2).
+    // Die Vierecke werden entlang der Diagonale (x, z) -> (x+1, z+1) geteilt (so muss auch das Bild sein)
+    BodyHandle createHeightField(const std::vector<float>& heights, int count, const glm::dvec2& corner, double cell, int material);
 
     // Konvexe Stücke für die Kollision zusammenfassen: Paare, deren gemeinsame Hülle höchstens
     // "tolerance" m³ mehr Volumen hat als beide zusammen, werden verschmolzen (weniger, größere Hüllen = schneller).

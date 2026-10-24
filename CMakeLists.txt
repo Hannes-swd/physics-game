@@ -119,7 +119,23 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -DIN=${MATERIALS_SRC} -DOUT=${MATERIALS_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
   DEPENDS ${MATERIALS_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
   COMMENT "Materialien materials.json")
-add_custom_target(assets DEPENDS ${AVATAR_OUT} ${MATERIALS_OUT})
+# Biome (Weltgenerierung): das Spiel liest assets/biomes.json; diese Kopie ist eingebaut, falls die Datei fehlt
+set(BIOMES_SRC ${CMAKE_CURRENT_SOURCE_DIR}/assets/biomes.json)
+set(BIOMES_OUT ${SHADER_OUT}/biomes.json.inc)
+add_custom_command(
+  OUTPUT ${BIOMES_OUT}
+  COMMAND ${CMAKE_COMMAND} -DIN=${BIOMES_SRC} -DOUT=${BIOMES_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  DEPENDS ${BIOMES_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  COMMENT "Biome biomes.json")
+# Bäume: das Spiel liest assets/trees.json; diese Kopie ist eingebaut, falls die Datei fehlt
+set(TREES_SRC ${CMAKE_CURRENT_SOURCE_DIR}/assets/trees.json)
+set(TREES_OUT ${SHADER_OUT}/trees.json.inc)
+add_custom_command(
+  OUTPUT ${TREES_OUT}
+  COMMAND ${CMAKE_COMMAND} -DIN=${TREES_SRC} -DOUT=${TREES_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  DEPENDS ${TREES_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  COMMENT "Bäume trees.json")
+add_custom_target(assets DEPENDS ${AVATAR_OUT} ${MATERIALS_OUT} ${BIOMES_OUT} ${TREES_OUT})
 
 # ---------------------------------------------------------------- Qt (Hauptmenü, qml/)
 # Qt 6 mit Quick und QuickControls2. Gefunden über CMAKE_PREFIX_PATH bzw. Qt6_DIR, sonst wird die neueste Version unter
@@ -157,8 +173,15 @@ target_link_libraries(Werkstatt PRIVATE Vulkan::Vulkan glfw glm::glm Jolt imgui)
 target_compile_definitions(Werkstatt PRIVATE
   GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS GLM_ENABLE_EXPERIMENTAL
   NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+option(WERKSTATT_ASAN "AddressSanitizer: Speicherfehler finden (langsamer, nur zum Suchen)" OFF)
 if(MSVC)
   target_compile_options(Werkstatt PRIVATE /utf-8 /W3 /MP)
+  if(WERKSTATT_ASAN)
+    target_compile_options(Werkstatt PRIVATE /fsanitize=address /Zi)
+    # Jolt und imgui ohne AddressSanitizer: die Container-Prüfung muss überall gleich sein
+    target_compile_definitions(Werkstatt PRIVATE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
+    target_link_options(Werkstatt PRIVATE /INCREMENTAL:NO /DEBUG)
+  endif()
   target_compile_options(imgui PRIVATE /utf-8)
   target_link_libraries(Werkstatt PRIVATE comdlg32)
   set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Werkstatt)

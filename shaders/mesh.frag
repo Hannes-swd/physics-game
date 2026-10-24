@@ -5,6 +5,7 @@ layout(location = 0) in vec3 vWorldPos;
 layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec3 vLocalPos;
 layout(location = 3) flat in uint vObj;
+layout(location = 4) in vec4 vColor;  // Farbe je Eckpunkt (Gelände), a = 0: Rinde (Baum)
 
 layout(set = 0, binding = 1) uniform sampler2DShadow shadowMap;
 // Temperaturgitter aller warmen/kalten Teile: je Zelle (Temperatur °C, Höchsttemperatur, Verkohlung, Schmelze)
@@ -65,6 +66,28 @@ vec3 wood(vec3 p, vec3 c1, vec3 c2, float seed, inout float rough) {
     return col;
 }
 
+// Rinde eines Baums (Mantelflächen von Stamm und Ästen): Längsrillen entlang der lokalen Y-Achse (Stamm), dunkler als
+// das Holz, grau-braun; dazwischen tiefe Risse
+vec3 bark(vec3 p, vec3 c1, float seed, inout float rough) {
+    vec3 q = p * vec3(11.0, 0.9, 11.0) + seed * 17.0;
+    float ridge = fbm(q);
+    float crack = smoothstep(0.62, 0.78, vnoise(p * vec3(26.0, 2.2, 26.0) + seed * 3.0)) * aaFade(p, 26.0);
+    vec3 col = mix(vec3(0.20, 0.18, 0.16), c1 * 0.55, 0.45);
+    col *= 0.62 + 0.55 * ridge;
+    col *= 1.0 - 0.55 * crack;
+    col *= 0.9 + 0.2 * vnoise(p * 3.0 + seed);
+    rough = 0.92;
+    return col;
+}
+
+// Laub (Kronen): Büschel in zwei Grüntönen, fein gesprenkelt
+vec3 leaves(vec3 p, vec3 c1, vec3 c2, float seed) {
+    float clump = fbm(p * 1.4 + seed * 5.0);
+    float fine = vnoise(p * 9.0 + seed * 3.0);
+    vec3 col = mix(c2, c1, smoothstep(0.35, 0.7, clump));
+    return col * (0.72 + 0.5 * fine);
+}
+
 vec3 brick(vec3 p, vec3 c1, vec3 c2, float seed) {
     float n = fbm(p * 35.0 + seed * 7.0);
     vec3 col = mix(c2, c1, smoothstep(0.25, 0.75, n));
@@ -100,16 +123,10 @@ vec3 metal(vec3 p, vec3 c1, vec3 c2, inout float rough) {
     return mix(c2, c1, 0.6 + 0.4 * brushed) * (0.95 + 0.1 * blotch);
 }
 
-// Boden der Werkstatt mit Raster. rel = Position relativ zum Darstellungsursprung
-vec3 ground(vec3 rel, inout float rough) {
-    vec3 wp = rel + frame.originMod.xyz;   // für Muster (wiederholen sich ohnehin)
-    vec3 wabs = rel + frame.originF.xyz;    // für die Achsen
-    vec3 col = mix(vec3(0.085, 0.085, 0.08), vec3(0.15, 0.145, 0.135), fbm(wp * 0.6));
-    col *= 0.92 + 0.12 * mix(0.5, vnoise(wp * 40.0), aaFade(wp, 40.0));
-    // Fugen alle 2 m
-    vec2 t = abs(fract(wp.xz / 2.0 + 0.5) - 0.5) * 2.0;
-    float joint = 1.0 - smoothstep(0.0, 0.006, min(1.0 - t.x, 1.0 - t.y) * 2.0);
-    col *= 1.0 - 0.35 * joint;
+// Raster (10 cm und 1 m) und die Achsen, von oben auf den Boden bzw. das Gelände gelegt (Ansicht -> Raster)
+vec3 groundGrid(vec3 col, vec3 rel, float strength) {
+    vec3 wp = rel + frame.originMod.xyz;
+    vec3 wabs = rel + frame.originF.xyz;
     if (pc.params.x > 0.5) {
         vec2 c1 = wp.xz / 0.1;
         vec2 c2 = wp.xz;
@@ -118,16 +135,37 @@ vec3 ground(vec3 rel, inout float rough) {
         vec2 g2 = abs(fract(c2 - 0.5) - 0.5) / max(w2, 1e-4);
         float minor = (1.0 - min(min(g1.x, g1.y), 1.0)) * (1.0 - smoothstep(0.04, 0.2, max(w1.x, w1.y)));
         float major = (1.0 - min(min(g2.x, g2.y) / 1.5, 1.0)) * (1.0 - smoothstep(0.08, 0.35, max(w2.x, w2.y)));
-        col = mix(col, vec3(0.30, 0.32, 0.36), minor * 0.4);
-        col = mix(col, vec3(0.42, 0.45, 0.50), major * 0.7);
+        col = mix(col, vec3(0.30, 0.32, 0.36), minor * 0.4 * strength);
+        col = mix(col, vec3(0.42, 0.45, 0.50), major * 0.7 * strength);
         // Achsen
         float ax = 1.0 - min(abs(wabs.z) / max(fwidth(wabs.z) * 1.5, 1e-5), 1.0);
         float az = 1.0 - min(abs(wabs.x) / max(fwidth(wabs.x) * 1.5, 1e-5), 1.0);
         col = mix(col, vec3(0.9, 0.2, 0.15), ax);
         col = mix(col, vec3(0.2, 0.4, 0.95), az);
     }
-    rough = 0.85;
     return col;
+}
+
+// Boden der Werkstatt mit Raster (flache Welt). rel = Position relativ zum Darstellungsursprung
+vec3 ground(vec3 rel, inout float rough) {
+    vec3 wp = rel + frame.originMod.xyz;   // für Muster (wiederholen sich ohnehin)
+    vec3 col = mix(vec3(0.085, 0.085, 0.08), vec3(0.15, 0.145, 0.135), fbm(wp * 0.6));
+    col *= 0.92 + 0.12 * mix(0.5, vnoise(wp * 40.0), aaFade(wp, 40.0));
+    // Fugen alle 2 m
+    vec2 t = abs(fract(wp.xz / 2.0 + 0.5) - 0.5) * 2.0;
+    float joint = 1.0 - smoothstep(0.0, 0.006, min(1.0 - t.x, 1.0 - t.y) * 2.0);
+    col *= 1.0 - 0.35 * joint;
+    rough = 0.85;
+    return groundGrid(col, rel, 1.0);
+}
+
+// Gelände: Farbe der Oberfläche je Eckpunkt (Biom, Hang), dazu etwas Fleckigkeit, damit es nicht wie Plastik aussieht
+vec3 terrain(vec3 rel, vec3 base, inout float rough) {
+    vec3 wp = rel + frame.originMod.xyz;
+    vec3 col = base * (0.86 + 0.24 * fbm(wp * 0.35));
+    col *= 0.94 + 0.12 * mix(0.5, vnoise(wp * 6.0), aaFade(wp, 6.0));
+    rough = 0.92;
+    return groundGrid(col, rel, 0.45);  // auf dem Gelände zurückhaltender
 }
 
 // ------------------------------------------------------------------ Wärme
@@ -224,7 +262,7 @@ void main() {
     vec3 p = vLocalPos;
 
     vec3 albedo;
-    if (shading == 0) albedo = wood(p, o.color.rgb, o.color2.rgb, seed, rough);
+    if (shading == 0) albedo = vColor.a < 0.5 ? bark(p, o.color.rgb, seed, rough) : wood(p, o.color.rgb, o.color2.rgb, seed, rough);
     else if (shading == 1) albedo = brick(p, o.color.rgb, o.color2.rgb, seed);
     else if (shading == 2) albedo = metal(p, o.color.rgb, o.color2.rgb, rough);
     else if (shading == 3) albedo = stone(p, o.color.rgb, o.color2.rgb, rough);
@@ -232,6 +270,8 @@ void main() {
     else if (shading == 5) albedo = concrete(p, o.color.rgb, o.color2.rgb);
     else if (shading == 7) albedo = o.color.rgb * (0.93 + 0.07 * vnoise(p * 50.0));  // Kunststoff: glatt, leicht fleckig
     else if (shading == 10) albedo = ground(vWorldPos, rough);
+    else if (shading == 11) albedo = terrain(vWorldPos, vColor.rgb, rough);
+    else if (shading == 12) albedo = leaves(p, o.color.rgb, o.color2.rgb, seed);
     else albedo = o.color.rgb;
 
     // Wärme: Anlauffarben, Verkohlung, Glühen, Schmelze, Reif
@@ -267,6 +307,11 @@ void main() {
     }
 
     vec3 N = normalize(vNormal);
+    if (shading == 12) {  // Laub: unruhige Normalen, Büschel fangen das Licht verschieden
+        vec3 q = p * 4.0 + seed;
+        N = normalize(N + 0.7 * (vec3(vnoise(q), vnoise(q + 7.1), vnoise(q + 13.7)) - 0.5));
+        rough = 0.85;
+    }
     bool ortho = pc.camPos.w > 0.5;
     vec3 V = normalize(pc.camPos.xyz - vWorldPos);
     vec3 L = normalize(frame.sunDir.xyz);

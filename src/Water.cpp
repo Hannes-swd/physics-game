@@ -42,6 +42,10 @@ constexpr size_t kMaxRooms = 8;
 bool touches(const WaterBody& b, const glm::dvec3& mn, const glm::dvec3& mx) {
     const double margin = 0.5 * b.waves + 0.01 + glm::dot(b.flow, b.flow) / (2 * kG);  // Wellen, Stau vor Hindernissen
     if (mn.y > b.level() + margin) return false;
+    if (b.shape) {  // Flüsse: tiefster Grund mit Wasser darunter
+        const double lo = b.shape->lowest(mn.x, mn.z, mx.x, mx.z);
+        return mx.y >= lo && lo < b.level() + margin;
+    }
     if (b.sea) {  // ganz im Grund (vergraben) oder an Land: trocken
         double lo = 0, hi = 0;
         if (b.ground) b.ground->range(mn.x, mn.z, mx.x, mx.z, lo, hi);
@@ -223,7 +227,7 @@ glm::dvec3 waveVelocity(const WaveSet& w, double x, double z, double depth, doub
 bool flowSample(const FlowGrid& g, double x, double z, glm::dvec2* u, double* rise, double* foam) {
     if (g.nx < 2 || g.nz < 2) return false;
     const double fx = (x - g.origin.x) / g.cell - 0.5, fz = (z - g.origin.y) / g.cell - 0.5;  // Zellmitten
-    if (fx < -0.5 || fz < -0.5 || fx > g.nx - 0.5 || fz > g.nz - 0.5) return false;
+    if (!(fx >= -0.5 && fz >= -0.5 && fx <= g.nx - 0.5 && fz <= g.nz - 0.5)) return false;  // auch NaN
     const double cx = std::clamp(fx, 0.0, g.nx - 1.000001), cz = std::clamp(fz, 0.0, g.nz - 1.000001);
     const int ix = (int)cx, iz = (int)cz;
     const double tx = cx - ix, tz = cz - iz;
@@ -431,10 +435,12 @@ uint32_t World::addWater(WaterBody b) {
 
 bool World::removeWater(uint32_t id) {
     auto it = std::find_if(waters_.begin(), waters_.end(), [&](const WaterBody& b) { return b.id == id; });
-    if (id != 0 && it == waters_.end()) return false;
-    std::vector<WaterBody> gone;
-    if (id == 0) gone.swap(waters_);
-    else {
+    if (id != 0 && (it == waters_.end() || it->generated())) return false;  // die Flüsse gehören zum Gelände
+    std::vector<WaterBody> gone, keep;
+    if (id == 0) {  // alle, aber die Flüsse des Geländes bleiben
+        for (WaterBody& b : waters_) (b.generated() ? keep : gone).push_back(b);
+        waters_.swap(keep);
+    } else {
         gone.push_back(*it);
         waters_.erase(it);
     }
@@ -457,7 +463,13 @@ void World::changedWater(const WaterBody& b) {
 }
 
 void World::setWaters(const std::vector<WaterBody>& list) {
-    waters_ = list;
+    // Die Flüsse des Geländes bleiben (sie kommen nicht aus Dateien oder vom Gastgeber, jeder erzeugt sie selbst)
+    std::vector<WaterBody> keep;
+    for (const WaterBody& b : waters_)
+        if (b.generated()) keep.push_back(b);
+    waters_.clear();
+    for (const WaterBody& b : list)
+        if (!b.generated() && b.id != kTerrainWaterId) waters_.push_back(b);
     for (WaterBody& b : waters_) {
         nextWaterId_ = std::max(nextWaterId_, b.id + 1);
         if (b.sea && !b.ground) {  // alte Datei: Grund wie bei einem neuen Meer
@@ -467,6 +479,7 @@ void World::setWaters(const std::vector<WaterBody>& list) {
             b.ground = m;
         }
     }
+    waters_.insert(waters_.end(), keep.begin(), keep.end());
 }
 
 const WaterBody* World::waterTouching(const glm::dvec3& mn, const glm::dvec3& mx) const {
@@ -531,7 +544,7 @@ glm::dvec3 World::currentAt(const WaterBody& b, double x, double z) const {
     glm::dvec2 u;
     if (const FlowGrid* g = flowGrid(b.id))
         if (flowSample(*g, x, z, &u, nullptr, nullptr)) return glm::dvec3(u.x, 0, u.y);
-    return b.flow;
+    return b.shape ? b.shape->flow(x, z) : b.flow;
 }
 
 void World::advanceWaterClock(double dt) {
@@ -548,7 +561,9 @@ void World::updateFlow(double dt) {
     // Gitter zu den Gewässern passend halten: neu, entfernt, andere Größe, Meer-Fenster gewandert (Werte übernehmen)
     std::vector<FlowGrid> grids;
     for (const WaterBody& b : waters_) {
-        if (glm::length(b.flow) < 0.01 && b.waves < 0.005) continue;  // ruhiges Wasser: kein Gitter, kostet nichts
+        // Flüsse: die Strömung des Flusses beim Blickpunkt (das Gitter lenkt sie dann entlang der Ufer)
+        const glm::dvec3 flow = b.shape ? b.shape->flow(waterFocus_.x, waterFocus_.z) : b.flow;
+        if (glm::length(flow) < 0.01 && b.waves < 0.005) continue;  // ruhiges Wasser: kein Gitter, kostet nichts
         glm::dvec2 lo, hi;
         if (b.sea) {
             const glm::dvec2 c = glm::floor(glm::dvec2(waterFocus_.x, waterFocus_.z) / 4.0) * 4.0;  // in 4-m-Schritten
@@ -564,7 +579,7 @@ void World::updateFlow(double dt) {
         g.nx = std::max(2, (int)std::ceil((hi.x - lo.x) / g.cell - 1e-9));
         g.nz = std::max(2, (int)std::ceil((hi.y - lo.y) / g.cell - 1e-9));
         g.origin = lo;
-        g.base = glm::dvec2(b.flow.x, b.flow.z);
+        g.base = glm::dvec2(flow.x, flow.z);
         const size_t n = (size_t)g.nx * g.nz;
         g.u.assign(n, glm::vec2(g.base));
         g.foam.assign(n, 0.0f);
@@ -618,17 +633,18 @@ void World::updateFlow(double dt) {
         }
         mix((uint64_t)std::llround(level * 1000.0));
         if (b->sea && b->ground) mix(b->ground->rev);
+        if (b->shape) mix(b->shape->revision());
         const bool reraster = sig != g.solidSig;
         if (reraster) {
             g.solidSig = sig;
             std::fill(g.solid.begin(), g.solid.end(), 0);
-            // Meer: Land (Grund über dem Spiegel) ist Küste, das Wasser fließt daran entlang
+            // Meer: Land (Grund über dem Spiegel) ist Küste, das Wasser fließt daran entlang. Flüsse: die Ufer
             double glo = 0, ghi = 0;
             if (b->sea && b->ground) b->ground->range(g.origin.x, g.origin.y, gHi.x, gHi.y, glo, ghi);
-            if (b->sea && b->ground && ghi >= level)
+            if (b->shape || (b->sea && b->ground && ghi >= level))
                 for (int z = 0; z < g.nz; ++z)
                     for (int x = 0; x < g.nx; ++x)
-                        if (b->bottomAt(g.origin.x + (x + 0.5) * c, g.origin.y + (z + 0.5) * c) >= level) g.solid[g.index(x, z)] = 1;
+                        if (b->bottomAt(g.origin.x + (x + 0.5) * c, g.origin.y + (z + 0.5) * c) >= level) g.solid[g.index(x, z)] = 2;  // 2: Grund (Küste, Ufer)
         } else {
             obstacles.clear();  // unverändert: Raster bleibt
         }
@@ -783,11 +799,12 @@ void World::updateFlow(double dt) {
                         const double curl = ((g.u[g.index(x + 1, z)].y - g.u[g.index(x - 1, z)].y) - (g.u[g.index(x, z + 1)].x - g.u[g.index(x, z - 1)].x)) / (2 * c);
                         f[i] = (float)std::min(1.0, f[i] + dt * 0.08 * std::max(0.0, std::abs(curl) - 1.5));
                     }
+                    // Flüsse: ihre Ufer schäumen nicht (sie laufen mit dem Fluss, nur das Raster hat Stufen), nur Teile darin
                     double impact = 0;  // wie schnell das freie Wasser auf ein Hindernis daneben zuläuft
                     bool shore = false;
                     const int d[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
                     for (const auto& k : d)
-                        if (solidAt(x + k[0], z + k[1])) {
+                        if (solidAt(x + k[0], z + k[1]) && !(b->shape && g.solid[g.index(x + k[0], z + k[1])] == 2)) {
                             shore = true;
                             impact = std::max(impact, g.base.x * k[0] + g.base.y * k[1]);
                         }
@@ -886,7 +903,11 @@ bool World::waterStep(Object& o, float hStep) {
     // dem ganzen Teil gleich hoch (der häufige Fall), eine feste Ebene, sonst je Stück die Höhe unter seinem Schwerpunkt
     bool flatBottom = true;
     double bottom0 = 0;
-    if (wb && wb->sea) {
+    if (wb && wb->shape) {  // Flüsse: Grund je Stück (das Flussbett ist nie eben)
+        flatBottom = false;
+        bottom0 = wb->shape->lowest(o.wMin.x, o.wMin.z, o.wMax.x, o.wMax.z);
+        planes[nPlanes++] = local({0, -1, 0}, -bottom0);
+    } else if (wb && wb->sea) {
         double lo = 0, hi = 0;
         flatBottom = !wb->ground || wb->ground->range(o.wMin.x, o.wMin.z, o.wMax.x, o.wMax.z, lo, hi);
         bottom0 = wb->ground ? lo : wb->bottomAt(0, 0);
@@ -1056,6 +1077,7 @@ bool World::waterStep(Object& o, float hStep) {
         glm::dvec2 g0(0);
         const double s0 = surfaceHeight(*wb, waves, o.pos.x, o.pos.z, &g0);
         const FlowGrid* fg = flowGrid(wb->id);
+        const glm::dvec3 flow0 = wb->shape ? wb->shape->flow(o.pos.x, o.pos.z) : wb->flow;  // Fluss: einmal je Teil
         const glm::dvec3 u0 = waveVelocity(waves, o.pos.x, o.pos.z, 0.0, t);
         const double k0 = waves.calm ? 0.0 : waves.k[0];
         for (size_t i = 0; i < o.aero.size(); ++i) {
@@ -1070,7 +1092,7 @@ bool World::waterStep(Object& o, float hStep) {
             anyWet = true;
             const double depth = std::max(0.0, s - c.y);
             // Strömung an der Fläche: um Hindernisse herum (Gitter), dazu die Bewegung in den Wellen
-            const glm::dvec3 u = (fg ? currentAt(*wb, c.x, c.z) : wb->flow) + (k0 > 0 ? u0 * std::exp(-k0 * depth) : glm::dvec3(0));
+            const glm::dvec3 u = (fg ? currentAt(*wb, c.x, c.z) : flow0) + (k0 > 0 ? u0 * std::exp(-k0 * depth) : glm::dvec3(0));
             const glm::dvec3 vRel = v + glm::cross(w, r) - u;
             relMax = std::max(relMax, glm::length(vRel));
             const double A = f.area * wet;
@@ -1117,7 +1139,7 @@ bool World::waterStep(Object& o, float hStep) {
             const bool unbalanced = std::abs(st.buoyancy.y - weight) > 0.01 * weight || glm::length(buoyTorque) > 0.005 * weight * size;
             const bool moving = glm::length(v) + glm::length(w) * size > 0.003;
             const bool surface = o.wMin.y < s + 0.5 * wb->waves && o.wMax.y > s - 0.5 * wb->waves;
-            if ((unbalanced && moving) || (surface && (!waves.calm || glm::length(wb->flow) > 0.01)) || roomFlow) physics_.keepAwake(o.body);
+            if ((unbalanced && moving) || (surface && (!waves.calm || glm::length(flow0) > 0.01)) || roomFlow) physics_.keepAwake(o.body);
         }
     } else if (roomFlow) {
         physics_.keepAwake(o.body);
@@ -1172,7 +1194,9 @@ std::string World::waterText(const WaterBody& b) const {
     std::ostringstream ss;
     const Liquid& L = liquids()[b.liquid];
     ss << "#" << b.id << " ";
-    if (b.sea) {
+    if (b.shape) {
+        ss << "rivers of the terrain, level " << cm(b.level()) << " cm";
+    } else if (b.sea) {
         ss << "sea, level " << cm(b.level()) << " cm, bottom " << cm(b.ground ? b.ground->base : b.bottomAt(0, 0)) << " cm";
         if (b.ground && !b.ground->tiles.empty())
             ss << " (" << b.ground->tiles.size() << " tile" << (b.ground->tiles.size() == 1 ? "" : "s") << " of 16 m with own ground, "
@@ -1189,7 +1213,7 @@ std::string World::waterText(const WaterBody& b) const {
         int solid = 0;
         float fastest = 0, foam = 0, rise = -1, dip = 1;
         for (size_t i = 0; i < g->u.size(); ++i) {
-            solid += g->solid[i];
+            solid += g->solid[i] != 0;
             if (g->solid[i]) continue;
             fastest = std::max(fastest, glm::length(g->u[i]));
             foam = std::max(foam, g->foam[i]);

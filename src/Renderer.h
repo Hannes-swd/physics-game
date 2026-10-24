@@ -30,6 +30,7 @@ struct ObjectGpuData {
 };
 
 constexpr int kMaxLights = 8;  // Feuerschein (Punktlichter)
+constexpr uint32_t kMaxDrawItems = 32768;  // Teile, Gelände, Bäume (Instanzen) je Bild
 constexpr int kMaxWater = 8;   // Gewässer je Bild (die nächsten)
 constexpr int kWaterGroundCells = 128;  // Meer: Fenster der Grundkarte um die Kamera, Zellen je Achse (1 m), wie in common.glsl
 
@@ -188,7 +189,7 @@ private:
     VkPipeline linePipe_ = VK_NULL_HANDLE, transPipe_ = VK_NULL_HANDLE, firePipe_ = VK_NULL_HANDLE, waterPipe_ = VK_NULL_HANDLE;
 
     static constexpr int kFrames = 2;
-    static constexpr uint32_t kMaxObjects = 8192;
+    static constexpr uint32_t kMaxObjects = kMaxDrawItems;
     Frame frames_[kFrames];
     int frameIndex_ = 0;
     uint64_t frameCounter_ = 0;

@@ -18,6 +18,7 @@
 
 #include "Materials.h"
 #include "Profile.h"
+#include "Terrain.h"
 
 namespace {
 
@@ -103,7 +104,8 @@ bool App::init(const AppOptions& opt) {
     io.IniFilename = nullptr;
     const char* font = "C:/Windows/Fonts/segoeui.ttf";
     if (std::filesystem::exists(font)) {
-        static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2013, 0x2014, 0x2190, 0x2193, 0x2300, 0x2300, 0};
+        // Latein-1, Gedankenstriche, deutsche Anführungszeichen „“ ‚‘, Auslassungspunkte, Pfeile, ⌀
+        static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2013, 0x2014, 0x2018, 0x201E, 0x2026, 0x2026, 0x2190, 0x2193, 0x2300, 0x2300, 0};
         io.Fonts->AddFontFromFileTTF(font, 18.0f, nullptr, ranges);
     }
     setupStyle();
@@ -202,6 +204,7 @@ int App::run(const AppOptions& opt) {
         });
         netUpdate(dt);  // LAN: Mitspieler bzw. Gastgeber (auch minimiert)
         updateWorldSession(dt);  // automatisch speichern, Beitritt aus dem Hauptmenü
+        updateTerrain();         // Gelände: Kacheln um die Kamera, Physik um Teile und Spielfiguren
         updateLoading(dt);       // Ladebildschirm: Fortschritt, am Ende ausblenden
         processScriptQueue();
         stepJobs();
@@ -293,9 +296,9 @@ double App::snapStep() const {
 glm::dvec3 App::spawnReference() {
     if (play_) {
         glm::dvec3 p = playerEye() + playerForward() * 1.5;
-        return glm::dvec3(p.x, 0, p.z);
+        return glm::dvec3(p.x, world_->groundHeight(p.x, p.z), p.z);  // auf dem Boden bzw. Gelände
     }
-    return glm::dvec3(orbitTarget_.x, 0, orbitTarget_.z);
+    return glm::dvec3(orbitTarget_.x, world_->groundHeight(orbitTarget_.x, orbitTarget_.z), orbitTarget_.z);
 }
 
 void App::select(uint32_t id) {
@@ -471,8 +474,34 @@ void App::buildFrame(FrameDesc& fd) {
         fd.shadowTexelWorld = texel;
     }
 
-    // Boden (liegt immer unter der Kamera)
-    {
+    std::vector<Frustum> frusta;
+    for (const View& v : views_) frusta.push_back(frustumOf(v.viewProjRel));
+    auto visibleAny = [&](const glm::dvec3& mn, const glm::dvec3& mx) {
+        for (const Frustum& f : frusta)
+            if (boxInFrustum(f, mn - O, mx - O)) return true;
+        return false;
+    };
+
+    if (const Terrain* tr = world_->terrain()) {
+        // Gelände: die gewählten Kacheln (Terrain::updateView), Farbe je Eckpunkt, dazu die Biomgrenzen als Linien
+        terrainDrawn_ = 0;
+        for (const Terrain::Drawn& d : tr->drawList()) {
+            if (!d.mesh || !d.mesh->valid() || !visibleAny(d.lo, d.hi)) continue;
+            DrawItem it;
+            it.mesh = d.mesh;
+            it.castShadow = d.level <= 2;
+            it.data.model = glm::translate(glm::mat4(1.0f), glm::vec3(d.origin - O));
+            it.data.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.92f);
+            it.data.color2 = glm::vec4(0.0f);
+            it.data.params = glm::vec4(11, 0, 0, 0);
+            fd.items.push_back(it);
+            ++terrainDrawn_;
+            if (showBiomeBorders_ && d.border && !d.border->empty() && d.level <= 5) {
+                const glm::vec3 off(d.origin - O);
+                for (const LineVertex& lv : *d.border) fd.lines.push_back({lv.pos + off, lv.color});
+            }
+        }
+    } else {  // flache Welt: Boden (liegt immer unter der Kamera)
         DrawItem g;
         g.mesh = &world_->groundMesh();
         g.castShadow = false;
@@ -482,14 +511,6 @@ void App::buildFrame(FrameDesc& fd) {
         g.data.params = glm::vec4(10, 0, 0, 0);
         fd.items.push_back(g);
     }
-
-    std::vector<Frustum> frusta;
-    for (const View& v : views_) frusta.push_back(frustumOf(v.viewProjRel));
-    auto visibleAny = [&](const glm::dvec3& mn, const glm::dvec3& mx) {
-        for (const Frustum& f : frusta)
-            if (boxInFrustum(f, mn - O, mx - O)) return true;
-        return false;
-    };
     auto pixelSize = [&](const View& v, const Object& o) {
         double r = 0.5 * glm::length(o.wMax - o.wMin);
         if (v.ortho) return r / v.halfHeight * v.h * 0.5;
@@ -556,6 +577,9 @@ void App::buildFrame(FrameDesc& fd) {
             glm::dvec3 ctr = (o->wMin + o->wMax) * 0.5;
             it.castShadow = lod < 2 && glm::length(ctr - shadowCenter) < R * 1.6;
             fd.items.push_back(it);
+            // Baum: die Krone hängt am Teil (Lage des Teils, nicht die Ersatzform)
+            if (o->crown)
+                addCrown(fd, *o, glm::translate(glm::mat4(1.0f), glm::vec3(o->pos - O)) * glm::mat4_cast(glm::quat(o->rot)), lod == 2, it.castShadow);
 
             if (edges && lod == 0 && !o->edges.empty() && fd.lines.size() < 3000000) {
                 glm::mat3 rot = glm::mat3_cast(glm::quat(o->rot));
@@ -567,6 +591,7 @@ void App::buildFrame(FrameDesc& fd) {
         }
     });
 
+    addTrees(fd, visibleAny);  // Bäume des Generators (die nahen sind Teile, oben schon dabei)
     addAvatars(fd);    // andere Spieler im LAN
     addFireFx(fd);     // Flammen, Rauch, Feuerschein
     addWaterData(fd);  // Gewässer: Wellen, Farbe, Lichtflecken

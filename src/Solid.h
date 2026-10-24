@@ -12,7 +12,8 @@ using dvec2 = glm::dvec2;
 using dvec3 = glm::dvec3;
 using dmat4 = glm::dmat4;
 
-enum class Smooth : uint8_t { None = 0, Sphere = 1, Cylinder = 2 };
+// Bark: Mantel eines Baumstamms oder Asts (weiche Normalen wie ein Zylinder, im Bild Rinde; kein exakter Zylinder für die Physik)
+enum class Smooth : uint8_t { None = 0, Sphere = 1, Cylinder = 2, Bark = 3 };
 
 // Punkte x mit dot(n, x) - d <= 0 liegen "innen".
 // smooth/sc/sa beschreiben die gekrümmte Fläche, zu der die Ebene gehört (für weiche Normalen
@@ -50,6 +51,7 @@ struct Solid {
 struct Vertex {
     float px, py, pz;
     float nx, ny, nz;
+    uint32_t color = 0xffffffffu;  // RGBA8 (r im untersten Byte); Gelände: Farbe der Oberfläche; Teile: a = 0 Rinde, sonst weiß
 };
 
 // ---------------------------------------------------------------- Erzeugen

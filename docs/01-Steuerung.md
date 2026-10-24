@@ -85,6 +85,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **F** halten | Wärme-Werkzeug (Brenner, Kälte; Auswahl im Bau-Modus unter H) auf das angeschaute Teil richten |
 | im Wasser | Waten bremst; ab der Brust schwimmt die Figur: **W** in Blickrichtung (nach unten schauen = tauchen), **Leertaste** hoch, **Strg** runter |
 | **F5** | Ansicht wechseln: durch die Augen der Figur / von hinten über die Schulter |
+| **X** | Axt nehmen / weglegen. Mit der Axt hackt die linke Maustaste eine Kerbe in Holz (bis 2,6 m, ein Hieb alle 0,4 s); ist ein Stamm durch, fällt der Baum vom Hackenden weg ([17](17-Baeume.md)) |
 | **Esc** | Maus freigeben (Pause). Klick ins Bild: weiterspielen |
 
 Die Spielfigur ist ein Bauarbeiter (Modell von Quaternius, CC0, siehe `assets/characters`). Sie steht, geht und rennt
@@ -152,10 +153,20 @@ Zwei gewählte Teile lassen sich darunter auch zu einem Teil **vereinen**, das z
 | **Feuerstelle (Wärme, Feuer, Kälte)** | Lagerfeuer mit Stahlstab, Aluminium, Kunststoff, Gummi, geleimtem Brett und gefrorenem Stahl (`scene fire`, siehe [12](12-Waerme-und-Feuer.md)) |
 | **Wasserbecken (Schwimmen, Sinken, Boote)** | Becken mit schwimmenden und sinkenden Teilen, Stahlboot, Bechern, glühendem Stahl (`scene water`, siehe [14](14-Wasser.md)) |
 | **Fluss (Strömung, Hindernisse, Treibgut)** | Kanal mit 1,2 m/s Strömung, Felsen und Brückenpfeiler, Stämme und Bretter treiben mit (`scene river`, siehe [14](14-Wasser.md)) |
+| **Baumschule (alle Baumarten)** | jede Baumart in jeder Form nebeneinander, zum Ansehen und Fällen (`scene trees`, siehe [17](17-Baeume.md)) |
 | **Szene speichern unter / Laden** | Szene als einzelne `.werkstatt`-Datei, z. B. zum Weitergeben (Laden ersetzt den Inhalt der offenen Welt) |
 | **Modell importieren** | Blender-Modell (.obj) |
 | **Foto speichern** | Bild als PNG (F12) |
 | **Beenden** | Welt speichern und das Programm beenden (wie das Schließen des Fensters) |
+
+## Menü Ansicht
+
+| Eintrag | Wirkung |
+|---|---|
+| **Perspektive / Oben / Vorne / Seite / Vier Ansichten** | Ansicht wählen (Tasten 1–5) |
+| **Schatten**, **Kanten**, **Raster** | ein- und ausblenden |
+| **Biomgrenzen** | nur in Welten mit Gelände: farbige Linien auf dem Boden, wo ein Biom ins andere übergeht (wie `terrain borders on/off`; Standard in den Einstellungen, siehe [16](16-Weltgenerierung.md)) |
+| **Physik-Inspektor**, **Materialien bearbeiten**, **Dreitafelprojektion**, **Konsole** | Fenster öffnen |
 
 ## Menü Physik
 

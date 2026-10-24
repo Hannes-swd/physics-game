@@ -36,6 +36,21 @@ Danach öffnet sich das Spielfenster mit einem **Ladebildschirm**:
 | Verbinde mit ... | die Verbindung wird aufgebaut |
 | Warte, bis ... dich zulässt | der Gastgeber muss den Beitritt noch bestätigen |
 | Welt wird übertragen: N Teile | der Gastgeber schickt seine Welt; fertig, sobald nach den Teilen die erste Lage kommt |
+| Gelände erzeugen: noch N Kacheln | Welt mit Gelände: die Kacheln rund um den Startpunkt werden erzeugt |
+
+**Gelände:** Hat die Welt des Gastgebers Gelände ([16](16-Weltgenerierung.md)), schickt er nicht das Gelände selbst,
+sondern nur Seed, Biom-Einstellung (alle oder eines), den Inhalt seiner `generator.json` und die geänderten Stellen
+(`terrain raise/lower/flatten`). Der Mitspieler erzeugt daraus genau dasselbe Gelände auf dem eigenen Rechner.
+Ändert der Gastgeber später etwas am Gelände, kommt die Änderung nach. Neue Spieler erscheinen immer **auf der
+Oberfläche** (nie im Boden), auch wenn der Startpunkt in einem Hügel läge.
+
+**Bäume und Flüsse:** Den Wald und die Flüsse erzeugt jeder Rechner selbst aus dem Seed; der Gastgeber schickt nur seine
+Baumarten (`trees.json`) und welche Bäume entfernt sind. Die Bäume in der Nähe der Spieler legt der Gastgeber als echte
+Teile an (auch bei Mitspielern); sie kommen wie alle Teile an ([17](17-Baeume.md)).
+
+**Zu einem Mitspieler:** `tp <name>` (oder die Nummer aus `tp`) versetzt die eigene Figur 1,5 m vor ihn, Blick auf ihn;
+`tp` allein listet alle Mitspieler. Geht in beide Richtungen (Gastgeber ↔ Mitspieler), auch `tp <biom>`, `tp river`,
+`tp water` ([02](02-Befehle.md#teleportieren-tp)).
 
 Mit **Abbrechen** (oder `menu main`) geht es zurück ins Hauptmenü. Lehnt der Gastgeber ab oder antwortet niemand,
 landet man ebenfalls wieder im Hauptmenü, und dort steht die Meldung. Per Befehl liest `menu` den Zustand aus
@@ -75,7 +90,8 @@ landet man ebenfalls wieder im Hauptmenü, und dort steht die Meldung. Per Befeh
 
 Eine Zeile läuft **auf dem eigenen Rechner**, wenn sie nur aus einem dieser Befehle besteht:
 `help`, `materials`, `mode`, `view`, `camera`, `screenshot`, `tool`, `window`, `display`, `log`, `select`, `drawing`,
-`save`, `edges`, `list`, `chunks`, `quit`.
+`save`, `edges`, `list`, `chunks`, `quit`, `tp`, und die lesenden `terrain`-Befehle (`terrain`, `terrain at`, `terrain biomes`,
+`terrain find`, `terrain goto`, `terrain borders`). `terrain raise/lower/flatten/reset/reload` laufen beim Gastgeber.
 Alles andere – auch jede Befehlsfolge mit `;` oder `{ }` – geht zum Gastgeber und läuft dort mit der **eigenen Auswahl**
 (`selected`) und neue Teile entstehen vor der **eigenen Kamera**. Die Antwort erscheint in der eigenen Konsole.
 
@@ -126,8 +142,9 @@ Zwei Spiele auf **einem** Rechner (zum Ausprobieren): das zweite mit eigenem Fer
 
 - Beim ersten Öffnen fragt die **Windows-Firewall**, ob Werkstatt im Netz erreichbar sein darf:
   für *private Netzwerke* zulassen. Ohne diese Freigabe sehen Mitspieler das Spiel nicht.
-- Beide Seiten brauchen **dieselbe Version** des Spiels; sonst lehnt der Gastgeber den Beitritt ab.
+- Beide Seiten brauchen **dieselbe Version** des Spiels (Netzprotokoll 4, seit den Bäumen); sonst lehnt der Gastgeber den Beitritt ab.
 - Gedacht für das lokale Netz. Über das Internet bräuchte es eine Portweiterleitung am Router und ist nicht vorgesehen.
 - Übertragen werden nur Änderungen: neue oder bearbeitete Teile komplett (mit fertiger Kollisionsform), sonst nur die
-  Lage bewegter Teile (bis 60-mal je Sekunde), Verbindungen und die Spielfiguren.
+  Lage bewegter Teile (bis 60-mal je Sekunde), Verbindungen und die Spielfiguren. Das Gelände nur als Seed, Einstellungen
+  und geänderte Stellen (wenige KB), siehe oben.
 - Zum Testen auf einem Rechner: zweimal `Werkstatt.exe` starten, im ersten *Im LAN öffnen*, im zweiten mit `127.0.0.1` verbinden.

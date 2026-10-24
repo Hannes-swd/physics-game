@@ -7,6 +7,7 @@
 
 #include "Profile.h"
 #include "Renderer.h"
+#include "Terrain.h"
 
 namespace {
 
@@ -29,6 +30,7 @@ void App::addWaterData(FrameDesc& fd) {
     world_->setWaterFocus(play_ ? eye : orbitTarget_);  // Meer: dort wird die Strömung gerechnet
     std::vector<std::pair<double, const WaterBody*>> order;
     for (const WaterBody& b : list) {
+        if (b.shape && !(world_->terrain() && world_->terrain()->waterInView())) continue;  // Flüsse: keiner zu sehen
         const double d = b.sea ? 0.0 : glm::length(glm::clamp(eye, b.lo, b.hi) - eye);
         if (d < 5000.0) order.emplace_back(d, &b);
     }
@@ -44,27 +46,30 @@ void App::addWaterData(FrameDesc& fd) {
         g.hi = glm::vec4(glm::vec3(b->hi - O), ws.calm ? 0.0f : (float)b->waves);
         if (b->sea) {
             g.hi.y = (float)(b->level() - O.y);
-            g.lo.y = (float)((b->ground ? b->ground->base : b->bottomAt(0, 0)) - O.y);  // Standardgrund
+            // Standardgrund. Flüsse: außerhalb des Fensters tief, dort zeigt die Tiefenprüfung das Wasser nur, wo das
+            // Gelände unter dem Spiegel liegt (in den Flussbetten)
+            g.lo.y = (float)((b->shape ? b->level() - 1000.0 : b->ground ? b->ground->base : b->bottomAt(0, 0)) - O.y);
             // Fenster der Grundkarte um die Kamera (128 m, in 16-m-Schritten): neu nur, wenn es wandert oder der Grund sich ändert
             constexpr int N = kWaterGroundCells;
             const glm::dvec2 origin = glm::floor(glm::dvec2(eye.x, eye.z) / 16.0) * 16.0 - N / 2.0;
             auto it = std::find_if(groundWindows_.begin(), groundWindows_.end(), [&](const GroundWindow& gw) { return gw.water == b->id; });
             if (it == groundWindows_.end()) it = groundWindows_.insert(groundWindows_.end(), GroundWindow{b->id, 0, glm::dvec2(1e300), true, {}});
             GroundWindow& gw = *it;
-            const uint64_t rev = b->ground ? b->ground->rev : 0;
+            const uint64_t rev = b->shape ? b->shape->revision() : b->ground ? b->ground->rev : 0;
             if (gw.rev != rev || gw.origin != origin) {
                 PROFILE("app.waterGround");
                 gw.rev = rev;
                 gw.origin = origin;
                 double lo = 0, hi = 0;
-                gw.flat = !b->ground || (b->ground->range(origin.x, origin.y, origin.x + N, origin.y + N, lo, hi) && lo == b->ground->base);
+                gw.flat = !b->shape && (!b->ground || (b->ground->range(origin.x, origin.y, origin.x + N, origin.y + N, lo, hi) && lo == b->ground->base));
                 gw.cells.clear();
                 if (!gw.flat) {
                     gw.cells.resize((size_t)N * N / 4);
                     for (int z = 0; z < N; ++z)
                         for (int x = 0; x < N; ++x) {
                             const size_t i = (size_t)x + (size_t)N * z;
-                            gw.cells[i / 4][(int)(i % 4)] = (float)b->ground->at(origin.x + x + 0.5, origin.y + z + 0.5);
+                            // Flüsse: trocken = knapp über dem Spiegel (die Shader mitteln benachbarte Zellen)
+                            gw.cells[i / 4][(int)(i % 4)] = (float)std::min(b->bottomAt(origin.x + x + 0.5, origin.y + z + 0.5), b->level() + 2.0);
                         }
                 }
             }

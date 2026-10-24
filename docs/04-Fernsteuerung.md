@@ -146,7 +146,7 @@ type commands.txt | Werkstatt.exe --headless
 | *(keine)* | Hauptmenü (Weltliste, Mehrspieler, Einstellungen), siehe [15](15-Hauptmenue-und-Welten.md) |
 | `--world <Name oder Ordner>` | diese Welt direkt öffnen |
 | `--no-menu` | ohne Hauptmenü: Spiel mit Fenster und Beispiel-Werkstatt (wie früher) |
-| `--menu-shot <bild.png> [Seite]` | Hauptmenü öffnen (`main`, `worlds`, `multiplayer`, `settings`, `loading` = Ladeseite), Bild speichern, beenden |
+| `--menu-shot <bild.png> [Seite]` | Hauptmenü öffnen (`main`, `worlds`, `new-world` = Dialog „Neue Welt“, `multiplayer`, `settings`, `loading` = Ladeseite), Bild speichern, beenden |
 | `--empty` | mit leerer Werkstatt starten |
 | `--script <file>` | Befehle aus der Datei nacheinander ausführen |
 | `--view <view>` | Startansicht (`perspective`, `top`, `front`, `side`, `quad`) |
@@ -157,7 +157,7 @@ type commands.txt | Werkstatt.exe --headless
 | `--validate` | Vulkan-Fehlerprüfung einschalten (für Entwickler) |
 | `--send [command ...]` | Befehle an ein laufendes Spiel schicken (siehe oben) |
 | `--headless [--demo]` | ohne Fenster (siehe oben) |
-| `--selftest` | automatische Prüfungen von Geometrie, Bearbeitung, Physik, Kollision, Reibung, Befehlssprache, Verbindungen, Bruch, Luft, Zeichnung, Speichern, Wärme, Wasser (auch Meeresgrund und Land) und der Beispielwelt (147 Prüfungen) |
+| `--selftest` | automatische Prüfungen von Geometrie, Bearbeitung, Physik, Kollision, Reibung, Befehlssprache, Verbindungen, Bruch, Luft, Zeichnung, Speichern, Wärme, Wasser (auch Meeresgrund und Land), Gelände, Flüsse, Bäume und der Beispielwelt (173 Prüfungen) |
 | `--bench [scene]` | Physik-Messung: Rechenzeit, Eindringtiefe, Rettungen und Messwerte in elf Szenen, alte gegen neue Einstellungen (mit Szene: nur Szenen, deren Name das Wort enthält) |
 
 Wird das Programm per Doppelklick gestartet, blendet es das leere Konsolenfenster aus.

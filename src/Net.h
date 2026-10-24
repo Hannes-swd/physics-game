@@ -13,7 +13,7 @@ namespace net {
 
 constexpr int kGamePort = 7780;        // TCP: Spiel
 constexpr int kDiscoveryPort = 7781;   // UDP: Spiele im LAN finden
-constexpr uint32_t kProtocol = 2;      // beide Seiten müssen dieselbe Version sprechen
+constexpr uint32_t kProtocol = 4;      // beide Seiten müssen dieselbe Version sprechen (3: Gelände, 4: Bäume)
 
 enum class Msg : uint8_t {
     // Mitspieler -> Gastgeber
@@ -35,6 +35,7 @@ enum class Msg : uint8_t {
     Tick = 42,        // Weltzustand: Zeit, Physik an/aus, Luft, Bruch, Rückgängig-Schritte
     Result = 43,      // Antwort auf einen Befehl
     Event = 44,       // Meldung (Bruch, Spieler kommt/geht)
+    Terrain = 45,     // Gelände: Seed, Biome (Text von biomes.json), alle Änderungen; der Mitspieler erzeugt es selbst
 };
 
 class Writer {

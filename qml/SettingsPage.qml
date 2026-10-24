@@ -78,6 +78,12 @@ Page {
                 onToggled: menu.setSetting("grid", checked)
             }
 
+            Label { text: "Biomgrenzen (Linien)" }
+            CheckBox {
+                checked: menu.settings.biomeBorders
+                onToggled: menu.setSetting("biomeBorders", checked)
+            }
+
             Label { text: "Automatisch speichern" }
             RowLayout {
                 SpinBox {

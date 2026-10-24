@@ -38,6 +38,7 @@ Page {
         list.forceActiveFocus()
     }
     Component.onDestruction: menu.dialog = ""  // die Dialoge gehören zu dieser Seite
+    function openCreate() { createDialog.open() }
 
     Connections {  // Befehle schließen offene Dialoge (z.B. vor einem Seitenwechsel)
         target: menu
@@ -79,6 +80,7 @@ Page {
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
+                    Label { text: row.modelData.typeText }
                     Label {
                         text: "zuletzt geöffnet: " + row.modelData.lastPlayed
                     }
@@ -150,8 +152,12 @@ Page {
         width: 440
         property string error: ""
 
+        // Welttyp: Index 0 = normal (Gelände mit Biomen), 1 = flach (Ebene wie bisher)
+        readonly property bool normal: typeBox.currentIndex === 0
+
         function create() {
-            const r = menu.createWorld(nameField.text, seedField.text)
+            const biome = biomeBox.currentIndex <= 0 ? "all" : menu.biomes[biomeBox.currentIndex - 1].id
+            const r = menu.createWorld(nameField.text, seedField.text, normal ? "normal" : "flat", normal ? biome : "all")
             if (r.error !== "") {
                 error = r.error
                 return
@@ -165,7 +171,9 @@ Page {
         onOpened: {
             menu.dialog = "new world"
             nameField.text = "Neue Welt"
-            seedField.text = ""
+            seedField.text = menu.randomSeed()  // steht schon fest, lässt sich aber ändern
+            typeBox.currentIndex = 0
+            biomeBox.currentIndex = 0
             error = ""
             nameField.selectAll()
             nameField.forceActiveFocus()
@@ -179,15 +187,43 @@ Page {
                 Layout.fillWidth: true
                 onAccepted: createDialog.create()
             }
-            Label { text: "Seed (leer lassen = zufällig)" }
-            TextField {
-                id: seedField
+            Label { text: "Seed" }
+            RowLayout {
                 Layout.fillWidth: true
-                placeholderText: "Zahl oder Text"
-                onAccepted: createDialog.create()
+                TextField {
+                    id: seedField
+                    Layout.fillWidth: true
+                    placeholderText: "Zahl oder Text (leer = zufällig)"
+                    selectByMouse: true
+                    onAccepted: createDialog.create()
+                }
+                Button {
+                    text: "Zufällig"
+                    onClicked: seedField.text = menu.randomSeed()
+                }
+            }
+            Label { text: "Welttyp" }
+            ComboBox {
+                id: typeBox
+                Layout.fillWidth: true
+                model: ["Normal (Gelände mit Biomen)", "Flach (Ebene wie bisher)"]
             }
             Label {
-                text: "Gleicher Seed = gleiche Welt. Bis es den Weltgenerator gibt, sind alle Welten flach."
+                text: "Biome"
+                enabled: createDialog.normal
+            }
+            ComboBox {
+                id: biomeBox
+                Layout.fillWidth: true
+                enabled: createDialog.normal
+                model: {
+                    const m = ["Alle Biome"]
+                    for (let i = 0; i < menu.biomes.length; ++i) m.push("Nur " + menu.biomes[i].label)
+                    return m
+                }
+            }
+            Label {
+                text: "Gleicher Seed = gleiche Welt: dieselben Hügel und Biome an denselben Stellen."
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
@@ -263,7 +299,7 @@ Page {
             }
             Label {
                 text: editDialog.world ? "Erstellt: " + editDialog.world.created + "\nGespielt: " + editDialog.world.playTime
-                                         + "\nWelt: " + editDialog.world.generator : ""
+                                         + "\nWelt: " + editDialog.world.typeText : ""
             }
             Button {
                 text: "Ordner öffnen"

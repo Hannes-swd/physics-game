@@ -75,6 +75,7 @@ Im Meerwasser schwimmt alles etwas höher (Eiche: 7,0 statt 7,2 cm von 10 cm unt
 | `water <id>` | wie ein Teil schwimmt: verdrängtes Volumen, Auftrieb, Widerstand, Hohlräume und das Wasser darin |
 | `water fill <id> [Prozent]` / `water empty <id>` | Hohlräume eines Teils (Becher, Boot) füllen bzw. leeren |
 | `scene water` / `scene river` | Beispielszenen: Becken, Fluss |
+| `tp water` / `tp river` | ans Ufer des nächsten Gewässers bzw. Flusses (die Flüsse des Geländes oder ein Gewässer mit Strömung), Blick aufs Wasser ([02](02-Befehle.md#teleportieren-tp)) |
 
 ```
 > water
@@ -236,6 +237,7 @@ vielen Bohrungen, bekommen keine).
 - Luft in Hohlräumen wird nicht zusammengedrückt (ein umgedrehter Becher steigt in der Tiefe nicht voll Wasser).
 - Das Wasser hat eine feste Temperatur; Teile erwärmen es nicht.
 - Im LAN-Mehrspieler rechnet der Gastgeber; die Mitspieler bekommen Gewässer, den Grund des Meers und die Uhr der Wellen.
-- **Offene Welt:** Becken bleiben Quader. Seen und Flüsse der Welt sollen später Gewässer mit einer Grundkarte werden wie das
-  Meer (Wasserspiegel je Gewässer, Grund aus dem Gelände); ein Fluss mit Gefälle braucht dazu noch einen Spiegel, der
-  entlang des Flusses sinkt.
+- **Offene Welt:** Die Flüsse des Geländes sind ein Gewässer wie das Meer, dessen Grund das Gelände ist (siehe
+  [16](16-Weltgenerierung.md#flüsse)): alle mit demselben Spiegel, Strömung entlang des Flusses, das Strömungsgitter lenkt
+  das Wasser um Teile im Fluss (die Ufer schäumen nicht). Flüsse mit Gefälle bräuchten noch einen Spiegel, der entlang des
+  Flusses sinkt.

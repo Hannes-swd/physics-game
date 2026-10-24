@@ -12,9 +12,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <fstream>
 #include <sstream>
 
 #include "Profile.h"
+#include "Terrain.h"
+#include "Trees.h"
+#include "WorldGen.h"
 
 namespace fs = std::filesystem;
 
@@ -48,6 +52,14 @@ void App::updateLoading(float dt) {
     if (loading_.kind == LoadKind::World) {
         // Die Teile sind da, ihre genauen Kollisionsformen entstehen im Hintergrund (bis dahin grobe): abwarten, aber
         // nicht ewig (die Welt ist auch mit groben Formen spielbar)
+        // Gelände: erst, wenn alle Kacheln da sind, die man von hier aus sehen will
+        if (const Terrain* tr = world_->terrain(); tr && time_ - loading_.since < 30.0 && (tr->drawList().empty() || tr->missingTiles() > 0)) {
+            const size_t m = tr->missingTiles();
+            loading_.tilesAtStart = std::max(loading_.tilesAtStart, m);
+            loading_.progress = loading_.tilesAtStart ? 1.0f - (float)m / (float)loading_.tilesAtStart : 0.0f;
+            loading_.detail = "Gelände erzeugen: noch " + std::to_string(m) + " Kacheln";
+            return;
+        }
         const size_t n = world_->pendingCollisionJobs();
         if (n == 0 || time_ - loading_.since > 20.0) return done();
         loading_.jobsAtStart = std::max(loading_.jobsAtStart, n);
@@ -134,6 +146,69 @@ void App::firstFrameShown() {
 
 // ============================================================================ Welt
 
+// Generator einer "normalen" Welt: Seed und ihre eigene Kopie der Biome (generator.json). Fehlt die Kopie, wird sie aus
+// assets/biomes.json angelegt, damit die Welt ab jetzt immer gleich aussieht
+static std::shared_ptr<const WorldGen> makeWorldGen(const WorldInfo& w, std::string* report) {
+    std::shared_ptr<GenConfig> cfg;
+    const fs::path file = worlds::existingOrBackup(worlds::generatorFile(w));
+    std::ifstream in(file, std::ios::binary);
+    if (in) {
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        auto c = std::make_shared<GenConfig>();
+        std::string err;
+        if (parseGenConfig(ss.str(), *c, &err)) cfg = c;
+        else if (report) *report = "generator.json: " + err + " - using assets/biomes.json";
+    }
+    if (!cfg) {
+        std::string r;
+        cfg = std::make_shared<GenConfig>(*loadBiomesFile(&r));
+        if (!r.empty() && report) *report += (report->empty() ? "" : "; ") + r;
+        if (!in) {  // die Welt hatte noch keine Kopie: jetzt festhalten
+            fs::path tmp = worlds::generatorFile(w);
+            tmp += L".tmp";
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            out << cfg->text;
+            out.close();
+            std::string e;
+            if (out) worlds::replaceFile(tmp, worlds::generatorFile(w), &e);
+        }
+    }
+    int single = -1;
+    if (w.biome != "all" && !w.biome.empty()) {
+        single = cfg->findBiome(w.biome);
+        if (single < 0 && report) *report += (report->empty() ? "" : "; ") + ("unknown biome '" + w.biome + "', using all biomes");
+    }
+    return std::make_shared<WorldGen>(w.seed, cfg, single);
+}
+
+// Baumarten der Welt: ihre Kopie trees.json, sonst assets/trees.json (dann als Kopie festhalten)
+static std::shared_ptr<const TreeConfig> makeTreeConfig(const WorldInfo& w, std::string* report) {
+    const fs::path path = w.dir / "trees.json";
+    std::ifstream in(worlds::existingOrBackup(path), std::ios::binary);
+    if (in) {
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        auto c = std::make_shared<TreeConfig>();
+        std::string err;
+        if (parseTreeConfig(ss.str(), *c, &err)) return c;
+        if (report) *report += (report->empty() ? "" : "; ") + ("trees.json: " + err + " - using assets/trees.json");
+    }
+    std::string r;
+    auto cfg = loadTreesFile(&r);
+    if (!r.empty() && report) *report += (report->empty() ? "" : "; ") + r;
+    if (!in) {
+        fs::path tmp = path;
+        tmp += L".tmp";
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        out << cfg->text;
+        out.close();
+        std::string e;
+        if (out) worlds::replaceFile(tmp, path, &e);
+    }
+    return cfg;
+}
+
 bool App::openWorld(std::string* err) {
     WorldInfo w;
     if (!worlds::readInfo(fs::u8path(opt_.worldDir), w, err)) return false;
@@ -143,14 +218,32 @@ bool App::openWorld(std::string* err) {
 
     // Szene: die Datei, sonst die Sicherung vom vorletzten Speichern. Fehlen beide, ist die Welt neu (flach und leer,
     // bis es einen Generator gibt)
-    const fs::path scene = worlds::sceneFile(w);
+    // world.bin (binär); ältere Welten haben nur scene.werkstatt (Text), das nächste Speichern schreibt world.bin
+    std::error_code ec;
+    fs::path scene = worlds::binFile(w);
+    fs::path bin = scene;
+    bin += L".bak";
+    if (!fs::exists(scene, ec) && !fs::exists(bin, ec)) scene = worlds::sceneFile(w);
     fs::path bak = scene;
     bak += L".bak";
-    std::error_code ec;
     const bool haveScene = fs::exists(scene, ec), haveBak = fs::exists(bak, ec);
+    // beide Formate: an der Kennung erkennen
+    auto loadScene = [&](const fs::path& f, std::string* e, const std::function<void(size_t, size_t)>& progress) {
+        return World::isBinaryScene(f) ? world_->loadBinary(f, e, progress) : world_->load(f, e, progress);
+    };
     beginLoading(LoadKind::World, "Welt wird geladen", w.name);
     loading_.detail = haveScene || haveBak ? "Szene lesen" : "Neue Welt";
     renderLoadingFrame(true);
+    {
+        std::string report;
+        world_->setTrees(makeTreeConfig(w, &report));
+        if (!report.empty()) log(report, 2);
+    }
+    if (w.generator == "normal") {  // Gelände aus Seed und Biomen (statt der Ebene bei y = 0)
+        std::string report;
+        world_->setTerrain(makeWorldGen(w, &report), worlds::regionDir(w));
+        if (!report.empty()) log(report, 2);
+    }
     if (haveScene || haveBak) {
         auto progress = [&](size_t done, size_t all) {  // beim Anlegen der Teile: Ladebild mit Fortschritt
             loading_.progress = all ? (float)done / (float)all : 0.0f;
@@ -158,8 +251,8 @@ bool App::openWorld(std::string* err) {
             renderLoadingFrame(false);
         };
         std::string lerr, berr;
-        bool ok = haveScene && world_->load(scene, &lerr, progress);
-        if (!ok && haveBak && world_->load(bak, &berr, progress)) {
+        bool ok = haveScene && loadScene(scene, &lerr, progress);
+        if (!ok && haveBak && loadScene(bak, &berr, progress)) {
             ok = true;
             log("World loaded from the backup (" + (lerr.empty() ? std::string("scene file missing") : lerr) + ")", 2);
             toast("The world was loaded from its backup", false);
@@ -185,12 +278,21 @@ bool App::openWorld(std::string* err) {
         orbitPitch_ = w.view.orbitPitch;
         orbitDist_ = std::clamp(w.view.orbitDist, 0.03, 20000.0);
         viewMode_ = (ViewMode)std::clamp(w.view.viewMode, 0, 4);
+        // nie unter der Oberfläche (das Gelände kann sich seitdem geändert haben, z.B. 'terrain reload')
+        orbitTarget_.y = std::max(orbitTarget_.y, world_->groundHeight(orbitTarget_.x, orbitTarget_.z) + 0.3);
         if (w.view.play) {
             enterPlay();
-            if (!netClient()) physics_.setCharacterPosition(w.view.feet);
+            if (!netClient()) {
+                glm::dvec3 feet = w.view.feet;
+                feet.y = std::max(feet.y, world_->prepareGround(feet) + 0.05);
+                physics_.setCharacterPosition(feet);
+            }
             playYaw_ = w.view.yaw;
             playPitch_ = w.view.pitch;
         }
+    } else if (world_->terrain()) {  // neue Welt mit Gelände: die Kamera schaut auf die Oberfläche
+        orbitTarget_.y = world_->groundHeight(orbitTarget_.x, orbitTarget_.z) + 0.6;
+        orbitDist_ = 12.0;
     }
     worldInfo_.lastPlayed = worlds::now();
     std::string werr;
@@ -240,11 +342,13 @@ bool App::saveWorld(bool quiet, bool evenAsClient) {
     w.lastPlayed = worlds::now();
 
     // Erst in eine .tmp-Datei, dann ersetzen (die alte wird zu .bak): ein Absturz beim Schreiben zerstört nichts
-    const fs::path scene = worlds::sceneFile(w);
+    const fs::path scene = worlds::binFile(w);  // binär (ältere Welten: ab jetzt auch)
     fs::path tmp = scene;
     tmp += L".tmp";
     std::string err;
-    const bool ok = world_->save(tmp, &err) && worlds::replaceFile(tmp, scene, &err) && worlds::writeInfo(w, &err);
+    // Gelände: nur die geänderten Chunks (Regionsdateien), der Rest entsteht beim Laden wieder aus dem Seed
+    const bool ok = world_->saveBinary(tmp, &err) && worlds::replaceFile(tmp, scene, &err) &&
+                    (!world_->terrain() || world_->terrain()->save(&err)) && worlds::writeInfo(w, &err);
     autosaveAccum_ = 0;
     if (!ok) {
         log("Saving the world failed: " + err, 2);
@@ -294,6 +398,7 @@ void App::applySettings() {
     showShadows_ = settings_.shadows;
     showEdges_ = settings_.edges;
     showGrid_ = settings_.grid;
+    showBiomeBorders_ = settings_.biomeBorders;
 }
 
 void App::storeSettings() {
@@ -302,6 +407,7 @@ void App::storeSettings() {
     s.shadows = showShadows_;
     s.edges = showEdges_;
     s.grid = showGrid_;
+    s.biomeBorders = showBiomeBorders_;
     if (netName_[0] && netName_ != defaultPlayerName()) s.playerName = netName_;
     std::string err;
     if (!saveSettings(s, &err)) log("settings: " + err, 2);
@@ -355,7 +461,7 @@ std::string App::worldCommand(const std::vector<std::string>& t) {
     if (sub == "save") {
         if (!haveWorld_) return "Error: no world is open (started without the world list)";
         if (netClient()) return "Error: in a LAN game the host saves the world";
-        return saveWorld(false) ? "world saved: " + worlds::sceneFile(worldInfo_).u8string() : "Error: the world was not saved (see log)";
+        return saveWorld(false) ? "world saved: " + worlds::binFile(worldInfo_).u8string() : "Error: the world was not saved (see log)";
     }
     if (sub == "menu") {
         if (!opt_.menu) return "Error: the game was not started from the main menu";
@@ -375,4 +481,127 @@ std::string App::worldCommand(const std::vector<std::string>& t) {
     if (settings_.autosaveMinutes > 0) ss << "every " << settings_.autosaveMinutes << " min, next in " << (int)std::max(0.0, settings_.autosaveMinutes * 60.0 - autosaveAccum_) << " s";
     else ss << "off";
     return ss.str();
+}
+
+// ============================================================================ Gelände je Bild
+
+void App::updateTerrain() {
+    Terrain* tr = world_->terrain();
+    if (!tr) return;
+    // Physik dort, wo sich etwas bewegen kann: unter allen Teilen (World), um die Baukamera (Absetzen, Ziehen) und um
+    // alle Spielfiguren. Mitspieler rechnen keine Physik (das macht der Gastgeber)
+    std::vector<glm::dvec3> focus = {orbitTarget_};
+    if (!netClient()) {
+        if (physics_.hasCharacter()) focus.push_back(physics_.characterPosition());
+        for (const auto& p : peers_)
+            if (p->accepted && physics_.hasCharacter((int)p->id)) focus.push_back(physics_.characterPosition((int)p->id));
+        world_->setTerrainFocus(focus);
+        world_->updateTerrainPhysics();
+    }
+    // Bäume: nahe der Spielfiguren (bzw. dort, wo die Baukamera hinschaut) als echte Teile. Rechnet der Gastgeber
+    std::vector<glm::dvec3> treeFocus;
+    if (!netClient()) {
+        treeFocus.push_back(play_ && physics_.hasCharacter() ? physics_.characterPosition() : orbitTarget_);
+        for (const auto& p : peers_)
+            if (p->accepted && physics_.hasCharacter((int)p->id)) treeFocus.push_back(physics_.characterPosition((int)p->id));
+    }
+    world_->updateTrees(treeFocus, 6);
+    // Kacheln um das Auge der (perspektivischen) Ansicht; vor dem ersten Bild um das Ziel der Baukamera
+    glm::dvec3 eye = play_ ? playerEye() : orbitEye();
+    for (const View& v : views_)
+        if (!v.ortho) {
+            eye = v.eye;
+            break;
+        }
+    tr->updateView(eye);
+}
+
+// "terrain borders|goto|reload": brauchen das Fenster bzw. die Welt aus der Weltliste. false: Commands.cpp macht weiter
+bool App::terrainAppCommand(const std::vector<std::string>& t, std::string& out) {
+    const std::string sub = t.size() > 1 ? t[1] : "";
+    Terrain* tr = world_->terrain();
+    if (sub == "borders") {
+        const std::string v = t.size() > 2 ? t[2] : "";
+        showBiomeBorders_ = v == "on" ? true : v == "off" ? false : !showBiomeBorders_;
+        out = std::string("biome borders ") + (showBiomeBorders_ ? "on" : "off") + (tr ? "" : " (this world is flat: no terrain)");
+        return true;
+    }
+    if (sub == "goto") {
+        if (!tr) {
+            out = "Error: this world is flat (no terrain)";
+            return true;
+        }
+        const int b = tr->gen().config().findBiome(t.size() > 2 ? t[2] : "");
+        if (b < 0) {
+            out = "Error: terrain goto <biome>   (biomes: 'terrain biomes')";
+            return true;
+        }
+        glm::dvec2 f;
+        const glm::dvec3 c = spawnReference();
+        if (!tr->findBiome(b, glm::dvec2(c.x, c.z), 20000.0, f)) {
+            out = "Error: no " + tr->gen().config().biomes[(size_t)b].id + " within 20 km";
+            return true;
+        }
+        cameraLook(glm::dvec3(f.x, tr->surfaceHeight(f.x, f.y) + 0.6, f.y), 40.0);
+        out = "camera at " + tr->gen().config().biomes[(size_t)b].id + ": " + fmtNum(f.x * 100, 0) + " " + fmtNum(f.y * 100, 0) + " cm, " +
+              fmtNum(glm::length(f - glm::dvec2(c.x, c.z)), 0) + " m away";
+        return true;
+    }
+    if (sub == "reload") {
+        // assets/biomes.json neu lesen und in diese Welt übernehmen (ihre Kopie generator.json wird ersetzt)
+        if (!tr) {
+            out = "Error: this world is flat (no terrain)";
+            return true;
+        }
+        if (netClient()) {
+            out = "Error: in a LAN game the host decides the terrain";
+            return true;
+        }
+        const std::string path = findBiomesFile();
+        std::string report;
+        std::shared_ptr<const GenConfig> cfg = loadBiomesFile(&report);
+        if (!report.empty()) {
+            out = "Error: " + report;
+            return true;
+        }
+        int single = tr->gen().singleBiome() >= 0 ? cfg->findBiome(tr->gen().config().biomes[(size_t)tr->gen().singleBiome()].id) : -1;
+        world_->setTerrainGen(std::make_shared<WorldGen>(tr->gen().seed(), cfg, single));
+        if (haveWorld_ && !worldReadOnly_) {
+            fs::path tmp = worlds::generatorFile(worldInfo_);
+            tmp += L".tmp";
+            {
+                std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+                o << cfg->text;
+            }
+            std::string e;
+            if (!worlds::replaceFile(tmp, worlds::generatorFile(worldInfo_), &e)) log("generator.json: " + e, 2);
+        }
+        out = "terrain regenerated with " + (path.empty() ? std::string("the built-in biomes") : path) + " (" + std::to_string(cfg->biomes.size()) +
+              " biomes)" + (haveWorld_ ? "; this world keeps it from now on" : "");
+        return true;
+    }
+    return false;
+}
+
+std::string App::reloadTrees() {
+    // assets/trees.json neu lesen und in diese Welt übernehmen (ihre Kopie trees.json wird ersetzt)
+    if (netClient()) return "Error: in a LAN game the host decides the trees";
+    std::string report;
+    std::shared_ptr<const TreeConfig> cfg = loadTreesFile(&report);
+    if (!report.empty()) return "Error: " + report;
+    world_->setTrees(cfg);
+    if (haveWorld_ && !worldReadOnly_) {
+        const fs::path path = worldInfo_.dir / "trees.json";
+        fs::path tmp = path;
+        tmp += L".tmp";
+        {
+            std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+            o << cfg->text;
+        }
+        std::string e;
+        if (!worlds::replaceFile(tmp, path, &e)) log("trees.json: " + e, 2);
+    }
+    const std::string path = findTreesFile();
+    return "trees reloaded from " + (path.empty() ? std::string("the built-in copy") : path) + " (" + std::to_string(cfg->types.size()) +
+           " types)" + (haveWorld_ ? "; this world keeps them from now on" : "");
 }

@@ -30,6 +30,13 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 - Jede Welt ein eigener Ordner mit sicherem Speichern (Sicherungskopie, nichts geht bei einem Absturz verloren),
   automatischem Speichern, Kamera, Spielfigur und Umgebung
 - Ladebildschirm mit echtem Fortschritt beim Öffnen einer Welt und beim Beitreten zu einem LAN-Spiel
+- Weltgenerierung aus dem Seed: Gelände mit Biomen dort, wo ihr Klima passt (Wärme, Feuchtigkeit, Kontinentalität,
+  Zerklüftung), alle Werte in `assets/biomes.json`; Kacheln mit Detailstufen, nur geänderte Chunks werden gespeichert
+- Biome Ebene, Wald, Hügellandschaft, Wüste; Flüsse aus dem Seed (Rinne mit Tal, echtes Wasser mit Strömung, keine in der
+  Wüste); `terrain map` zeichnet eine Karte von oben
+- Bäume (`assets/trees.json`): Wald aus dem Seed, jeder Baum ein Teil aus Holz mit Rinde und Krone; fällen, zersägen,
+  Holz gewinnen. Nahe Bäume sind echte Teile, ferne nur Bild (gebündelt gezeichnet), gespeichert wird nur Verändertes
+- `tp`: an die nächste Stelle eines Bioms, ans Ufer des nächsten Flusses oder Gewässers, zu einem Mitspieler, immer auf die Oberfläche
 
 **Steuerung & Automatisierung:**
 - Intuitive Maus-Steuerung **und** englische Textbefehle
@@ -63,6 +70,8 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 | [Materialien](docs/13-Materialien.md) | alle Materialwerte in `assets/materials.json`, neue Materialien anlegen, Material-Editor |
 | [Wasser](docs/14-Wasser.md) | Becken, Meer mit Grund und Land, Auftrieb, Boote, Wellen, Strömung |
 | [Hauptmenü & Welten](docs/15-Hauptmenue-und-Welten.md) | Hauptmenü (Qt Quick), Weltliste, Speichersystem, Einstellungen |
+| [Weltgenerierung](docs/16-Weltgenerierung.md) | Gelände, Biome und Flüsse aus dem Seed, `assets/biomes.json`, Gelände ändern und speichern |
+| [Bäume](docs/17-Baeume.md) | Wald aus dem Seed, Baumarten in `assets/trees.json`, fällen und Holz gewinnen |
 
 ## Projektstruktur
 
@@ -73,11 +82,13 @@ Werkstatt/
 │   ├── main.cpp             # Kommandozeile, Ablauf Hauptmenü -> Spiel -> Hauptmenü
 │   ├── App*.cpp             # Spielfenster: Kameras, Eingabe, Oberfläche (ImGui), LAN, Wasser, Welt + Ladebildschirm
 │   ├── World*, Solid*, ...  # Teile, Geometrie, Bearbeitung, Physik (Jolt), Wärme, Wasser, Verbindungen
+│   ├── WorldGen.*, Terrain.*, Noise.*  # Weltgenerierung: Klima, Biome, Flüsse, Gelände (Kacheln, Physik, Änderungen)
+│   ├── Trees.*              # Bäume: Arten, Formen, Wald aus dem Seed
 │   ├── Worlds.*, Settings.* # Welten als Ordner (world.json, Szene, Sicherungen), Einstellungen
 │   └── Menu.*               # Hauptmenü (Qt), eigene Bibliothek WerkstattMenu
 ├── qml/                     # Oberfläche des Hauptmenüs (QML, eingebettet)
 ├── shaders/                 # GLSL, wird beim Bauen eingebettet
-├── assets/                  # Materialien (materials.json), Spielfigur
+├── assets/                  # Materialien (materials.json), Biome und Flüsse (biomes.json), Bäume (trees.json), Spielfigur
 ├── cmake/                   # Hilfsskripte (Einbetten, Korrektur für Jolt)
 ├── docs/                    # Ausführliche Dokumentation
 └── build/                   # Build-Output (nach cmake --build)

@@ -40,6 +40,8 @@
 | `src/Impact.cpp` | Aufprall: Zerbrechen spröder Teile; Form eines härteren Werkzeugs vermessen (Spitze, Schneide, stumpf), Eindringen, Spalten, Abdruck, Steckenbleiben |
 | `src/Heat.cpp` | Wärme: Temperaturgitter je Teil, Wärmeleitung, Luft, Berührung, Reibungswärme, Werkzeuge, Verkohlen und Brennen, Feuer (Heskestad), Schmelzen, Tropfen und Pfützen, Erweichen von Verbindungen, `heat`-Texte ([12](12-Waerme-und-Feuer.md)) |
 | `src/Water.*`, `src/AppWater.cpp` | Wasser: Gewässer (Becken, Meer mit Grundkarte je 16-m-Kachel: Land und Meeresboden), Flüssigkeiten, Wellen, exakter Auftrieb je konvexem Stück, Hohlräume, die volllaufen, Widerstand und Dämpfung, auf allen Kernen; Gewässer für die Shader, Spritzer, Dampf, Schwimmen ([14](14-Wasser.md)) |
+| `src/Noise.*`, `src/WorldGen.*`, `src/Terrain.*`, `assets/biomes.json` | Weltgenerierung: deterministisches Rauschen, Klima, Biome und Flüsse aus dem Seed, Gelände in Kacheln mit Detailstufen (Erzeugung im Hintergrund), Physik als Höhenfeld je 16-m-Chunk, geänderte Chunks in Regionsdateien, Flusswasser als Gewässer ([16](16-Weltgenerierung.md)) |
+| `src/Trees.*`, `src/AppTrees.cpp`, `assets/trees.json` | Bäume: Arten, Formen (Stamm, Äste, Krone), Wald aus dem Seed, gebündelt gezeichnet, nahe Bäume als feste Teile ([17](17-Baeume.md)) |
 | `src/Showcase.cpp` | Beispielwelt (`scene showcase`) und Feuerstelle (`scene fire`), aufgebaut als Befehlslisten |
 | `src/Solid.*` | Festkörper-Geometrie (siehe unten), Kanten finden, Werkzeugformen, Berührfläche zweier Teile |
 | `src/Chunks.*` | 3D-Chunks |
@@ -150,7 +152,9 @@ und beendet das Programm bei harmlosen Überläufen in Zwischenrechnungen.
 - Die Welt ist in Würfel von **16 × 16 × 16 m** eingeteilt, in **x, y und z** (unbegrenzt in alle Richtungen, 64-Bit-Koordinaten).
 - Ein Teil gehört zu dem Chunk, in dem sein Mittelpunkt liegt, und wechselt beim Bewegen automatisch. Teile bewegen sich frei, nicht im Raster.
 - Jeder Chunk kennt die Hülle seines Inhalts. Beim Zeichnen werden ganze Chunks außerhalb des Blickfelds übersprungen.
-- Leere Chunks werden freigegeben. In `Chunk` ist Platz für spätere Terrain-Daten und Detailstufen.
+- Leere Chunks werden freigegeben.
+- Das Gelände (Welttyp normal) benutzt dasselbe 16-m-Raster: je Chunk ein Höhenfeld für die Physik und, wenn geändert, ein
+  Eintrag in der Regionsdatei. Gezeichnet wird es in eigenen Kacheln mit Detailstufen ([16](16-Weltgenerierung.md)).
 
 ## Grafik (Vulkan 1.3)
 
@@ -230,6 +234,27 @@ Grund beim Boden der Welt bzw. 10 m unter dem Spiegel ([14](14-Wasser.md)).
 **Alte Dateien** (`WERKSTATT-SZENE 1` mit deutschen Wörtern wie `objekt`, `stueck`, `verbindung`, Materialnamen wie
 `Fichte` und Kleber wie `holzleim`) werden weiter geladen und beim nächsten Speichern im neuen Format geschrieben.
 
+Baum-Teile haben zusätzlich `tree <art> <form> <größe> <ursprung x y z> <krone> <wurzel> <platz> <zustand>`, entfernte
+Bäume des Generators stehen als `tree_taken <platz>` am Ende ([17](17-Baeume.md)).
+
+### Binär: `world.bin`
+
+Welten aus der Weltliste speichern ihre Teile **binär** in `world.bin` (`src/WorldBin.cpp`, Teile wie im LAN mit
+`src/ObjectIO.cpp`). Das Textformat bleibt zum Weitergeben und Ansehen (`save datei.werkstatt`); `save datei.bin`
+schreibt binär, `load` erkennt beide an der Kennung.
+
+| | Text (`.werkstatt`) | Binär (`world.bin`) |
+|---|---|---|
+| Inhalt | Teile, Verbindungen, Gewässer, Temperatur, Bäume | dasselbe, dazu die fertige **Kollisionsform** jedes Teils |
+| Beispielwelt (161 Teile) | 5,4 MB, Laden 8,6 s | 2,9 MB, Laden 0,09 s |
+| Zahlen | Text mit 17 Stellen | 32/64 Bit wie im Speicher |
+
+Aufbau: Kennung `WKBIN` (8 Byte), Version, nächste Nummern; Teile (Zustand, Stücke mit allen Flächen, Kollisionsform nur
+wenn fertig berechnet, Temperatur je Zelle, Baum-Zustand), Verbindungen, Gewässer (mit Grund des Meers), entfernte Bäume.
+Unveränderte Bäume des Generators und die Flüsse stehen nicht darin (sie entstehen aus dem Seed), das Gelände steht in den
+Regionsdateien. Ältere Welten mit `scene.werkstatt` werden gelesen; das nächste Speichern schreibt `world.bin` (die alte
+Datei bleibt liegen und wird nicht mehr benutzt).
+
 ## Bauen
 
 Benötigt: Visual Studio 2022 (C++), Vulkan SDK 1.3+, CMake 3.20+, Internet beim ersten Konfigurieren.
@@ -295,7 +320,7 @@ Physik läuft leicht in Zeitlupe).
 
 ## Selbsttest
 
-`Werkstatt.exe --selftest` prüft (140 Prüfungen):
+`Werkstatt.exe --selftest` prüft (173 Prüfungen):
 
 - Geometrie: Volumen, Sägeschnitt, Bohrung (π r² h), Innenflächen, Schnittfuge, Zahnrad, Kugel, Kanten finden,
   Abrunden/Fasen (Volumen nach Formel), Hohlkehle, Drehbank
@@ -320,6 +345,13 @@ Physik läuft leicht in Zeitlupe).
   sinkt vollgelaufen, Becher läuft unter Wasser voll, umgedreht hält er Luft, volles Glas kopfüber läuft aus, Abschrecken,
   Wellen, Meer, Speichern und Rückgängig; Fluss: Strömung um einen Pfeiler (wie die Potentialströmung), Stau und Schaum davor,
   Treibgut fährt vorbei, ohne Pfeiler fließt es wieder gerade
+- Gelände ([16](16-Weltgenerierung.md)): Rauschen ist reproduzierbar, gleicher Seed ergibt gleiches Gelände, Biome passen zu
+  ihrem Klimabereich, Einzelbiom, weiche Übergänge an den Grenzen, nächste Stelle eines Bioms, Klotz liegt still am Hang, Kugel rollt den Hügel hinab und
+  bleibt auf der Oberfläche, Strahl trifft die Oberfläche, Anheben, Regionsdatei speichern, Neuladen, Zurücksetzen löscht sie;
+  Flüsse: nicht selten, nicht überall, nie in der Wüste, außerhalb der Flussbetten trocken, alte Welten unverändert, Wasser im
+  Flussbett, ein Holzball schwimmt und treibt mit
+- Bäume ([17](17-Baeume.md)): Formen (groß/klein, immer gleich), Wald je Biom aus dem Seed, nahe Bäume als feste Teile, Fällen
+  (Stumpf fest, Stamm mit Krone liegt), Wegräumen, Speichern und Laden, Baumschule
 - Speichern und Laden, Beispiel-Werkstatt, Getriebe-Übersetzung, Beispielwelt (132 Teile, läuft 5 s ohne Ausreißer)
 
 `Werkstatt.exe --bench [szene]` misst Rechenzeit, Eindringtiefe und Rettungen in elf Physik-Szenen, jeweils mit den alten

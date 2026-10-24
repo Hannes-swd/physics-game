@@ -206,6 +206,8 @@ bearbeiten*) lassen sie sich ändern und neue Materialien anlegen, siehe [13-Mat
 | `copper` | Kupfer | 8960 | 0,55 / 0,40 | 0,0008 | 0,30 | 220 | 220 | 120 | 5·10⁷ | 0,25 × Dicke |
 | `rubber` | Gummi | 1100 | 1,00 / 0,80 | 0,015 | 0,80 | 15 | 15 | 0,01 | 10⁹ | beliebig |
 | `plastic` | Kunststoff (ABS) | 1050 | 0,50 / 0,35 | 0,006 | 0,45 | 40 | 65 | 2,3 | 20 000 | 3 × Dicke |
+| `soil` | Erde (Gelände) | 1500 | 0,70 / 0,60 | 0,03 | 0,05 | 0,02 | 0,3 | 0,05 | 60 | nicht |
+| `sand` | Sand (Wüste) | 1600 | 0,60 / 0,50 | 0,06 | 0,02 | 0,01 | 0,2 | 0,03 | 40 | nicht |
 
 Haft- und Gleitreibung in der Tabelle sind die Werte des Materials; für ein Paar gilt die Paartabelle oben.
 Holzwerte gelten entlang der Faser. Die Zugfestigkeit begrenzt Klebungen und Schweißnähte, die Bruchenergie bestimmt,
