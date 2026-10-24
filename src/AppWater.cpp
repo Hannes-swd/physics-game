@@ -6,6 +6,7 @@
 #include <random>
 
 #include "Profile.h"
+#include "Renderer.h"
 
 namespace {
 
@@ -41,7 +42,37 @@ void App::addWaterData(FrameDesc& fd) {
         WaterGpu g;
         g.lo = glm::vec4(glm::vec3(b->lo - O), (float)ws.lambda0);
         g.hi = glm::vec4(glm::vec3(b->hi - O), ws.calm ? 0.0f : (float)b->waves);
-        if (b->sea) g.lo.y = g.hi.y = (float)(b->level() - O.y);
+        if (b->sea) {
+            g.hi.y = (float)(b->level() - O.y);
+            g.lo.y = (float)((b->ground ? b->ground->base : b->bottomAt(0, 0)) - O.y);  // Standardgrund
+            // Fenster der Grundkarte um die Kamera (128 m, in 16-m-Schritten): neu nur, wenn es wandert oder der Grund sich ändert
+            constexpr int N = kWaterGroundCells;
+            const glm::dvec2 origin = glm::floor(glm::dvec2(eye.x, eye.z) / 16.0) * 16.0 - N / 2.0;
+            auto it = std::find_if(groundWindows_.begin(), groundWindows_.end(), [&](const GroundWindow& gw) { return gw.water == b->id; });
+            if (it == groundWindows_.end()) it = groundWindows_.insert(groundWindows_.end(), GroundWindow{b->id, 0, glm::dvec2(1e300), true, {}});
+            GroundWindow& gw = *it;
+            const uint64_t rev = b->ground ? b->ground->rev : 0;
+            if (gw.rev != rev || gw.origin != origin) {
+                PROFILE("app.waterGround");
+                gw.rev = rev;
+                gw.origin = origin;
+                double lo = 0, hi = 0;
+                gw.flat = !b->ground || (b->ground->range(origin.x, origin.y, origin.x + N, origin.y + N, lo, hi) && lo == b->ground->base);
+                gw.cells.clear();
+                if (!gw.flat) {
+                    gw.cells.resize((size_t)N * N / 4);
+                    for (int z = 0; z < N; ++z)
+                        for (int x = 0; x < N; ++x) {
+                            const size_t i = (size_t)x + (size_t)N * z;
+                            gw.cells[i / 4][(int)(i % 4)] = (float)b->ground->at(origin.x + x + 0.5, origin.y + z + 0.5);
+                        }
+                }
+            }
+            if (!gw.flat) {
+                g.ground = glm::vec4((float)(origin.x - O.x), (float)(origin.y - O.z), (float)-O.y, (float)fd.waterCells.size());
+                fd.waterCells.insert(fd.waterCells.end(), gw.cells.begin(), gw.cells.end());
+            }
+        }
         float ph[4] = {0, 0, 0, 0};
         if (!ws.calm)
             for (int i = 0; i < 4; ++i)

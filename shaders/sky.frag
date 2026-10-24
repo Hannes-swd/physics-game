@@ -22,7 +22,7 @@ void main() {
         } else if (dir.y < 0.0) {
             // Meer hinter dem Ende der Oberfläche (über 25 km): so flach angeschaut spiegelt es nur den Himmel
             for (int w = 0; w < waterCount(); ++w)
-                if (waterIsSea(w) && pc.camPos.y > frame.water[w * 7 + 1].y) col = skyColor(vec3(dir.x, -dir.y, dir.z));
+                if (waterIsSea(w) && pc.camPos.y > frame.water[w * 8 + 1].y) col = skyColor(vec3(dir.x, -dir.y, dir.z));
         }
     }
     // leichtes Rauschen gegen Farbstufen im Verlauf

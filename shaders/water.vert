@@ -17,7 +17,7 @@ void main() {
     vWater = w;
     int quad = gl_VertexIndex / 6;
     ivec2 cor = kCorner[gl_VertexIndex % 6];
-    vec3 lo = frame.water[w * 7].xyz, hi = frame.water[w * 7 + 1].xyz;
+    vec3 lo = frame.water[w * 8].xyz, hi = frame.water[w * 8 + 1].xyz;
     vec3 p;
     vec2 g;
     vSide = vec3(0.0);
@@ -28,7 +28,7 @@ void main() {
             vec2 s = uv * 2.0 - 1.0;
             p = vec3(pc.camPos.x + seaMap(s.x), hi.y, pc.camPos.z + seaMap(s.y));
             // weit weg wären die Ecken zu grob für die Wellen: dort glatt (die Normalen im Fragment-Shader haben sie trotzdem)
-            float lambda0 = frame.water[w * 7].w;
+            float lambda0 = frame.water[w * 8].w;
             fade = 1.0 - smoothstep(3.0 * lambda0, 12.0 * lambda0, length(p.xz - pc.camPos.xz));
         } else {
             p = vec3(mix(lo.x, hi.x, uv.x), hi.y, mix(lo.z, hi.z, uv.y));

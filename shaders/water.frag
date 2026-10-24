@@ -72,17 +72,18 @@ void main() {
         if (dot(V, vSide) <= 0.0) discard;  // Seitenwand von innen: man schaut durch die Oberfläche
         N = vSide;
     } else {
+        if (waterIsSea(w) && waterBottom(w, vPos.xz) >= vPos.y) discard;  // Land: der Grund liegt über dem Wasser
         vec2 g;
         float h = waterWave(w, vPos.xz, g);
-        float H = frame.water[w * 7 + 1].w;
+        float H = frame.water[w * 8 + 1].w;
         // Wellen, die kleiner als ein Pixel werden (zum Horizont hin), glätten: sonst flimmert es. In der Ferne ist das
         // Wasser ein Spiegel des Himmels
-        float footprint = length(fwidth(vPos.xz)), lambda0 = frame.water[w * 7].w;
+        float footprint = length(fwidth(vPos.xz)), lambda0 = frame.water[w * 8].w;
         float resolved = 1.0 - smoothstep(0.08 * lambda0, 0.5 * lambda0, footprint);
         g *= resolved;
         crest = H > 0.0 ? h / (0.5 * H) * resolved : 0.0;
         // Stau vor Hindernissen: Wasser wölbt sich auf (Steigung über eine halbe Zelle)
-        vec4 g0 = frame.water[w * 7 + 5];
+        vec4 g0 = frame.water[w * 8 + 5];
         if (g0.w >= 0.0) {
             float e = 0.5 * g0.z;
             g += vec2(waterFlow(w, vPos.xz + vec2(e, 0)).w - waterFlow(w, vPos.xz - vec2(e, 0)).w,
@@ -120,7 +121,7 @@ void main() {
         float NoV = max(-dot(N, V), 1e-3);
         float tir = 1.0 - smoothstep(0.62, 0.70, NoV);
         alpha = 0.1 + 0.9 * tir;
-        col = frame.water[w * 7 + 4].rgb * waterLight();
+        col = frame.water[w * 8 + 4].rgb * waterLight();
         glow = (1.0 - tir) * waterLight() * 0.15;
     }
     // Schaum auf den Wellenkämmen und dort, wo Wasser gegen Hindernisse läuft (treibt mit der Strömung davon)

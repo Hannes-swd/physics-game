@@ -37,7 +37,7 @@
 | `src/Joints.cpp` | Verbindungen (Kleber, Nägel, Schrauben, Schweißnaht, Scharnier, Feder, Seil): Tragfähigkeit, Belastung, Bruch |
 | `src/Impact.cpp` | Aufprall: Zerbrechen spröder Teile; Form eines härteren Werkzeugs vermessen (Spitze, Schneide, stumpf), Eindringen, Spalten, Abdruck, Steckenbleiben |
 | `src/Heat.cpp` | Wärme: Temperaturgitter je Teil, Wärmeleitung, Luft, Berührung, Reibungswärme, Werkzeuge, Verkohlen und Brennen, Feuer (Heskestad), Schmelzen, Tropfen und Pfützen, Erweichen von Verbindungen, `heat`-Texte ([12](12-Waerme-und-Feuer.md)) |
-| `src/Water.*`, `src/AppWater.cpp` | Wasser: Gewässer (Becken, Meer), Flüssigkeiten, Wellen, exakter Auftrieb je konvexem Stück, Hohlräume, die volllaufen, Widerstand und Dämpfung, auf allen Kernen; Gewässer für die Shader, Spritzer, Dampf, Schwimmen ([14](14-Wasser.md)) |
+| `src/Water.*`, `src/AppWater.cpp` | Wasser: Gewässer (Becken, Meer mit Grundkarte je 16-m-Kachel: Land und Meeresboden), Flüssigkeiten, Wellen, exakter Auftrieb je konvexem Stück, Hohlräume, die volllaufen, Widerstand und Dämpfung, auf allen Kernen; Gewässer für die Shader, Spritzer, Dampf, Schwimmen ([14](14-Wasser.md)) |
 | `src/Showcase.cpp` | Beispielwelt (`scene showcase`) und Feuerstelle (`scene fire`), aufgebaut als Befehlslisten |
 | `src/Solid.*` | Festkörper-Geometrie (siehe unten), Kanten finden, Werkzeugformen, Berührfläche zweier Teile |
 | `src/Chunks.*` | 3D-Chunks |

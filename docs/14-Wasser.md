@@ -14,7 +14,27 @@ Strömung, Felsen und einem Brückenpfeiler, an denen sich das Wasser staut und 
 | Art | Was | Befehl |
 |---|---|---|
 | **Becken** | Quader voll Wasser: Breite × Tiefe, Wasserspiegel. Mit `walls` gleich mit Betonrand | `water pool 200 150 50 walls` |
-| **Meer** | unbegrenzt: überall unter dem Wasserspiegel ist Wasser. Braucht keine Daten je Ort und gilt deshalb auch in einer offenen Welt überall | `water sea 40` |
+| **Meer** | in der Fläche unbegrenzt. Wasser ist zwischen dem **Grund** und dem Wasserspiegel: darunter ist Erde, und wo der Grund über dem Spiegel liegt, ist **Land** (siehe unten) | `water sea 40` |
+
+### Grund des Meers und Land
+
+Das Meer füllt nicht „alles unter dem Spiegel“, sondern nur den Raum über seinem Grund. Wer an Land ein Loch gräbt, das
+tiefer als der Meeresspiegel reicht, bleibt im Trockenen, und unter dem Meeresboden ist kein Wasser.
+
+- **Standardgrund:** gilt überall, wo nichts anderes eingetragen ist, und kostet nichts (auch in einer unbegrenzten Welt).
+  Ohne Angabe ist es der Boden der Welt (0 cm); liegt der Spiegel darunter, 10 m unter dem Spiegel. `water sea 40 bottom -300`
+  macht das Meer 3,4 m tief.
+- **Grundkarte:** Höhe des Grunds je Zelle von 50 cm, in Kacheln von 16 m wie die Chunks (`GroundMap` in `Water.h`). Nur
+  Kacheln mit eigenem Grund werden gespeichert. `water land` legt trockenes Land ins Meer, `water ground` setzt den Grund
+  beliebig (Bucht, Graben, Sandbank). Später trägt der Weltgenerator hier das Gelände je Chunk ein (`GroundMap::set`).
+- Zwischen den Zellmitten wird der Grund überblendet (bilinear): eine Küste steigt über 50 cm an.
+- An Land schwimmt nichts, das Strömungsgitter behandelt Land als **Küste** (das Wasser fließt daran entlang), und die
+  Shader zeichnen dort keine Wasseroberfläche und färben nichts unter dem Grund ein.
+- Die Shader bekommen ein Fenster der Grundkarte von 128 × 128 m (1 m je Zelle) um die Kamera, neu berechnet nur, wenn die
+  Kamera 16 m weiterwandert oder sich der Grund ändert. Land außerhalb des Fensters zeigen sie noch als Meer (die Physik
+  rechnet überall richtig).
+- Speichern (`waterground`, `groundtile` in der Szenendatei), Rückgängig und Mehrspieler (die Kacheln gehen nur bei einer
+  Änderung übers Netz) sind dabei.
 
 Jedes Gewässer hat eine **Flüssigkeit** (`water`, `seawater`, `muddy`, `oil`), **Wellen** (Höhe von Tal bis Kamm),
 eine **Strömung** (z. B. ein Fluss) und eine **Temperatur** (ohne Angabe die Lufttemperatur).
@@ -43,7 +63,9 @@ Im Meerwasser schwimmt alles etwas höher (Eiche: 7,0 statt 7,2 cm von 10 cm unt
 |---|---|
 | `water` | Überblick: Gewässer, wie viele Teile schwimmen bzw. unter Wasser sind, Flüssigkeiten |
 | `water pool <L> <W> <depth> [x y z] [liquid] [walls]` | Becken, Maße in cm. x y z = Mitte des Bodens (ohne: hier auf dem Boden) |
-| `water sea <level> [liquid]` / `water sea off` | Meer mit Wasserspiegel in cm (Standard: Meerwasser) |
+| `water sea <level> [liquid] [bottom <cm>]` / `water sea off` | Meer mit Wasserspiegel in cm (Standard: Meerwasser), `bottom`: Standardgrund |
+| `water land <x> <z> <W> <L> [height]` | trockenes Land im Meer: Rechteck um x, z (cm), Grund 50 cm über dem Spiegel oder `height` |
+| `water ground <x> <z> <W> <L> <height>` / `water ground reset` | Grund des Meers im Rechteck auf `height` (cm) setzen / alle eigenen Kacheln entfernen |
 | `water level <n\|all> <cm>` | Wasserspiegel ändern (Teile darin werden geweckt und steigen oder fallen) |
 | `water waves <n\|all> <cm>` | Wellenhöhe (0 = ruhig, 30 = bewegt, 150 = Sturm). Die Wellen laufen mit dem Wind |
 | `water flow <n\|all> <x> <z>` | Strömung in m/s; das Wasser fließt um Hindernisse herum (siehe unten) |
@@ -213,4 +235,7 @@ vielen Bohrungen, bekommen keine).
 - Keine mitbewegte Wassermasse („added mass“): Leichte Teile, die man unter Wasser drückt, schnellen etwas zu schnell hoch.
 - Luft in Hohlräumen wird nicht zusammengedrückt (ein umgedrehter Becher steigt in der Tiefe nicht voll Wasser).
 - Das Wasser hat eine feste Temperatur; Teile erwärmen es nicht.
-- Im LAN-Mehrspieler rechnet der Gastgeber; die Mitspieler bekommen Gewässer und die Uhr der Wellen.
+- Im LAN-Mehrspieler rechnet der Gastgeber; die Mitspieler bekommen Gewässer, den Grund des Meers und die Uhr der Wellen.
+- **Offene Welt:** Becken bleiben Quader. Seen und Flüsse der Welt sollen später Gewässer mit einer Grundkarte werden wie das
+  Meer (Wasserspiegel je Gewässer, Grund aus dem Gelände); ein Fluss mit Gefälle braucht dazu noch einen Spiegel, der
+  entlang des Flusses sinkt.

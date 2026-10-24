@@ -801,7 +801,7 @@ void World::stepHeat(double dt) {
             if (wb && c.area > 0) {
                 const glm::dvec3 p = o.pos + rot * cellCenter(g, i);
                 const double s = surfaceHeight(*wb, wavesAt[k], p.x, p.z);
-                if (wb->covers(p.x, p.z) && (wb->sea || p.y >= wb->lo.y) && p.y < s) {
+                if (wb->covers(p.x, p.z) && p.y >= wb->bottomAt(p.x, p.z) && p.y < s) {
                     submerged = true;
                     const Liquid& L = liquids()[wb->liquid];
                     const double vw = o.body != kNoBody && simulating_ ? glm::length(glm::dvec3(velocity[k]) - wb->flow) : 0.0;

@@ -90,6 +90,7 @@ struct Peer {
     };
     std::unordered_map<uint32_t, Sent> sent;
     std::string sentJoints, sentLoads;
+    std::unordered_map<uint32_t, uint64_t> sentGround;  // Grund je Meer: zuletzt geschickter Stand (GroundMap::rev)
 };
 
 struct AppOptions {
@@ -211,6 +212,14 @@ private:
 
     // AppWater.cpp (Gewässer für die Shader, Spritzer und Dampf, Schwimmen)
     void addWaterData(FrameDesc& fd);
+    struct GroundWindow {  // Meer: Grund um die Kamera für die Shader, nur neu, wenn die Kamera weit wandert oder er sich ändert
+        uint32_t water = 0;
+        uint64_t rev = 0;
+        glm::dvec2 origin{0};
+        bool flat = true;
+        std::vector<glm::vec4> cells;  // je vier Höhen (m, Welt)
+    };
+    std::vector<GroundWindow> groundWindows_;
     void updateWaterFx(float dt);
     float swimDepth(const glm::dvec3& feet) const;  // Anteil der Figur unter Wasser (0..1)
 

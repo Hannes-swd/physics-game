@@ -14,6 +14,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <sstream>
 
@@ -41,7 +42,12 @@ constexpr size_t kMaxRooms = 8;
 bool touches(const WaterBody& b, const glm::dvec3& mn, const glm::dvec3& mx) {
     const double margin = 0.5 * b.waves + 0.01 + glm::dot(b.flow, b.flow) / (2 * kG);  // Wellen, Stau vor Hindernissen
     if (mn.y > b.level() + margin) return false;
-    if (b.sea) return true;
+    if (b.sea) {  // ganz im Grund (vergraben) oder an Land: trocken
+        double lo = 0, hi = 0;
+        if (b.ground) b.ground->range(mn.x, mn.z, mx.x, mx.z, lo, hi);
+        else lo = hi = b.bottomAt(0, 0);
+        return mx.y >= lo && lo < b.level() + margin;
+    }
     return mx.y >= b.lo.y && mx.x >= b.lo.x && mn.x <= b.hi.x && mx.z >= b.lo.z && mn.z <= b.hi.z;
 }
 
@@ -72,6 +78,100 @@ int findLiquid(const char* nameIn) {
     for (size_t i = 0; i < liquids().size(); ++i)
         if (n == liquids()[i].name) return (int)i;
     return -1;
+}
+
+// ============================================================================ Grund
+
+uint64_t newGroundRev() {
+    static std::atomic<uint64_t> next{1};
+    return next++;
+}
+
+double defaultSeaBottom(double level) { return level > 0.05 ? 0.0 : level - 10.0; }
+
+namespace {
+int64_t floorDiv(int64_t a, int64_t b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
+} // namespace
+
+double GroundMap::cell(int64_t cx, int64_t cz) const {
+    const int64_t tx = floorDiv(cx, kCells), tz = floorDiv(cz, kCells);
+    auto it = tiles.find(tileKey(tx, tz));
+    if (it == tiles.end()) return base;
+    return it->second.h[(size_t)(cx - tx * kCells) + (size_t)kCells * (size_t)(cz - tz * kCells)];
+}
+
+double GroundMap::at(double x, double z) const {
+    if (tiles.empty()) return base;  // der häufige Fall: flacher Grund, keine Abfrage
+    const double fx = x / kCell - 0.5, fz = z / kCell - 0.5;
+    const double ix = std::floor(fx), iz = std::floor(fz), tx = fx - ix, tz = fz - iz;
+    const int64_t cx = (int64_t)ix, cz = (int64_t)iz;
+    const double a = cell(cx, cz), b = cell(cx + 1, cz), c = cell(cx, cz + 1), d = cell(cx + 1, cz + 1);
+    return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
+}
+
+bool GroundMap::range(double x0, double z0, double x1, double z1, double& lo, double& hi) const {
+    lo = hi = base;
+    if (tiles.empty()) return true;
+    // die Nachbarzelle zählt beim Überblenden mit
+    const int64_t tx0 = (int64_t)std::floor((x0 - kCell) / kTile), tx1 = (int64_t)std::floor((x1 + kCell) / kTile);
+    const int64_t tz0 = (int64_t)std::floor((z0 - kCell) / kTile), tz1 = (int64_t)std::floor((z1 + kCell) / kTile);
+    if ((tx1 - tx0 + 1) * (tz1 - tz0 + 1) > 256) {  // sehr großes Rechteck: Grenzen aller Kacheln
+        lo = std::min(base, tilesLo);
+        hi = std::max(base, tilesHi);
+        return lo == hi;
+    }
+    bool first = true;
+    for (int64_t tz = tz0; tz <= tz1; ++tz)
+        for (int64_t tx = tx0; tx <= tx1; ++tx) {
+            auto it = tiles.find(tileKey(tx, tz));
+            const double a = it == tiles.end() ? base : it->second.lo, b = it == tiles.end() ? base : it->second.hi;
+            lo = first ? a : std::min(lo, a);
+            hi = first ? b : std::max(hi, b);
+            first = false;
+        }
+    return lo == hi;
+}
+
+std::shared_ptr<GroundMap> GroundMap::edit() const {
+    auto m = std::make_shared<GroundMap>(*this);
+    m->rev = newGroundRev();
+    return m;
+}
+
+void GroundMap::set(double x0, double z0, double x1, double z1, double h) {
+    if (x1 < x0) std::swap(x0, x1);
+    if (z1 < z0) std::swap(z0, z1);
+    const int64_t cx0 = (int64_t)std::ceil(x0 / kCell - 0.5), cx1 = (int64_t)std::floor(x1 / kCell - 0.5);
+    const int64_t cz0 = (int64_t)std::ceil(z0 / kCell - 0.5), cz1 = (int64_t)std::floor(z1 / kCell - 0.5);
+    if (cx1 < cx0 || cz1 < cz0) return updateBounds();
+    for (int64_t tz = floorDiv(cz0, kCells); tz <= floorDiv(cz1, kCells); ++tz)
+        for (int64_t tx = floorDiv(cx0, kCells); tx <= floorDiv(cx1, kCells); ++tx) {
+            const uint64_t key = tileKey(tx, tz);
+            auto it = tiles.find(key);
+            if (it == tiles.end()) {
+                Tile t;
+                std::fill(t.h.begin(), t.h.end(), (float)base);
+                it = tiles.emplace(key, std::move(t)).first;
+            }
+            Tile& t = it->second;
+            for (int64_t cz = std::max(cz0, tz * kCells); cz <= std::min(cz1, tz * kCells + kCells - 1); ++cz)
+                for (int64_t cx = std::max(cx0, tx * kCells); cx <= std::min(cx1, tx * kCells + kCells - 1); ++cx)
+                    t.h[(size_t)(cx - tx * kCells) + (size_t)kCells * (size_t)(cz - tz * kCells)] = (float)h;
+            t.lo = *std::min_element(t.h.begin(), t.h.end());
+            t.hi = *std::max_element(t.h.begin(), t.h.end());
+            if (t.lo == (float)base && t.hi == (float)base) tiles.erase(it);  // wieder wie der Standardgrund: nicht speichern
+        }
+    updateBounds();
+}
+
+void GroundMap::updateBounds() {
+    tilesLo = tilesHi = base;
+    bool first = true;
+    for (const auto& [k, t] : tiles) {
+        tilesLo = first ? t.lo : std::min(tilesLo, (double)t.lo);
+        tilesHi = first ? t.hi : std::max(tilesHi, (double)t.hi);
+        first = false;
+    }
 }
 
 // ============================================================================ Wellen
@@ -318,6 +418,12 @@ uint32_t World::addWater(WaterBody b) {
         b.hi = hi;
     }
     b.liquid = std::clamp(b.liquid, 0, (int)liquids().size() - 1);
+    if (b.sea && !b.ground) {
+        auto m = std::make_shared<GroundMap>();
+        m->base = m->tilesLo = m->tilesHi = defaultSeaBottom(b.level());
+        m->rev = newGroundRev();
+        b.ground = m;
+    }
     waters_.push_back(b);
     changedWater(waters_.back());
     return b.id;
@@ -352,7 +458,15 @@ void World::changedWater(const WaterBody& b) {
 
 void World::setWaters(const std::vector<WaterBody>& list) {
     waters_ = list;
-    for (const WaterBody& b : waters_) nextWaterId_ = std::max(nextWaterId_, b.id + 1);
+    for (WaterBody& b : waters_) {
+        nextWaterId_ = std::max(nextWaterId_, b.id + 1);
+        if (b.sea && !b.ground) {  // alte Datei: Grund wie bei einem neuen Meer
+            auto m = std::make_shared<GroundMap>();
+            m->base = m->tilesLo = m->tilesHi = defaultSeaBottom(b.level());
+            m->rev = newGroundRev();
+            b.ground = m;
+        }
+    }
 }
 
 const WaterBody* World::waterTouching(const glm::dvec3& mn, const glm::dvec3& mx) const {
@@ -371,7 +485,7 @@ WaveSet World::wavesOf(const WaterBody& b) const { return waveSet(b.waves, waveD
 const WaterBody* World::waterColumn(const glm::dvec3& p, double& surface) const {
     const WaterBody* best = nullptr;
     for (const WaterBody& b : waters_) {
-        if (!b.covers(p.x, p.z) || (!b.sea && p.y < b.lo.y - 0.01)) continue;
+        if (!b.covers(p.x, p.z) || p.y < b.bottomAt(p.x, p.z) - 0.01) continue;  // daneben oder im Grund
         const double s = surfaceHeight(b, wavesOf(b), p.x, p.z);
         if (!best || s > surface) {
             best = &b;
@@ -503,9 +617,18 @@ void World::updateFlow(double dt) {
             for (int k = 0; k < 4; ++k) mix((uint64_t)std::llround(o.rot[k] * 1000.0));
         }
         mix((uint64_t)std::llround(level * 1000.0));
-        if (sig != g.solidSig) {
+        if (b->sea && b->ground) mix(b->ground->rev);
+        const bool reraster = sig != g.solidSig;
+        if (reraster) {
             g.solidSig = sig;
             std::fill(g.solid.begin(), g.solid.end(), 0);
+            // Meer: Land (Grund über dem Spiegel) ist Küste, das Wasser fließt daran entlang
+            double glo = 0, ghi = 0;
+            if (b->sea && b->ground) b->ground->range(g.origin.x, g.origin.y, gHi.x, gHi.y, glo, ghi);
+            if (b->sea && b->ground && ghi >= level)
+                for (int z = 0; z < g.nz; ++z)
+                    for (int x = 0; x < g.nx; ++x)
+                        if (b->bottomAt(g.origin.x + (x + 0.5) * c, g.origin.y + (z + 0.5) * c) >= level) g.solid[g.index(x, z)] = 1;
         } else {
             obstacles.clear();  // unverändert: Raster bleibt
         }
@@ -759,6 +882,20 @@ bool World::waterStep(Object& o, float hStep) {
         planes[nPlanes++] = local({0, 0, -1}, -wb->lo.z);
         planes[nPlanes++] = local({0, -1, 0}, -wb->lo.y);
     }
+    // Meer: der Grund begrenzt das Wasser nach unten (darunter ist Erde, an Land liegt er über dem Spiegel). Ist er unter
+    // dem ganzen Teil gleich hoch (der häufige Fall), eine feste Ebene, sonst je Stück die Höhe unter seinem Schwerpunkt
+    bool flatBottom = true;
+    double bottom0 = 0;
+    if (wb && wb->sea) {
+        double lo = 0, hi = 0;
+        flatBottom = !wb->ground || wb->ground->range(o.wMin.x, o.wMin.z, o.wMax.x, o.wMax.z, lo, hi);
+        bottom0 = wb->ground ? lo : wb->bottomAt(0, 0);
+        planes[nPlanes++] = local({0, -1, 0}, -bottom0);
+    }
+    auto bottomAt = [&](const glm::dvec3& p) { return flatBottom ? bottom0 : wb->bottomAt(p.x, p.z); };
+    auto setBottom = [&](const glm::dvec3& p) {
+        if (wb && wb->sea && !flatBottom) planes[1] = local({0, -1, 0}, -wb->bottomAt(p.x, p.z));
+    };
     glm::dvec3 force(0), torque(0);
 
     // ---- Auftrieb des Materials: jedes Stück an seiner Stelle der Oberfläche geschnitten
@@ -767,7 +904,9 @@ bool World::waterStep(Object& o, float hStep) {
         glm::dvec3 mom(0);
         for (size_t i = 0; i < wc.pieces.size(); ++i) {
             double s;
-            planes[0] = surfaceAt(o.pos + R * wc.pieceCentroid[i], s);
+            const glm::dvec3 pc = o.pos + R * wc.pieceCentroid[i];
+            planes[0] = surfaceAt(pc, s);
+            setBottom(pc);
             glm::dvec3 c;
             const double pv = clippedVolume(wc.pieces[i], planes, nPlanes, c, wc.pieceVolume[i], &wc.pieceCentroid[i], wc.pieceRadius[i]);
             vol += pv;
@@ -799,6 +938,7 @@ bool World::waterStep(Object& o, float hStep) {
         glm::dvec3 cAir(0);
         if (wb && wb->covers(rc.x, rc.z)) {
             planes[0] = surfaceAt(rc, sOut);
+            setBottom(rc);
             for (const solid::Piece& p : room.pieces) {
                 glm::dvec3 c;
                 const double pv = clippedVolume(p, planes, nPlanes, c);
@@ -909,6 +1049,7 @@ bool World::waterStep(Object& o, float hStep) {
         BodyState bs;
         const bool haveState = physics_.bodyState(o.body, bs) && bs.mass > 0;
         glm::dvec3 drag(0), dragTorque(0);
+        bool anyWet = false;  // Meer: über Land oder im Grund ist das Teil trocken, obwohl es das Gewässer berührt
         double relMax = 0;  // schnellste Anströmung einer Fläche
         // Wellen einmal je Teil: Tangentialebene und Bewegung des Wassers an der Oberfläche über dem Schwerpunkt. Für den
         // Widerstand genau genug (der Auftrieb oben rechnet jedes Stück an seiner eigenen Stelle)
@@ -920,12 +1061,13 @@ bool World::waterStep(Object& o, float hStep) {
         for (size_t i = 0; i < o.aero.size(); ++i) {
             const Object::AeroFace& f = o.aero[i];
             const glm::dvec3 r = R * glm::dvec3(f.c), n = R * glm::dvec3(f.n), c = o.pos + r;
-            if (!wb->covers(c.x, c.z) || (!wb->sea && c.y < wb->lo.y)) continue;
+            if (wb->sea ? c.y < bottomAt(c) : !wb->covers(c.x, c.z) || c.y < wb->lo.y) continue;  // im Grund oder daneben
             const double s = s0 + g0.x * r.x + g0.y * r.z;
             const double ext = 0.5 * std::sqrt(f.area) * std::sqrt(std::max(0.0, 1.0 - n.y * n.y)) + 1e-4;  // halbe Höhe der Fläche
             const double wet = std::clamp((s - c.y + ext) / (2 * ext), 0.0, 1.0);
             if (wet <= 0) continue;
             st.wet[i] = (float)wet;
+            anyWet = true;
             const double depth = std::max(0.0, s - c.y);
             // Strömung an der Fläche: um Hindernisse herum (Gitter), dazu die Bewegung in den Wellen
             const glm::dvec3 u = (fg ? currentAt(*wb, c.x, c.z) : wb->flow) + (k0 > 0 ? u0 * std::exp(-k0 * depth) : glm::dvec3(0));
@@ -961,18 +1103,22 @@ bool World::waterStep(Object& o, float hStep) {
         force += drag;
         torque += dragTorque;
         st.drag = drag;
-        st.body = wb->id;
+        st.body = !wb->sea || anyWet || st.displaced > 0 ? wb->id : 0;
         double s = 0;
         waterColumn(o.pos, s);
         st.depth = s - o.pos.y;
-        // Jolt legt langsame Teile schlafen, auch mitten im Ausschwingen oder beim langsamen Absinken. Im Wasser erst, wenn
-        // Auftrieb und Gewicht im Gleichgewicht sind und nichts sie bewegt (Wellen und Strömung an der Oberfläche,
-        // einlaufendes Wasser). Was auf dem Grund oder irgendwo aufliegt, bewegt sich nicht mehr und darf schlafen
-        const double weight = (o.mass + waterMass) * kG, size = std::max(0.5 * glm::length(o.bbMax - o.bbMin), 1e-3);
-        const bool unbalanced = std::abs(st.buoyancy.y - weight) > 0.01 * weight || glm::length(buoyTorque) > 0.005 * weight * size;
-        const bool moving = glm::length(v) + glm::length(w) * size > 0.003;
-        const bool surface = o.wMin.y < s + 0.5 * wb->waves && o.wMax.y > s - 0.5 * wb->waves;
-        if ((unbalanced && moving) || (surface && (!waves.calm || glm::length(wb->flow) > 0.01)) || roomFlow) physics_.keepAwake(o.body);
+        if (!st.body) {  // trocken: wie außerhalb eines Gewässers
+            if (roomFlow) physics_.keepAwake(o.body);
+        } else {
+            // Jolt legt langsame Teile schlafen, auch mitten im Ausschwingen oder beim langsamen Absinken. Im Wasser erst, wenn
+            // Auftrieb und Gewicht im Gleichgewicht sind und nichts sie bewegt (Wellen und Strömung an der Oberfläche,
+            // einlaufendes Wasser). Was auf dem Grund oder irgendwo aufliegt, bewegt sich nicht mehr und darf schlafen
+            const double weight = (o.mass + waterMass) * kG, size = std::max(0.5 * glm::length(o.bbMax - o.bbMin), 1e-3);
+            const bool unbalanced = std::abs(st.buoyancy.y - weight) > 0.01 * weight || glm::length(buoyTorque) > 0.005 * weight * size;
+            const bool moving = glm::length(v) + glm::length(w) * size > 0.003;
+            const bool surface = o.wMin.y < s + 0.5 * wb->waves && o.wMax.y > s - 0.5 * wb->waves;
+            if ((unbalanced && moving) || (surface && (!waves.calm || glm::length(wb->flow) > 0.01)) || roomFlow) physics_.keepAwake(o.body);
+        }
     } else if (roomFlow) {
         physics_.keepAwake(o.body);
     }
@@ -981,7 +1127,7 @@ bool World::waterStep(Object& o, float hStep) {
 
     if (wb && prevDisplaced <= 0 && st.displaced > 0 && v.y < -1.0) st.splash = -v.y;  // Spritzer beim Eintauchen
     st.lastVel = v;
-    return wb != nullptr;
+    return st.body != 0;
 }
 
 // Alle wachen Teile im Wasser (oder mit Wasser in Hohlräumen): auf alle Kerne verteilt. Danach weiß jedes Teil, ob es
@@ -1027,7 +1173,10 @@ std::string World::waterText(const WaterBody& b) const {
     const Liquid& L = liquids()[b.liquid];
     ss << "#" << b.id << " ";
     if (b.sea) {
-        ss << "sea, level " << cm(b.level()) << " cm";
+        ss << "sea, level " << cm(b.level()) << " cm, bottom " << cm(b.ground ? b.ground->base : b.bottomAt(0, 0)) << " cm";
+        if (b.ground && !b.ground->tiles.empty())
+            ss << " (" << b.ground->tiles.size() << " tile" << (b.ground->tiles.size() == 1 ? "" : "s") << " of 16 m with own ground, "
+               << cm(b.ground->tilesLo) << " to " << cm(b.ground->tilesHi) << " cm)";
     } else {
         const glm::dvec3 e = b.hi - b.lo, c = (b.lo + b.hi) * 0.5;
         ss << "pool " << cm(e.x) << " x " << cm(e.z) << " cm, " << cm(e.y) << " cm deep, bottom center " << cm(c.x) << " " << cm(b.lo.y)

@@ -776,6 +776,26 @@ void App::netSync(Peer& p) {
             w.dvec3(b.flow);
             w.u8(b.ownTemp);
             w.f64(b.tempC);
+            // Grund des Meers: die Kacheln nur, wenn der Mitspieler diesen Stand noch nicht hat
+            const bool ground = b.sea && b.ground;
+            w.u8(ground);
+            if (!ground) continue;
+            const GroundMap& m = *b.ground;
+            w.u32((uint32_t)m.rev);
+            w.u32((uint32_t)(m.rev >> 32));
+            uint64_t& sent = p.sentGround[b.id];
+            w.u8(sent != m.rev);
+            if (sent == m.rev) continue;
+            sent = m.rev;
+            w.f64(m.base);
+            w.u32((uint32_t)m.tiles.size());
+            for (const auto& [key, tile] : m.tiles) {
+                int64_t tx, tz;
+                GroundMap::tileOf(key, tx, tz);
+                w.f64((double)tx);
+                w.f64((double)tz);
+                for (float h : tile.h) w.f32(h);
+            }
         }
         p.conn->send(Msg::Tick, w);
     }
@@ -1055,7 +1075,7 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
         netRedo_ = r.u32();
         netHostSim_ = r.u8() != 0;
         const double waterTime = r.f64();
-        std::vector<WaterBody> waters(readCount(r, 95));
+        std::vector<WaterBody> waters(readCount(r, 96));
         for (WaterBody& b : waters) {
             b.id = r.u32();
             b.liquid = std::min<int>(r.u8(), (int)liquids().size() - 1);
@@ -1066,6 +1086,28 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
             b.flow = r.dvec3();
             b.ownTemp = r.u8() != 0;
             b.tempC = r.f64();
+            if (r.u8() == 0) continue;  // ohne Grund
+            const uint64_t revLo = r.u32(), revHi = r.u32();
+            const uint64_t rev = revLo | (revHi << 32);
+            if (r.u8() == 0) {  // unverändert: den bekannten Stand behalten
+                for (const WaterBody& old : world_->waters())
+                    if (old.id == b.id && old.ground && old.ground->rev == rev) b.ground = old.ground;
+                continue;
+            }
+            auto m = std::make_shared<GroundMap>();
+            m->base = r.f64();
+            m->rev = rev;
+            const uint32_t n = readCount(r, 16 + 4 * GroundMap::kCells * GroundMap::kCells);
+            for (uint32_t i = 0; i < n; ++i) {
+                const int64_t tx = (int64_t)r.f64(), tz = (int64_t)r.f64();
+                GroundMap::Tile t;
+                for (float& h : t.h) h = r.f32();
+                t.lo = *std::min_element(t.h.begin(), t.h.end());
+                t.hi = *std::max_element(t.h.begin(), t.h.end());
+                m->tiles[GroundMap::tileKey(tx, tz)] = std::move(t);
+            }
+            m->updateBounds();
+            b.ground = m;
         }
         if (!r.ok()) break;
         if (air != world_->airDensity() || wind != world_->wind()) world_->setAir(air, wind);

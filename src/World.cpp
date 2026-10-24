@@ -1856,6 +1856,19 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
         out << "water " << b.id << " " << liquids()[b.liquid].name << " " << b.sea << " " << b.lo.x << " " << b.lo.y << " " << b.lo.z << " "
             << b.hi.x << " " << b.hi.y << " " << b.hi.z << " " << b.waves << " " << b.flow.x << " " << b.flow.y << " " << b.flow.z << " "
             << b.ownTemp << " " << b.tempC << "\n";
+    for (const WaterBody& b : waters_) {  // Grund des Meers: Standard und die Kacheln mit eigenem Grund (je Zelle in m)
+        if (!b.sea || !b.ground) continue;
+        out << "waterground " << b.id << " " << b.ground->base << "\n";
+        out.precision(7);  // die Zellen sind float
+        for (const auto& [key, tile] : b.ground->tiles) {
+            int64_t tx, tz;
+            GroundMap::tileOf(key, tx, tz);
+            out << "groundtile " << b.id << " " << tx << " " << tz;
+            for (float h : tile.h) out << " " << h;
+            out << "\n";
+        }
+        out.precision(17);
+    }
     if (!waters_.empty()) out << "next_water " << nextWaterId_ << "\n";
     return true;
 }
@@ -1886,6 +1899,7 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
     std::vector<JointState> loadedJoints;
     uint32_t nextJointIdLoaded = 1;
     std::vector<WaterBody> loadedWaters;
+    std::unordered_map<uint32_t, std::shared_ptr<GroundMap>> loadedGround;  // Grund je Meer
     uint32_t nextWaterIdLoaded = 1;
     std::vector<std::pair<std::string, double>> meshFiles;  // pro Zustand (leer = Festkörper)
     uint32_t nextId = 1;
@@ -2004,6 +2018,28 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
                 b.flow.z >> b.ownTemp >> b.tempC;
             b.liquid = std::max(0, findLiquid(liquid.c_str()));
             if (ss) loadedWaters.push_back(b);
+        } else if (tag == "waterground" || tag == "groundtile") {
+            uint32_t id = 0;
+            ss >> id;
+            auto it = std::find_if(loadedWaters.begin(), loadedWaters.end(), [&](const WaterBody& b) { return b.id == id && b.sea; });
+            if (it == loadedWaters.end()) continue;
+            auto& m = loadedGround[id];  // noch nicht geteilt: direkt füllen
+            if (!m) {
+                m = std::make_shared<GroundMap>();
+                m->base = defaultSeaBottom(it->level());
+            }
+            if (tag == "waterground") {
+                ss >> m->base;
+            } else {
+                int64_t tx = 0, tz = 0;
+                GroundMap::Tile t;
+                ss >> tx >> tz;
+                for (float& h : t.h) ss >> h;
+                if (!ss) continue;
+                t.lo = *std::min_element(t.h.begin(), t.h.end());
+                t.hi = *std::max_element(t.h.begin(), t.h.end());
+                m->tiles[GroundMap::tileKey(tx, tz)] = std::move(t);
+            }
         } else if (tag == "next_water") {
             ss >> nextWaterIdLoaded;
         }
@@ -2011,6 +2047,12 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
     clear();
     undo_.clear();
     redo_.clear();
+    for (WaterBody& b : loadedWaters)
+        if (auto it = loadedGround.find(b.id); it != loadedGround.end()) {
+            it->second->updateBounds();
+            it->second->rev = newGroundRev();
+            b.ground = it->second;
+        }
     setWaters(loadedWaters);
     nextWaterId_ = std::max(nextWaterId_, nextWaterIdLoaded);
     nextId_ = nextId;

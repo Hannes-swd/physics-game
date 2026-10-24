@@ -29,8 +29,8 @@ layout(set = 0, binding = 2) uniform Frame {
     vec4 lightPos[8];  // Feuerschein: Position (relativ zum Ursprung)
     vec4 lightColor[8];  // Farbe · Stärke
     vec4 lightInfo;    // x = Anzahl
-    vec4 water[56];    // Gewässer, je 7 Werte (WaterGpu in Renderer.h): lo + Wellenlänge, hi + Wellenhöhe, Phasen,
-                       // Absorption + Meer, Streufarbe + Rastergröße, Strömungsgitter (2)
+    vec4 water[64];    // Gewässer, je 8 Werte (WaterGpu in Renderer.h): lo + Wellenlänge, hi + Wellenhöhe, Phasen,
+                       // Absorption + Meer, Streufarbe + Rastergröße, Strömungsgitter (2), Grund (Meer)
     vec4 waterInfo;    // x = Anzahl, yz = Richtung der Wellen
 } frame;
 // Hinweis: Alle Positionen in den Shadern sind relativ zum Darstellungsursprung (nahe der Kamera),
@@ -61,14 +61,14 @@ const vec4 kWaveAmp = vec4(0.55, 0.25, 0.13, 0.07);    // Anteil an der halben W
 const vec4 kWaveAngle = vec4(0.0, 0.65, -0.5, 1.25);   // Richtung gegen die Hauptrichtung (rad)
 
 int waterCount() { return int(frame.waterInfo.x + 0.5); }
-bool waterIsSea(int w) { return frame.water[w * 7 + 3].w > 0.5; }
+bool waterIsSea(int w) { return frame.water[w * 8 + 3].w > 0.5; }
 
 // Strömungsgitter aller Gewässer (FlowGrid in Water.h): je Zelle Strömung x, z (m/s), Schaum 0..1, Stau (m)
 layout(std430, set = 0, binding = 4) readonly buffer WaterCells { vec4 waterCells[]; };
 
 // Strömung, Schaum und Stau über p (xz relativ zum Ursprung), bilinear. Ohne Gitter: gleichmäßige Strömung
 vec4 waterFlow(int w, vec2 p) {
-    vec4 g0 = frame.water[w * 7 + 5], g1 = frame.water[w * 7 + 6];
+    vec4 g0 = frame.water[w * 8 + 5], g1 = frame.water[w * 8 + 6];
     if (g0.w < 0.0) return vec4(g1.zw, 0.0, 0.0);
     ivec2 dim = ivec2(g1.xy + 0.5);
     vec2 f = (p - g0.xy) / g0.z - 0.5;
@@ -84,10 +84,10 @@ vec4 waterFlow(int w, vec2 p) {
 // Auslenkung der Oberfläche über p (xz relativ zum Ursprung), grad = Steigung
 float waterWave(int w, vec2 p, out vec2 grad) {
     grad = vec2(0.0);
-    float H = frame.water[w * 7 + 1].w;
+    float H = frame.water[w * 8 + 1].w;
     if (H <= 0.0) return 0.0;
-    float lambda0 = frame.water[w * 7].w;
-    vec4 ph = frame.water[w * 7 + 2];
+    float lambda0 = frame.water[w * 8].w;
+    vec4 ph = frame.water[w * 8 + 2];
     vec2 d0 = frame.waterInfo.yz;
     float h = 0.0;
     for (int i = 0; i < 4; ++i) {
@@ -105,12 +105,34 @@ float waterWave(int w, vec2 p, out vec2 grad) {
 // Oberfläche über p: Wellen und Stau an Hindernissen (wie World::surfaceHeight)
 float waterSurface(int w, vec2 p, out vec2 grad) { return waterWave(w, p, grad) + waterFlow(w, p).w; }
 
-// Wasserkörper als Quader (Meer: unten und seitlich unbegrenzt), Oberfläche auf der Höhe von Wellen und Stau über waveAt
+// Grund unter p (xz relativ zum Ursprung): Becken der Boden, Meer die Grundkarte (Fenster um die Kamera, 1 m je Zelle,
+// bilinear wie GroundMap::at), außerhalb des Fensters der Standardgrund. Wie kWaterGroundCells in Renderer.h
+const int kGroundCells = 128;
+float groundCell(int start, ivec2 c) {
+    int i = c.x + kGroundCells * c.y;
+    return waterCells[start + i / 4][i % 4];
+}
+float waterBottom(int w, vec2 p) {
+    float base = frame.water[w * 8].y;
+    vec4 gr = frame.water[w * 8 + 7];
+    if (!waterIsSea(w) || gr.w < 0.0) return base;
+    vec2 f = p - gr.xy - 0.5;
+    if (any(lessThan(f, vec2(-0.5))) || any(greaterThan(f, vec2(float(kGroundCells) - 0.5)))) return base;
+    f = clamp(f, vec2(0.0), vec2(float(kGroundCells - 1) - 0.0001));
+    ivec2 a = ivec2(floor(f));
+    vec2 t = f - vec2(a);
+    int s = int(gr.w + 0.5);
+    float h = mix(mix(groundCell(s, a), groundCell(s, a + ivec2(1, 0)), t.x), mix(groundCell(s, a + ivec2(0, 1)), groundCell(s, a + ivec2(1, 1)), t.x), t.y);
+    return h + gr.z;
+}
+
+// Wasserkörper als Quader (Meer: seitlich unbegrenzt, unten der Grund unter waveAt), Oberfläche auf der Höhe von Wellen
+// und Stau über waveAt
 void waterBox(int w, vec2 waveAt, out vec3 lo, out vec3 hi) {
-    lo = frame.water[w * 7].xyz;
-    hi = frame.water[w * 7 + 1].xyz;
+    lo = frame.water[w * 8].xyz;
+    hi = frame.water[w * 8 + 1].xyz;
     if (waterIsSea(w)) {
-        lo = vec3(-1e7);
+        lo = vec3(-1e7, waterBottom(w, waveAt), -1e7);
         hi.xz = vec2(1e7);
     }
     vec2 g;
@@ -148,8 +170,8 @@ vec3 waterView(vec3 color, vec3 a, vec3 b, vec2 waveAt) {
         float t_out = min(min(tf.x, tf.y), min(tf.z, 1.0));
         if (t_out <= t_in) continue;
         float L = (t_out - t_in) * len;
-        vec3 T = exp(-frame.water[w * 7 + 3].rgb * L);
-        color = color * T + frame.water[w * 7 + 4].rgb * waterLight() * (1.0 - T);
+        vec3 T = exp(-frame.water[w * 8 + 3].rgb * L);
+        color = color * T + frame.water[w * 8 + 4].rgb * waterLight() * (1.0 - T);
     }
     return color;
 }
@@ -164,7 +186,7 @@ vec4 waterSun(vec3 p, float time) {
         waterBox(w, p.xz, lo, hi);
         if (any(lessThan(p, lo)) || any(greaterThan(p, hi))) continue;
         float depth = hi.y - p.y;
-        vec3 sigma = frame.water[w * 7 + 3].rgb;
+        vec3 sigma = frame.water[w * 8 + 3].rgb;
         vec3 L = normalize(frame.sunDir.xyz);
         r.rgb *= exp(-sigma * depth / max(L.y, 0.2));
         r.a *= exp(-dot(sigma, vec3(0.333)) * depth * 0.6);

@@ -675,6 +675,28 @@ int runSelfTest() {
         run("water sea 50 ; new box oak 30 30 10 5000 80 5000 ; set far = last ; wait 5");
         check(val("far.inwater") == 1 && approx(50.0 - val("far.bottom"), 10.0 * 720.0 / 1025.0, 0.6), "the sea carries an oak block far away",
               num(50.0 - val("far.bottom")) + " cm deep");
+        // Grund des Meers: darunter ist Erde, kein Wasser (wer gräbt, stößt nicht auf das Meer)
+        check(w.inWater({3, 0.2, 3}) && !w.inWater({3, -1.0, 3}) && !w.inWater({3, -50.0, 3}), "below the sea bottom there is no water");
+        run("water sea 50 bottom -300");
+        check(w.inWater({3, -1.0, 3}) && !w.inWater({3, -3.2, 3}), "a deeper sea bottom holds water down to it");
+        run("water sea 50 bottom 0");
+        // Land im Meer: trocken, auch unter dem Meeresspiegel
+        run("water land 2000 0 1000 1000");
+        check(!w.inWater({20, 0.2, 0}) && !w.inWater({20, -2.0, 0}) && w.inWater({10, 0.2, 0}) && w.inWater({20, 0.2, 10}),
+              "land in the sea is dry, also below the sea level");
+        run("new box oak 30 30 10 2000 80 0 ; set dry = last ; wait 3");
+        check(val("dry.inwater") == 0 && val("dry.bottom") < 1, "a block on the land does not float", num(val("dry.bottom")) + " cm");
+        run("new box oak 30 30 10 1450 80 0 ; set coast = last ; wait 3");
+        check(val("coast.inwater") == 1 && approx(50.0 - val("coast.bottom"), 10.0 * 720.0 / 1025.0, 0.6), "next to the coast it floats",
+              num(50.0 - val("coast.bottom")) + " cm deep");
+        const std::string seaFile = (std::filesystem::temp_directory_path() / "werkstatt_sea_test.werkstatt").string();
+        run("save \"" + seaFile + "\" ; load \"" + seaFile + "\"");
+        check(!w.inWater({20, 0.2, 0}) && w.inWater({10, 0.2, 0}), "save and load keep the land in the sea");
+        std::filesystem::remove(seaFile);
+        run("water ground reset");
+        const bool flooded = w.inWater({20, 0.2, 0});
+        run("undo");
+        check(flooded && !w.inWater({20, 0.2, 0}), "undo brings the land back");
     }
 
     std::printf("== River ==\n");

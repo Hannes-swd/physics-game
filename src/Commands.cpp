@@ -385,7 +385,8 @@ std::string commandHelp() {
         "WATER (lengths in cm)\n"
         "  water                                     water bodies, liquids, what floats\n"
         "  water pool <L> <W> <depth> [x y z] [liquid] [walls]   water L x W, bottom middle at x y z (default: here on the floor)\n"
-        "  water sea <level> [liquid] | water sea off           endless sea: everything below the level is water\n"
+        "  water sea <level> [liquid] [bottom <cm>] | water sea off   endless sea: water between its bottom (default 0) and the level\n"
+        "  water land <x> <z> <W> <L> [height] | water ground <x> <z> <W> <L> <height> | water ground reset   sea bottom / dry land\n"
         "  water level|waves <n|all> <cm> | water temp <n|all> <°C|air> | water flow <n|all> <x> <z> (m/s) | water liquid <n|all> <l>\n"
         "  water remove <n|all> | water <id>         how a part floats: displaced volume, buoyancy, water in its hollows\n"
         "  water fill <id> [percent] | water empty <id>   fill the hollows of a cup or boat\n"
@@ -1547,9 +1548,20 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
                 res.text = n ? "the sea is gone" : "there is no sea";
                 return res;
             }
-            if (!num(2, v)) return fail("water sea <level_cm> [liquid] | water sea off   (endless: everything below the level is water)");
-            const int l = t.size() > 3 ? findLiquid(word(3).c_str()) : findLiquid("seawater");
-            if (l < 0) return fail("unknown liquid '" + t[3] + "' (water, seawater, muddy, oil)");
+            const char* usage = "water sea <level_cm> [liquid] [bottom <cm>] | water sea off   (endless, water between the bottom and the level)";
+            if (!num(2, v)) return fail(usage);
+            int l = -1;
+            double bottom = 0;
+            bool haveBottom = false;
+            for (size_t i = 3; i < t.size(); ++i) {
+                if (word(i) == "bottom" || word(i) == "floor") {
+                    if (!num(i + 1, bottom)) return fail(usage);
+                    haveBottom = true;
+                    ++i;
+                } else if ((l = findLiquid(word(i).c_str())) < 0) {
+                    return fail("unknown liquid or option '" + t[i] + "' (water, seawater, muddy, oil, bottom <cm>)");
+                }
+            }
             WaterBody* sea = nullptr;
             for (const WaterBody& b : w.waters())
                 if (b.sea) sea = w.findWater(b.id);
@@ -1557,11 +1569,41 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             if (!sea) {
                 WaterBody b;
                 b.sea = true;
-                b.liquid = l;
+                b.liquid = l >= 0 ? l : findLiquid("seawater");
+                b.hi.y = v / 100.0;
                 sea = w.findWater(w.addWater(b));
             }
             sea->hi.y = v / 100.0;
-            if (t.size() > 3) sea->liquid = l;
+            if (l >= 0) sea->liquid = l;
+            if (haveBottom) {  // Standardgrund (wo nichts anderes eingetragen ist)
+                auto m = sea->ground ? sea->ground->edit() : std::make_shared<GroundMap>();
+                m->base = bottom / 100.0;
+                m->updateBounds();
+                if (!sea->ground) m->rev = newGroundRev();
+                sea->ground = m;
+            }
+            w.changedWater(*sea);
+            res.text = "water: " + w.waterText(*sea);
+        } else if (sub == "ground" || sub == "land") {
+            // Grund des Meers in einem Rechteck: Land (über dem Spiegel), Bucht, Graben. Später kommt er aus dem Gelände
+            const char* usage = sub == "land" ? "water land <x> <z> <width> <length> [height_cm]   (cm, dry land in the sea; default 50 cm above the level)"
+                                              : "water ground <x> <z> <width> <length> <height_cm> | water ground reset   (cm, bottom of the sea)";
+            WaterBody* sea = nullptr;
+            for (const WaterBody& b : w.waters())
+                if (b.sea) sea = w.findWater(b.id);
+            if (!sea) return fail("there is no sea ('water sea <level>')");
+            auto m = sea->ground ? sea->ground->edit() : std::make_shared<GroundMap>();
+            if (word(2) == "reset" || word(2) == "clear") {
+                m->clearTiles();
+            } else {
+                double cx, cz, wd, ln, hgt = sea->level() * 100.0 + 50.0;
+                if (!num(2, cx) || !num(3, cz) || !num(4, wd) || !num(5, ln) || wd <= 0 || ln <= 0) return fail(usage);
+                if ((sub == "ground" || t.size() > 6) && !num(6, hgt)) return fail(usage);
+                if (wd * ln > 2.5e9) return fail("at most 500 x 500 m at once");
+                m->set((cx - wd / 2) / 100.0, (cz - ln / 2) / 100.0, (cx + wd / 2) / 100.0, (cz + ln / 2) / 100.0, hgt / 100.0);
+            }
+            w.pushUndo();
+            sea->ground = m;
             w.changedWater(*sea);
             res.text = "water: " + w.waterText(*sea);
         } else if (sub == "remove" || sub == "delete") {

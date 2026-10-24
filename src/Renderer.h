@@ -31,8 +31,9 @@ struct ObjectGpuData {
 
 constexpr int kMaxLights = 8;  // Feuerschein (Punktlichter)
 constexpr int kMaxWater = 8;   // Gewässer je Bild (die nächsten)
+constexpr int kWaterGroundCells = 128;  // Meer: Fenster der Grundkarte um die Kamera, Zellen je Achse (1 m), wie in common.glsl
 
-// Ein Gewässer für die Shader. Muss zu frame.water in common.glsl passen (7 vec4 je Gewässer)
+// Ein Gewässer für die Shader. Muss zu frame.water in common.glsl passen (8 vec4 je Gewässer)
 struct WaterGpu {
     glm::vec4 lo{0.0f};       // xyz Ecke unten (relativ zum Ursprung), w = Wellenlänge der größten Welle (m)
     glm::vec4 hi{0.0f};       // xyz Ecke oben (y = Wasserspiegel in Ruhe), w = Wellenhöhe (m)
@@ -41,6 +42,9 @@ struct WaterGpu {
     glm::vec4 scatter{0.0f};  // rgb Streufarbe, w = Rastergröße der Oberfläche (Vierecke je Seite)
     glm::vec4 grid0{0.0f, 0.0f, 1.0f, -1.0f};  // Strömungsgitter: xy = Ecke (x, z relativ zum Ursprung), z = Zellgröße, w = erste Zelle (-1: keins)
     glm::vec4 grid1{0.0f};    // xy = Zellen je Achse (x, z), zw = Strömung ohne Hindernisse (m/s)
+    // Meer: Grund im Fenster (kWaterGroundCells² Zellen, je vec4 vier Höhen in Weltkoordinaten), sonst gilt lo.y.
+    // xy = Ecke (x, z relativ zum Ursprung), z = zu den Höhen addieren (−Ursprung y), w = erster vec4 (-1: überall lo.y)
+    glm::vec4 ground{0.0f, 0.0f, 0.0f, -1.0f};
 };
 
 struct DrawItem {
