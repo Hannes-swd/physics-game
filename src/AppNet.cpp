@@ -430,6 +430,7 @@ void App::netStop(const std::string& why) {
     }
     netStatus_ = why;
     netWelcomed_ = false;
+    netWorldReady_ = false;
     netPlayers_.clear();
     netSelfId_ = 0;
     netOwnMoves_.clear();
@@ -897,6 +898,7 @@ bool App::netJoin(const std::string& addressIn, std::string* err) {
     netConn_ = std::move(conn);
     netRole_ = NetRole::Client;
     netWelcomed_ = false;
+    netWorldReady_ = false;
     netConnectStart_ = time_;
     netHostName_ = host;
     netStatus_ = "Verbinde mit " + host + " ...";
@@ -1073,6 +1075,9 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
         break;
     }
     case Msg::Tick: {
+        // Der Gastgeber schickt nach dem Beitritt erst alle Teile und Verbindungen, dann die erste Lage: ab hier ist die
+        // Welt komplett (Ladebildschirm beim Beitreten)
+        if (netWelcomed_) netWorldReady_ = true;
         const double air = r.f64();
         const glm::dvec3 wind = r.dvec3();
         const bool breakage = r.u8() != 0, buildCollision = r.u8() != 0;

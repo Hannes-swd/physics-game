@@ -1,7 +1,8 @@
 // Hauptmenü (Qt Quick, Oberfläche in qml/): Spielen (Weltliste), Mehrspieler, Einstellungen, Beenden.
 // show() zeigt das Menüfenster, bis eine Welt geöffnet, einem LAN-Spiel beigetreten oder beendet wird. Danach läuft das
-// Spiel in seinem eigenen Fenster (App); "Zurück zum Hauptmenü" ruft show() wieder auf. Während das Spiel läuft, gibt
-// es kein Qt-Fenster.
+// Spiel in seinem eigenen Fenster (App); "Zurück zum Hauptmenü" ruft show() wieder auf. Beim Wechsel zeigt das Menü
+// eine Ladeseite, bis das Spielfenster sein erstes Bild hat (hide()); danach gibt es kein Qt-Fenster mehr.
+// Alles lässt sich auch per Befehl ("menu ...", Fernsteuerung) bedienen und auslesen, siehe docs/15.
 #pragma once
 #include <memory>
 #include <string>
@@ -21,7 +22,9 @@ public:
     ~MainMenu();
     // message: Hinweis aus der letzten Sitzung (z.B. Beitritt fehlgeschlagen), leer: keiner.
     // remote: Fernsteuerung (Befehle "menu ..."), command: zuerst ausführen (im Spiel getippt, z.B. "menu worlds")
+    // Bei Play/Join bleibt das Fenster danach mit einer Ladeseite stehen, bis hide() kommt (das Spielfenster ist da)
     MenuChoice show(const std::string& message, RemoteServer* remote = nullptr, const std::string& command = "");
+    void hide();
     // --menu-shot: Seite öffnen (main, worlds, multiplayer, settings), Bild des Fensters speichern, beenden
     void setScreenshot(const std::string& file, const std::string& page) {
         shotFile_ = file;

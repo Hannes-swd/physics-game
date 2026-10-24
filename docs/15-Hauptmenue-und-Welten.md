@@ -36,6 +36,31 @@ Die Welt wird außerdem **automatisch** gespeichert (Standard alle 5 Minuten, in
 Tritt man im Spiel einem LAN-Spiel bei, wird die eigene Welt vorher gespeichert. Was man danach beim Gastgeber baut,
 landet nicht in der eigenen Welt.
 
+## Ladebildschirm
+
+Wechselt man aus dem Hauptmenü ins Spiel, gibt es keinen leeren Moment:
+
+1. Das Menüfenster zeigt sofort eine **Ladeseite** („Welt wird geladen“ bzw. „LAN-Spiel beitreten“ mit Namen bzw.
+   Adresse, `qml/LoadingPage.qml`). Es bleibt stehen, bis das Spielfenster sein erstes Bild zeigt, und schließt sich
+   dann.
+2. Das Spielfenster zeigt den **Ladebildschirm** mit Fortschrittsbalken und dem, was gerade passiert. Er deckt die
+   Welt zu, Eingaben an die Welt sind gesperrt. Ist alles fertig, blendet er in 0,35 s aus.
+
+| Anlass | Schritte (Text unter dem Balken) | fertig, wenn |
+|---|---|---|
+| Welt öffnen | Szene lesen → Teile anlegen: 120 / 800 → Kollisionsformen berechnen: noch N | die genauen Kollisionsformen (im Hintergrund) alle da sind, höchstens nach 20 s (bis dahin gelten grobe Formen, die Welt ist trotzdem spielbar) |
+| LAN-Spiel beitreten | Verbinde mit ... → Warte, bis ... dich zulässt → Welt wird übertragen: N Teile | nach allen Teilen die erste Lage vom Gastgeber kommt. Knopf **Abbrechen** führt zurück ins Hauptmenü |
+| Welt verlassen | Welt wird gespeichert | gespeichert (danach schließt das Fenster) |
+
+- Der Balken zeigt echten Fortschritt (Teile, Kollisionsformen). Beim Beitreten ist die Dauer unbekannt, dann läuft
+  ein Stück hin und her.
+- Während synchroner Arbeit (Teile anlegen, Speichern) zeichnet das Spiel zwischendurch bis zu 30 Ladebilder je
+  Sekunde, damit das Fenster nicht „reagiert nicht“ zeigt.
+- Per Befehl: `menu` zeigt im Spiel die Zeile `loading       world: Kollisionsformen berechnen: noch 3 (84 %)` bzw.
+  `loading       join: Warte, bis ... dich zulässt ...`. Fehlt die Zeile, ist das Laden fertig.
+- Nur aus dem Hauptmenü und mit `--world`. Mit `--shot`, `--script` usw. ohne Hauptmenü gibt es keinen Ladebildschirm,
+  Fotos und Tests sehen gleich die Welt.
+
 ## Speichersystem
 
 Jede Welt ist ein Ordner unter `%APPDATA%\Werkstatt\worlds\`. Der Ordnername kommt aus dem Namen der Welt; beim
@@ -95,7 +120,7 @@ Die Einstellungen gelten, wenn eine Welt geöffnet wird.
 | *(keine)* | Hauptmenü |
 | `--world <Name oder Ordner>` | diese Welt direkt öffnen (ohne Hauptmenü) |
 | `--no-menu` | wie früher: direkt in die Beispiel-Werkstatt |
-| `--menu-shot <bild.png> [main\|worlds\|multiplayer\|settings]` | Hauptmenü auf dieser Seite öffnen, Bild speichern, beenden |
+| `--menu-shot <bild.png> [main\|worlds\|multiplayer\|settings\|loading]` | Hauptmenü auf dieser Seite öffnen (`loading`: die Ladeseite), Bild speichern, beenden |
 
 `--script`, `--shot`, `--play`, `--empty` und `--view` starten wie bisher direkt ohne Hauptmenü (Tests, Fernsteuerung).
 
@@ -172,9 +197,10 @@ commands      'menu help'
 | `src/Worlds.*` | Weltordner, `world.json`, sicheres Ersetzen von Dateien, Papierkorb. Ohne Qt |
 | `src/Settings.*` | `settings.json`. Ohne Qt |
 | `src/Menu.*` | Qt-Teil: `MainMenu::show()` zeigt das Menü, bis eine Welt gewählt ist. Das Objekt `menu` in QML (Welten, Einstellungen, LAN-Suche) und die Befehle `menu ...` (`MenuBackend::command`). QML meldet Seite und Dialog (`menu.page`, `menu.dialog`), die Auswahl liegt in `menu.selectedDir` |
-| `qml/*.qml` | die Oberfläche: `Main.qml` (Fenster, Seitenstapel), `MainPage`, `WorldsPage`, `MultiplayerPage`, `SettingsPage` |
-| `src/AppWorld.cpp` | im Spiel: Welt öffnen, speichern, automatisch speichern, Einstellungen anwenden, zurück ins Menü |
-| `src/main.cpp` | Ablauf: Menü → Spiel → (Zurück zum Hauptmenü) → Menü ... Jede Sitzung bekommt ihr eigenes Spielfenster |
+| `qml/*.qml` | die Oberfläche: `Main.qml` (Fenster, Seitenstapel, `openPage`, `showLoading`), `MainPage`, `WorldsPage`, `MultiplayerPage`, `SettingsPage`, `LoadingPage` |
+| `src/AppWorld.cpp` | im Spiel: Welt öffnen, speichern, automatisch speichern, Einstellungen anwenden, zurück ins Menü, Befehle `world` und `menu`, Ladebildschirm (`beginLoading`, `updateLoading`, `drawLoading`, `renderLoadingFrame`) |
+| `src/main.cpp` | Ablauf: Menü → Spiel → (Zurück zum Hauptmenü) → Menü ... Jede Sitzung bekommt ihr eigenes Spielfenster. Ein `RemoteServer` für die ganze Laufzeit (`AppOptions::remote`); `AppOptions::onFirstFrame` schließt die Ladeseite des Menüs (`MainMenu::hide`), sobald das Spielfenster ein Bild hat |
+| `src/Remote.*` | Fernsteuerung; `hold()` gibt eine Zeile an die nächste Phase weiter (kam sie während des Wechsels Menü ↔ Spiel an) |
 
 - Das Menü ist eine eigene Bibliothek (`WerkstattMenu`), weil Qt eigene Compiler-Schalter mitbringt. Die QML-Dateien
   sind eingebettet (`qrc:/menu/`). Nach einer Änderung an `qml/` reicht ein Neubau.

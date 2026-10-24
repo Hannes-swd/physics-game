@@ -7,6 +7,11 @@ Ihre Eingaben gehen zum Gastgeber, die Ergebnisse kommen zurück.
 
 ## Spiel öffnen (Gastgeber)
 
+**Aus dem Hauptmenü:** *Spielen* → Welt auswählen → **Im LAN öffnen**. Die Welt öffnet sich und ist gleich für
+andere freigegeben (das Fenster *Mehrspieler (LAN)* ist offen). Per Befehl: `menu lan <Welt>`.
+
+**Im Spiel:**
+
 1. Menü **Mehrspieler → Im LAN öffnen (Gastgeber)...**
 2. Das Fenster *Mehrspieler (LAN)* zeigt die eigene Adresse im Netz (z.B. `192.168.1.20`).
    Mitspieler finden das Spiel auch ohne Adresse in ihrer Liste.
@@ -20,15 +25,34 @@ Im Fenster *Mehrspieler → Spieler einladen / verwalten...* sieht der Gastgeber
 
 ## Beitreten (Mitspieler)
 
+**Aus dem Hauptmenü:** Seite **Mehrspieler**. Oben steht der eigene Name. Darunter erscheinen die offenen Spiele im Netz
+(sie werden gesucht, solange die Seite offen ist): einmal klicken übernimmt die Adresse, Doppelklick tritt sofort bei.
+Oder die Adresse eintippen → **Beitreten**. Per Befehl: `menu games`, `menu join <Adresse|Nummer|Name>`.
+
+Danach öffnet sich das Spielfenster mit einem **Ladebildschirm**:
+
+| Anzeige | Bedeutung |
+|---|---|
+| Verbinde mit ... | die Verbindung wird aufgebaut |
+| Warte, bis ... dich zulässt | der Gastgeber muss den Beitritt noch bestätigen |
+| Welt wird übertragen: N Teile | der Gastgeber schickt seine Welt; fertig, sobald nach den Teilen die erste Lage kommt |
+
+Mit **Abbrechen** (oder `menu main`) geht es zurück ins Hauptmenü. Lehnt der Gastgeber ab oder antwortet niemand,
+landet man ebenfalls wieder im Hauptmenü, und dort steht die Meldung. Per Befehl liest `menu` den Zustand aus
+(`loading       join: Warte, bis ... dich zulässt ...`).
+
+**Im Spiel:**
+
 1. Menü **Mehrspieler → LAN-Spiel beitreten...**
-2. Oben den eigenen Namen eintragen (vorbelegt mit dem Windows-Benutzernamen).
+2. Oben den eigenen Namen eintragen (vorbelegt mit dem Namen aus den Einstellungen bzw. dem Windows-Benutzernamen).
 3. Offene Spiele im Netz erscheinen nach etwa einer Sekunde in der Liste → **Beitreten**.
    Steht das Spiel nicht in der Liste (z.B. anderes Teilnetz), die Adresse des Gastgebers eintippen → **Verbinden**
    (anderer Port: `192.168.1.20:7780`).
-4. Hat der Gastgeber zugestimmt, wird die eigene Welt durch die des Gastgebers ersetzt.
+4. Hat der Gastgeber zugestimmt, wird die eigene Welt durch die des Gastgebers ersetzt. Ist gerade eine Welt aus der
+   Weltliste offen, wird sie vorher gespeichert; was man danach beim Gastgeber baut, landet nicht in ihr.
 
 **Spiel verlassen** trennt die Verbindung. Die Welt bleibt als eigene Kopie stehen, man kann allein weiterbauen
-(oder mit `save` speichern).
+(oder mit `save` als Szene speichern).
 
 ## Was wo passiert
 
@@ -80,6 +104,18 @@ Alles aus dem Menü geht auch in der Konsole oder per `--send`:
 lan host ; lan confirm off              Gastgeber, jeder darf sofort rein
 lan join 192.168.1.20                   Mitspieler
 ```
+
+Aus dem Hauptmenü (auch per Fernsteuerung, [15](15-Hauptmenue-und-Welten.md#menü-per-befehl-fernsteuerung-ki)):
+
+```
+menu lan "Meine Welt"                   Gastgeber: Welt öffnen und gleich freigeben
+menu games                              Mitspieler: offene Spiele im Netz (nummeriert)
+menu join 1                             Mitspieler: dem ersten Spiel der Liste beitreten (oder Adresse/Name)
+```
+
+Zwei Spiele auf **einem** Rechner (zum Ausprobieren): das zweite mit eigenem Fernsteuerungs-Port starten
+(`Werkstatt.exe --port 7778`) und dort `menu join 127.0.0.1`. Befehle an das zweite: `Werkstatt.exe --port 7778 --send "..."`
+(`--port` vor `--send`).
 
 ## Netzwerk
 

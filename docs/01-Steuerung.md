@@ -1,6 +1,10 @@
 # Steuerung
 
-Es gibt zwei Modi. **Tab** wechselt zwischen ihnen.
+Beim Start erscheint das **Hauptmenü**: *Spielen* zeigt die Weltliste (einmal klicken = auswählen, Doppelklick =
+öffnen), dazu *Mehrspieler*, *Einstellungen* und *Beenden*. Beim Öffnen einer Welt oder beim Beitreten zu einem
+LAN-Spiel zeigt ein **Ladebildschirm**, was gerade passiert. Alles dazu: [15](15-Hauptmenue-und-Welten.md).
+
+In der Welt gibt es zwei Modi. **Tab** wechselt zwischen ihnen.
 
 | Modus | Was passiert |
 |---|---|
@@ -61,7 +65,7 @@ z. B. `round 9 e3 3.00`. Mehr dazu in [09-Bearbeitung.md](09-Bearbeitung.md).
 | **Entf** | löschen |
 | **Strg+D** | duplizieren |
 | **Strg+Z / Strg+Y** | rückgängig / wiederholen |
-| **Strg+S / Strg+O** | Szene speichern / laden |
+| **Strg+S / Strg+O** | Welt speichern (ohne Welt aus der Weltliste: Szene speichern unter ...) / Szene laden |
 
 Das Raster zum Einrasten (1 mm bis 10 cm) stellt man im Werkzeug-Fenster ein.
 Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopiert.
@@ -140,15 +144,18 @@ Zwei gewählte Teile lassen sich darunter auch zu einem Teil **vereinen**, das z
 
 | Eintrag | Wirkung |
 |---|---|
+| **Welt speichern** | die offene Welt jetzt speichern (Strg+S). Sie speichert sich außerdem automatisch (Standard alle 5 min), beim Verlassen und beim Beenden |
+| **Zurück zum Hauptmenü** | Welt speichern, Spielfenster schließen, Hauptmenü öffnen (wie `world menu`) |
 | **Leere Werkstatt** | alles entfernen (`scene empty`) |
 | **Beispiel-Werkstatt** | Werkbank, Rampe, Getriebe (`scene demo`) |
 | **Beispiel-Welt (alles)** | große Welt mit Kugelbahn, Dominos, Pendel, Propellern, Hängebrücke, Feder, Wippe, Werkstücken, Regal, Abrissbirne, Axt mit Spaltholz (`scene showcase`, siehe [02](02-Befehle.md#die-beispielwelt-scene-showcase)) |
 | **Feuerstelle (Wärme, Feuer, Kälte)** | Lagerfeuer mit Stahlstab, Aluminium, Kunststoff, Gummi, geleimtem Brett und gefrorenem Stahl (`scene fire`, siehe [12](12-Waerme-und-Feuer.md)) |
 | **Wasserbecken (Schwimmen, Sinken, Boote)** | Becken mit schwimmenden und sinkenden Teilen, Stahlboot, Bechern, glühendem Stahl (`scene water`, siehe [14](14-Wasser.md)) |
 | **Fluss (Strömung, Hindernisse, Treibgut)** | Kanal mit 1,2 m/s Strömung, Felsen und Brückenpfeiler, Stämme und Bretter treiben mit (`scene river`, siehe [14](14-Wasser.md)) |
-| **Speichern / Laden** | Szene als Datei (Strg+S / Strg+O) |
+| **Szene speichern unter / Laden** | Szene als einzelne `.werkstatt`-Datei, z. B. zum Weitergeben (Laden ersetzt den Inhalt der offenen Welt) |
 | **Modell importieren** | Blender-Modell (.obj) |
 | **Foto speichern** | Bild als PNG (F12) |
+| **Beenden** | Welt speichern und das Programm beenden (wie das Schließen des Fensters) |
 
 ## Menü Physik
 

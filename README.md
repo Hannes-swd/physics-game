@@ -22,10 +22,19 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 - Materialspezifische Reibung: Jedes Materialpaar hat eigene Haft- und Gleitreibung
 - Wärme, Feuer und Kälte: Temperatur an jeder Stelle eines Teils, Wärmeleitung, Brenner und Kältespray; Holz verkohlt,
   brennt und das Feuer breitet sich aus; Metall glüht, wird weich und schmilzt; Kälte macht Stahl, Gummi und Kunststoff spröde
+- Wasser: Becken und Meer (mit Meeresgrund und trockenem Land), exakter Auftrieb, Boote und Becher, die volllaufen,
+  Wellen, Strömung um Hindernisse, Abschrecken, Schwimmen
+
+**Welten & Hauptmenü:**
+- Hauptmenü (Qt Quick / QML, noch ungestalteter Rohbau): Weltliste, neue Welt mit Seed, Mehrspieler, Einstellungen
+- Jede Welt ein eigener Ordner mit sicherem Speichern (Sicherungskopie, nichts geht bei einem Absturz verloren),
+  automatischem Speichern, Kamera, Spielfigur und Umgebung
+- Ladebildschirm mit echtem Fortschritt beim Öffnen einer Welt und beim Beitreten zu einem LAN-Spiel
 
 **Steuerung & Automatisierung:**
 - Intuitive Maus-Steuerung **und** englische Textbefehle
-- Live-Fernsteuerung von außen (TCP/Kommandozeile)
+- Live-Fernsteuerung von außen (TCP/Kommandozeile), auch das Hauptmenü: eine KI kann alles per Befehl bedienen und
+  auslesen, ohne Bildschirmfotos
 - Befehlssprache mit Scripting: Konditionale, Schleifen, Variablen, Funktionen
 - Headless-Modus für automatisierte Tests und Simulationen
 
@@ -59,26 +68,33 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 
 ```
 Werkstatt/
-├── CMakeLists.txt           # Build-Konfiguration
-├── src/
-│   ├── main.cpp             # Einstiegspunkt
-│   ├── engine/              # 3D-Engine (Vulkan)
-│   ├── physics/             # Physik-Integration (Jolt)
-│   ├── commands/            # Befehlsparser und -ausführung
-│   ├── geometry/            # Geometrie-Verarbeitung
-│   └── ui/                  # Benutzeroberfläche
+├── CMakeLists.txt           # Build-Konfiguration (lädt GLFW, GLM, Jolt, ImGui; findet Qt für das Hauptmenü)
+├── src/                     # Spiel und Engine (Aufgabe jeder Datei: docs/07-Engine-Aufbau.md)
+│   ├── main.cpp             # Kommandozeile, Ablauf Hauptmenü -> Spiel -> Hauptmenü
+│   ├── App*.cpp             # Spielfenster: Kameras, Eingabe, Oberfläche (ImGui), LAN, Wasser, Welt + Ladebildschirm
+│   ├── World*, Solid*, ...  # Teile, Geometrie, Bearbeitung, Physik (Jolt), Wärme, Wasser, Verbindungen
+│   ├── Worlds.*, Settings.* # Welten als Ordner (world.json, Szene, Sicherungen), Einstellungen
+│   └── Menu.*               # Hauptmenü (Qt), eigene Bibliothek WerkstattMenu
+├── qml/                     # Oberfläche des Hauptmenüs (QML, eingebettet)
+├── shaders/                 # GLSL, wird beim Bauen eingebettet
+├── assets/                  # Materialien (materials.json), Spielfigur
+├── cmake/                   # Hilfsskripte (Einbetten, Korrektur für Jolt)
 ├── docs/                    # Ausführliche Dokumentation
-├── assets/                  # Shaders, Texturen, Szenen
 └── build/                   # Build-Output (nach cmake --build)
 ```
+
+Welten und Einstellungen liegen nicht im Projekt, sondern unter `%APPDATA%\Werkstatt\`
+([15](docs/15-Hauptmenue-und-Welten.md#speichersystem)).
 
 ## Technologie-Stack
 
 | Komponente | Technologie |
 |---|---|
 | **Sprache** | C++17 |
-| **Grafik** | Vulkan 1.3 |
-| **Physik** | Jolt Physics Engine |
+| **Grafik** | Vulkan 1.3, Fenster GLFW |
+| **Physik** | Jolt Physics Engine (doppelte Genauigkeit) |
+| **Oberfläche im Spiel** | Dear ImGui |
+| **Hauptmenü** | Qt 6 Quick / QML (optional; ohne Qt startet das Spiel direkt) |
 | **Build** | CMake 3.20+ |
 | **Compiler** | MSVC (Visual Studio 2022) |
 
@@ -86,15 +102,18 @@ Werkstatt/
 
 ### TCP-Fernsteuerung
 
-Werkstatt kann im Headless-Modus laufen und per TCP gesteuert werden:
+Das laufende Programm wartet auf Port **7777** (nur `127.0.0.1`) auf Befehle, schon im Hauptmenü:
 
 ```bash
-# Starten (lauscht auf Port 12345)
-Werkstatt.exe --headless
+# Hauptmenü: wo bin ich, Welt anlegen und öffnen
+Werkstatt.exe --send "menu" "menu new Testwelt 4711" "menu play Testwelt"
 
-# Von extern Befehle senden
-Werkstatt.exe --send "new box wood 100 50 20"
+# Im Spiel: alle Befehle
+Werkstatt.exe --send "new box oak 100 50 20" "world save" "world menu"
 ```
+
+Ohne Fenster (Tests, Simulationen): `Werkstatt.exe --headless --script befehle.txt`.
+Alles dazu: [docs/04-Fernsteuerung.md](docs/04-Fernsteuerung.md).
 
 ### Befehlssprache
 
@@ -105,7 +124,8 @@ Die vollständige Dokumentation der Befehlssprache inkl. Variablen, Funktionen u
 - **F3:** Physik-Inspektor öffnen (Visualisierung der Physik-Bodies, Verbindungen, Kollisionen)
 - **F4:** Technische Zeichnung für Präzisions-Überprüfung
 - `--selftest`: Interne Tests ausführen
-- `--demo`: Demo-Modus mit automatischen Tests
+- `--headless --demo`: ohne Fenster mit der Beispiel-Werkstatt (Befehle von der Tastatur oder einer Pipe)
+- `--world <Name>`: eine Welt direkt öffnen, `--no-menu`: ohne Hauptmenü, `--menu-shot bild.png [seite]`: Bild des Hauptmenüs
 - Alle Befehle werden in die Konsole (F1) protokolliert
 
 ## Häufig gestellte Fragen
@@ -117,7 +137,9 @@ A: Nein, es braucht eine Grafik mit Vulkan 1.3. Neuere integrierte Grafik (z.B. 
 A: Holz, Ziegel, Stein, Metall, Aluminium und weitere. Jedes Material hat spezifische Eigenschaften wie Dichte, Festigkeit und Reibung.
 
 **F: Wie speichere ich meine Konstruktionen?**  
-A: Konstruktionen können per Export-Befehl gespeichert und später geladen werden. Siehe [docs/07-Engine-Aufbau.md](docs/07-Engine-Aufbau.md).
+A: In einer Welt aus der Weltliste automatisch (Standard alle 5 Minuten, beim Verlassen und Beenden) und mit Strg+S.
+Einzelne Szenen lassen sich zusätzlich als `.werkstatt`-Datei speichern und laden (*Datei → Szene speichern unter*).
+Siehe [docs/15-Hauptmenue-und-Welten.md](docs/15-Hauptmenue-und-Welten.md).
 
 **F: Kann ich eigene Szenen erstellen?**  
 A: Ja, über Skripte (`.txt` oder per Fernsteuerung) oder durch Editieren der Szenen-Dateien.
@@ -133,7 +155,7 @@ Für Fragen, Bug-Reports oder Feature-Requests öffnen Sie bitte ein Issue oder 
 ---
 
 **Version:** 1.0  
-**Letztes Update:** 2026-10-20  
+**Letztes Update:** 2026-10-24  
 **Maintainer:** Hannes
 
 ## Systemanforderungen
@@ -176,12 +198,17 @@ Ob die Grafikkarte Vulkan 1.3 kann, zeigt z.B. `vulkaninfo --summary` (aus dem S
 build\Release\Werkstatt.exe
 ```
 
+Im Hauptmenü **Spielen → Neue Welt**, dann die Welt doppelklicken.
+
 ### Build von Source
 
 Voraussetzungen:
 - Visual Studio 2022
 - CMake 3.20+
 - Vulkan SDK
+- für das Hauptmenü: Qt 6.5+ für MSVC 2022 mit Qt Quick und Qt Quick Controls (wird unter `C:/Qt/6.*/msvc2022_64`
+  gefunden; ohne Qt wird das Spiel ohne Hauptmenü gebaut). Nach dem Bauen legt `windeployqt` die Qt-Dateien neben
+  `Werkstatt.exe`.
 
 ```bash
 # Build konfigurieren

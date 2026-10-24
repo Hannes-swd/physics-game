@@ -3,7 +3,7 @@
 //   Werkstatt.exe                          Hauptmenü (Weltliste, Mehrspieler, Einstellungen), dann das Spiel
 //   Werkstatt.exe --world <Name|Ordner>    diese Welt direkt öffnen
 //   Werkstatt.exe --no-menu                ohne Hauptmenü in die Beispiel-Werkstatt (wie früher)
-//   Werkstatt.exe --menu-shot bild.png [main|worlds|multiplayer|settings]   Bild des Hauptmenüs speichern und beenden
+//   Werkstatt.exe --menu-shot bild.png [main|worlds|multiplayer|settings|loading]   Bild des Hauptmenüs speichern, beenden
 //   Werkstatt.exe --script befehle.txt     Befehle beim Start ausführen
 //   Werkstatt.exe --send "info 3" ...      Befehle an ein laufendes Spiel schicken (Antwort als Text)
 //   Werkstatt.exe --headless [--demo]      ohne Fenster: Befehle von --script oder Tastatur/Pipe
@@ -119,8 +119,10 @@ int runWithMenu(int& argc, char** argv, const AppOptions& base) {
         opt.worldDir = c.kind == MenuChoice::Play ? c.worldDir : "";
         opt.lanHost = c.kind == MenuChoice::Play && c.lan;
         opt.joinAddress = c.kind == MenuChoice::Join ? c.address : "";
+        opt.onFirstFrame = [&menu] { menu.hide(); };  // das Menü zeigt seine Ladeseite, bis das Spielfenster da ist
         auto app = std::make_unique<App>();
         const int code = app->run(opt);
+        menu.hide();  // falls das Spiel gar nicht erst ein Bild zeigen konnte
         message = app->exitMessage();
         command = app->menuCommand();  // im Spiel getippt: "menu worlds" usw.
         if (!app->backToMenu()) return code;

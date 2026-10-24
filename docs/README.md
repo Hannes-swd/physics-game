@@ -23,7 +23,7 @@ Anleitung sind deutsch.
 | [12-Waerme-und-Feuer.md](12-Waerme-und-Feuer.md) | Wärme, Feuer und Kälte: Temperatur in jedem Teil, Wärmeleitung, Brenner und Kältespray, Holz verkohlt und brennt, Feuer breitet sich aus, Metall wird weich und schmilzt, Kälte macht spröde, Darstellung |
 | [13-Materialien.md](13-Materialien.md) | Alle Materialien in der Datei `assets/materials.json`: jeder Wert erklärt, neue Materialien anlegen (Datei, Fenster, Befehle), Reibungspaare |
 | [14-Wasser.md](14-Wasser.md) | Wasser: Becken und Meer, Auftrieb, Boote und Becher, die volllaufen, Wellen, Strömung, Abschrecken, Schwimmen, Darstellung im Shader, Rechenzeit |
-| [15-Hauptmenue-und-Welten.md](15-Hauptmenue-und-Welten.md) | Hauptmenü (Qt Quick): Weltliste, neue Welt, Seed, Mehrspieler, Einstellungen; Speichersystem der Welten, Sicherungen, automatisch speichern |
+| [15-Hauptmenue-und-Welten.md](15-Hauptmenue-und-Welten.md) | Hauptmenü (Qt Quick): Weltliste, neue Welt, Seed, Mehrspieler, Einstellungen; Ladebildschirm; Speichersystem der Welten, Sicherungen, automatisch speichern; das Menü per Befehl bedienen und auslesen (Fernsteuerung, KI) |
 
 ## Schnellstart
 
@@ -31,6 +31,8 @@ Anleitung sind deutsch.
 build\Release\Werkstatt.exe
 ```
 
+0. Im **Hauptmenü** auf **Spielen → Neue Welt**, Namen eingeben (Seed leer lassen = zufällig) → **Erstellen**, dann die
+   Welt doppelklicken. Ein Ladebildschirm zeigt den Fortschritt ([15](15-Hauptmenue-und-Welten.md)).
 1. Im **Bau-Modus** links unter „Neues Teil“ Form, Material und Maße wählen → **Erstellen**.
 2. Mit **S** (Säge) oder **B** (Bohrer) auf das Teil klicken.
 3. **Tab** wechselt in den **Spiel-Modus**: Jetzt wirkt die Schwerkraft, und man kann herumlaufen und Teile tragen.

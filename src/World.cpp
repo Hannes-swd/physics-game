@@ -1873,7 +1873,7 @@ bool World::save(const std::filesystem::path& file, std::string* err) const {
     return true;
 }
 
-bool World::load(const std::filesystem::path& file, std::string* err) {
+bool World::load(const std::filesystem::path& file, std::string* err, const std::function<void(size_t, size_t)>& progress) {
     std::ifstream in(file);
     if (!in) {
         if (err) *err = "file not found";
@@ -2057,6 +2057,7 @@ bool World::load(const std::filesystem::path& file, std::string* err) {
     nextWaterId_ = std::max(nextWaterId_, nextWaterIdLoaded);
     nextId_ = nextId;
     for (size_t i = 0; i < states.size(); ++i) {
+        if (progress) progress(i, states.size());
         if (states[i].kind == ObjKind::Mesh) {
             std::string e;
             Object* o = addImported(std::filesystem::u8path(meshFiles[i].first), states[i].material, meshFiles[i].second,

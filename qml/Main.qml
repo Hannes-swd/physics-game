@@ -25,6 +25,11 @@ ApplicationWindow {
         else if (name === "settings") stack.push(settingsPage, {}, op)
     }
 
+    // Ladeseite, bis das Spielfenster da ist (Menu.cpp ruft das auf, wenn eine Welt geöffnet oder beigetreten wird)
+    function showLoading(heading, name) {
+        stack.push(loadingPage, { heading: heading, name: name }, StackView.Immediate)
+    }
+
     Connections {
         target: menu
         function onPageRequested(name) { window.openPage(name, true) }
@@ -51,5 +56,9 @@ ApplicationWindow {
     Component {
         id: settingsPage
         SettingsPage {}
+    }
+    Component {
+        id: loadingPage
+        LoadingPage {}
     }
 }

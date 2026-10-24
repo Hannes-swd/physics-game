@@ -115,6 +115,7 @@ void App::focusSelected() {
 // ============================================================================ Eingabe allgemein
 
 void App::handleInput(float dt) {
+    if (loadingBlocks()) return;  // Ladebildschirm: keine Eingaben an die Welt
     ImGuiIO& io = ImGui::GetIO();
     const bool typing = io.WantTextInput;
     if (!typing) {

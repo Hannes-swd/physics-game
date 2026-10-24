@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -545,6 +546,9 @@ private:
 
 struct MainMenu::Impl {
     QGuiApplication app;
+    // Das Fenster bleibt nach show() noch offen (Ladeseite), bis hide() kommt: dann ist das Spielfenster schon da
+    std::unique_ptr<MenuBackend> backend;
+    std::unique_ptr<QQmlApplicationEngine> engine;
     Impl(int& argc, char** argv) : app(argc, argv) {}
 };
 
@@ -558,35 +562,62 @@ MainMenu::MainMenu(int& argc, char** argv) {
     QGuiApplication::setQuitOnLastWindowClosed(false);
 }
 
-MainMenu::~MainMenu() = default;
+MainMenu::~MainMenu() { hide(); }
+
+void MainMenu::hide() {
+    impl_->engine.reset();  // schließt das Fenster
+    impl_->backend.reset();
+}
 
 MenuChoice MainMenu::show(const std::string& message, RemoteServer* remote, const std::string& command) {
-    MenuBackend backend(message, remote);
+    hide();
+    impl_->backend = std::make_unique<MenuBackend>(message, remote);
+    impl_->engine = std::make_unique<QQmlApplicationEngine>();
+    MenuBackend& backend = *impl_->backend;
+    QQmlApplicationEngine& engine = *impl_->engine;
     MenuChoice c;
-    {
-        QQmlApplicationEngine engine;
-        engine.rootContext()->setContextProperty("menu", &backend);
-        engine.load(QUrl(QStringLiteral("qrc:/menu/Main.qml")));
-        if (engine.rootObjects().isEmpty()) return c;  // QML-Fehler (stehen in der Konsole): beenden
-        backend.setSelectedDir(qs(lastWorld_));
-        if (!command.empty()) {  // im Spiel getippt ("menu worlds"): Fehler erscheinen als Meldung auf der Startseite
-            const std::string r = backend.command(command);
-            if (r.rfind("Error", 0) == 0) backend.setMessage(r);
-        }
-        if (!shotFile_.empty()) {  // --menu-shot: Seite öffnen, kurz warten (Layout, erstes Bild), Bild speichern, beenden
-            auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
-            QMetaObject::invokeMethod(window, "openPage", Q_ARG(QVariant, QVariant(qs(shotPage_))), Q_ARG(QVariant, QVariant(true)));
-            QTimer::singleShot(1200, [&] {
-                const bool ok = window && window->grabWindow().save(qs(shotFile_));
-                std::fprintf(ok ? stdout : stderr, ok ? "menu screenshot: %s\n" : "menu screenshot failed: %s\n", shotFile_.c_str());
-                backend.quit();
-            });
-        }
-        if (!backend.leaving()) impl_->app.exec();  // bis play/join/quit oder das Fenster geschlossen wird
-        c = backend.choice;
-        if (c.kind == MenuChoice::Play) lastWorld_ = c.worldDir;
-        backend.setSearching(false);
-    }  // Fenster zu, bevor das Spiel sein eigenes öffnet
+    engine.rootContext()->setContextProperty("menu", &backend);
+    engine.load(QUrl(QStringLiteral("qrc:/menu/Main.qml")));
+    if (engine.rootObjects().isEmpty()) return c;  // QML-Fehler (stehen in der Konsole): beenden
+    auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    backend.setSelectedDir(qs(lastWorld_));
+    if (!command.empty()) {  // im Spiel getippt ("menu worlds"): Fehler erscheinen als Meldung auf der Startseite
+        const std::string r = backend.command(command);
+        if (r.rfind("Error", 0) == 0) backend.setMessage(r);
+    }
+    if (!shotFile_.empty()) {  // --menu-shot: Seite öffnen, kurz warten (Layout, erstes Bild), Bild speichern, beenden
+        QMetaObject::invokeMethod(window, "openPage", Q_ARG(QVariant, QVariant(qs(shotPage_))), Q_ARG(QVariant, QVariant(true)));
+        if (shotPage_ == "loading")
+            QMetaObject::invokeMethod(window, "showLoading", Q_ARG(QVariant, QVariant(QStringLiteral("Welt wird geladen"))),
+                                      Q_ARG(QVariant, QVariant(QStringLiteral("Beispielwelt"))));
+        QTimer::singleShot(1200, [&] {
+            const bool ok = window && window->grabWindow().save(qs(shotFile_));
+            std::fprintf(ok ? stdout : stderr, ok ? "menu screenshot: %s\n" : "menu screenshot failed: %s\n", shotFile_.c_str());
+            backend.quit();
+        });
+    }
+    if (!backend.leaving()) impl_->app.exec();  // bis play/join/quit oder das Fenster geschlossen wird
+    c = backend.choice;
+    if (c.kind == MenuChoice::Play) lastWorld_ = c.worldDir;
+    backend.setSearching(false);
+    if (c.kind == MenuChoice::Quit) {
+        hide();
+        return c;
+    }
+    // Ladeseite zeigen und warten, bis sie wirklich auf dem Bildschirm ist. Das Fenster bleibt so stehen, bis das
+    // Spielfenster sein erstes Bild hat (main.cpp ruft dann hide()): kein leerer Moment beim Wechsel
+    std::string name;
+    if (c.kind == MenuChoice::Play)
+        for (const QVariant& v : backend.worlds())
+            if (v.toMap()["dir"].toString() == qs(c.worldDir)) name = ss(v.toMap()["name"].toString());
+    const QString heading = c.kind == MenuChoice::Join ? QStringLiteral("LAN-Spiel beitreten") : QStringLiteral("Welt wird geladen");
+    QMetaObject::invokeMethod(window, "showLoading", Q_ARG(QVariant, QVariant(heading)),
+                              Q_ARG(QVariant, QVariant(qs(c.kind == MenuChoice::Join ? c.address : name))));
+    QEventLoop wait;
+    QObject::connect(window, &QQuickWindow::frameSwapped, &wait, &QEventLoop::quit, Qt::QueuedConnection);
+    QTimer::singleShot(500, &wait, &QEventLoop::quit);
+    window->requestUpdate();
+    wait.exec();
     return c;
 }
 

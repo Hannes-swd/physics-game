@@ -139,6 +139,7 @@ void App::drawUI() {
     if (showHelp_) drawHelp();
     if (showNet_) drawNetWindow();
     drawNetRequests();
+    drawLoading();  // Ladebildschirm über allem (AppWorld.cpp)
 }
 
 void App::openImportDialog() {

@@ -32,7 +32,7 @@
 | `src/AppCommands.cpp` | Live-Befehle: Aufträge, `player`, `tool`, `window`, `display`, `status`, Werte für die Befehlssprache |
 | `src/Commands.*` | alle einzelnen Befehle und die Hilfe (`help`) |
 | `src/Script.*` | Befehlssprache: Parser, Ausdrücke, Ausführung mit Warten |
-| `src/Remote.*` | TCP-Server im Spiel und `--send`-Client |
+| `src/Remote.*` | TCP-Server (läuft mit Hauptmenü die ganze Zeit, Menü und Spiel teilen ihn) und `--send`-Client |
 | `src/World.*` | Teile, Erzeugen, Sägen/Bohren, Physik-Körper, Luft je Fläche, Rettung bei tiefem Eindringen, Inspektor-Messung, Rückgängig, Beispiel-Werkstatt, Speichern/Laden |
 | `src/Edit.cpp` | Bearbeitung: Abrunden/Fasen, Fräsen, Hobeln, Drehen, Biegen, Spiegeln, Skalieren, Vereinen, Ausschneiden, Schnittmenge, Verschieben mit Anstoßen |
 | `src/Collision.*` | baut aus den konvexen Stücken eines Teils die Kollisionshüllen (siehe unten) |
@@ -213,11 +213,19 @@ joint <nr> <art 0..6> <a> <b> <anker a xyz> <anker b xyz> <normale xyz> <achse x
       <haftung> <scherung> <spalt> <anzahl> <länge> <durchmesser> <naht> <max kraft> <steifigkeit> <dämpfung>
       <ruhelänge> <U/min> <Nm> <unzerstörbar> <kleber>          (alles in einer Zeile)
 next_joint <nr>
+water <nr> <flüssigkeit> <meer 0/1> <lo xyz> <hi xyz> <wellen> <strömung xyz> <eigene temp 0/1> <°C>
+                                     (Becken: Quader lo..hi, Spiegel hi.y; Meer: Spiegel hi.y)
+waterground <nr> <standardgrund>     (nur Meer: Grund in m, wo keine Kachel eingetragen ist)
+groundtile <nr> <kachel x> <kachel z> <32 x 32 Höhen in m>   (Kachel 16 m mit eigenem Grund, Zellen 50 cm, Zeile für Zeile)
+next_water <nr>
 ```
 
 Bei importierten Modellen stehen statt der Stücke `scale` und `file` (das Modell wird beim Laden neu eingelesen).
 Arten: 0 Klebung, 1 Nägel, 2 Schrauben, 3 Schweißnaht, 4 Scharnier, 5 Feder, 6 Seil.
 Luft, Wind, `breakage on/off`, Lufttemperatur und `heat on/off` gehören nicht zur Szene und werden nicht gespeichert (die Temperaturen der Teile schon).
+Bei einer **Welt** aus der Weltliste stehen sie in deren `world.json` (Abschnitt `environment`), zusammen mit Seed,
+Kamera und Spielfigur ([15](15-Hauptmenue-und-Welten.md#speichersystem)). Meer ohne `waterground` (ältere Dateien):
+Grund beim Boden der Welt bzw. 10 m unter dem Spiegel ([14](14-Wasser.md)).
 
 **Alte Dateien** (`WERKSTATT-SZENE 1` mit deutschen Wörtern wie `objekt`, `stueck`, `verbindung`, Materialnamen wie
 `Fichte` und Kleber wie `holzleim`) werden weiter geladen und beim nächsten Speichern im neuen Format geschrieben.

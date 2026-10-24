@@ -451,7 +451,8 @@ public:
     void waterScene();     // Wasserbecken: Schwimmen, Sinken, Boote, Becher (Showcase.cpp)
     void riverScene();     // Fluss: Strömung um Hindernisse, Stau, Schaum, Treibgut (Showcase.cpp)
     bool save(const std::filesystem::path& file, std::string* err) const;
-    bool load(const std::filesystem::path& file, std::string* err);
+    // progress(fertig, alle): beim Anlegen der Teile (für den Ladebildschirm)
+    bool load(const std::filesystem::path& file, std::string* err, const std::function<void(size_t, size_t)>& progress = nullptr);
 
     const GpuMesh& groundMesh() const { return groundMesh_; }
     const GpuMesh& boxMesh() const { return boxMesh_; }  // Einheitswürfel für grobe Detailstufe

@@ -4,6 +4,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -110,6 +111,7 @@ struct AppOptions {
     bool lanHost = false;         // die Welt gleich im LAN öffnen
     std::string joinAddress;      // gleich einem LAN-Spiel beitreten (ohne eigene Welt)
     RemoteServer* remote = nullptr;  // Fernsteuerung des Hauptmenüs (bleibt zwischen Menü und Spiel offen); sonst eine eigene
+    std::function<void()> onFirstFrame;  // nach dem ersten Bild des Spielfensters (Hauptmenü: sein Ladebild schließen)
 };
 
 class App : public CommandHost {
@@ -265,6 +267,12 @@ private:
     void leaveToMenu();
     std::string worldCommand(const std::vector<std::string>& args);  // Befehl "world"
     std::string menuCommandInGame(const std::vector<std::string>& args);  // Befehl "menu" im Spiel
+    enum class LoadKind { None, World, Join, Save };
+    void beginLoading(LoadKind kind, const std::string& title, const std::string& name);
+    void updateLoading(float dt);         // je Bild: Fortschritt (Kollisionsformen, Beitritt), am Ende ausblenden
+    void drawLoading();                   // über allem, deckt das Bild zu
+    void renderLoadingFrame(bool force);  // ein Bild nur mit dem Ladebildschirm (während das Laden den Ablauf blockiert)
+    void firstFrameShown();               // einmal nach dem ersten Bild: opt_.onFirstFrame
 
     // AppNet.cpp (LAN-Mehrspieler: Gastgeber rechnet alles, Mitspieler zeigen seine Welt und schicken Eingaben/Befehle)
     bool netClient() const { return netRole_ == NetRole::Client; }
@@ -496,6 +504,7 @@ private:
     std::unique_ptr<net::Connection> netConn_;  // Mitspieler: Verbindung zum Gastgeber
     std::string netHostName_, netStatus_;
     bool netWelcomed_ = false;
+    bool netWorldReady_ = false;          // Mitspieler: die erste Lage nach dem Beitritt ist da (die Welt ist komplett)
     double netConnectStart_ = 0;
     char netAddress_[64] = {};
     struct NetRequest {
@@ -533,4 +542,17 @@ private:
     GameSettings settings_;
     bool backToMenu_ = false, joinPending_ = false;
     std::string exitMessage_, menuCommand_;
+
+    // Ladebildschirm (AppWorld.cpp): Welt öffnen, LAN-Spiel beitreten, beim Verlassen speichern
+    struct Loading {
+        LoadKind kind = LoadKind::None;
+        std::string title, name, detail;  // z.B. "Welt wird geladen", Name der Welt, "Teile 120 / 800"
+        float progress = -1;              // 0..1, kleiner 0: unbestimmt (Balken läuft hin und her)
+        double since = 0;                 // Spielzeit beim Start
+        float fade = 0;                   // größer 0: blendet aus (Sekunden übrig), Eingaben gehen schon durch
+        size_t jobsAtStart = 0;           // Kollisionsformen im Hintergrund, als das Laden fertig war
+        double lastFrame = -1;            // glfwGetTime des letzten Ladebilds (während synchroner Arbeit)
+    } loading_;
+    bool loadingBlocks() const { return loading_.kind != LoadKind::None && loading_.fade <= 0; }
+    bool firstFrameShown_ = false;
 };

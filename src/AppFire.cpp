@@ -42,7 +42,7 @@ void quad(std::vector<LineVertex>& out, const glm::vec3& c, const glm::vec3& up,
 
 void App::heatToolInput(float) {
     heatActive_ = false;
-    if (netClient()) return;  // die Wärme rechnet der Gastgeber
+    if (netClient() || loadingBlocks()) return;  // die Wärme rechnet der Gastgeber; Ladebildschirm: keine Eingaben
     ImGuiIO& io = ImGui::GetIO();
     const RayHit* hit = nullptr;
     if (!play_) {

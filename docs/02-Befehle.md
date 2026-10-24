@@ -40,11 +40,12 @@ Dokumentation sind deutsch.
 | Löschen & Verlauf | `delete`, `undo`, `redo` |
 | Physik | `sim`, `impulse`, `mode`, `breakage`, `air`, `wind` |
 | Wärme & Feuer | `heat`, `ignite`, `extinguish`, `torch`, `tool heat` (siehe [12](12-Waerme-und-Feuer.md)) |
-| Wasser | `water`, `water pool`, `water sea`, `water waves`, `water fill` … (siehe [14](14-Wasser.md)) |
+| Wasser | `water`, `water pool`, `water sea`, `water land`, `water ground`, `water waves`, `water fill` … (siehe [14](14-Wasser.md)) |
 | Ansicht & Bild | `view`, `camera`, `screenshot`, `window`, `display`, `tool` |
 | Spielfigur | `player ...` |
 | Zeichnung | `drawing` |
 | Szene & Dateien | `scene`, `save`, `load`, `quit` |
+| Welt & Hauptmenü | `world`, `world save`, `world menu`, `menu ...` (siehe [15](15-Hauptmenue-und-Welten.md)) |
 | Befehlssprache | `wait`, `wait until`, `if`, `repeat`, `print`, `set` (siehe [03](03-Befehlssprache.md)) |
 
 Ausführliche Erklärungen zu allen Bearbeitungen (wie sie rechnen, was realistisch erlaubt ist, Mauswerkzeuge):
@@ -656,6 +657,15 @@ water waves all 30               # Wellen, 30 cm
 new box spruce 40 40 10 0 60 0 ; wait 3 ; water last
 ```
 
+Das Meer füllt nur den Raum zwischen seinem **Grund** und dem Spiegel; wo der Grund über dem Spiegel liegt, ist Land:
+
+```
+water sea 40 bottom -300         # Meer, Spiegel 40 cm, Grund 3 m unter null
+water land 2000 0 1000 1000      # trockenes Land 10 x 10 m um x = 20 m (Grund 50 cm über dem Spiegel)
+water ground 0 0 400 400 -500    # Graben 4 x 4 m, Grund bei -5 m
+water ground reset               # alles wieder Standardgrund
+```
+
 ---
 
 ## Ansicht & Bild (nur mit Fenster)
@@ -744,6 +754,29 @@ SVG saved: board.svg
 | `save <file>` | Szene speichern (Textformat `.werkstatt`) |
 | `load <file>` | Szene laden (auch Dateien aus der Zeit vor den englischen Befehlen) |
 | `quit` | Programm beenden. Anderer Name: `exit` |
+
+## Welt & Hauptmenü
+
+Welten aus der Weltliste, ihr Speichersystem und das Hauptmenü: [15-Hauptmenue-und-Welten.md](15-Hauptmenue-und-Welten.md).
+
+| Befehl | Wirkung |
+|---|---|
+| `world` | offene Welt: Name, Ordner, Seed, Generator, Spielzeit, nächstes automatisches Speichern |
+| `world save` | Welt jetzt speichern (wie Strg+S) |
+| `world menu` | Welt speichern, zurück ins Hauptmenü |
+| `menu` | wo man ist: im Spiel `screen game`, Welt, Modus, beim Laden `loading ...`; im Hauptmenü Seite, Dialog, Weltliste, Einstellungen |
+| `menu <...>` | im Spiel: Welt speichern, ins Hauptmenü und dort den Befehl ausführen (`menu worlds`, `menu play 2`, `menu settings`) |
+
+Im Hauptmenü selbst (auch per Fernsteuerung) gibt es außerdem `menu select`, `menu play`, `menu lan`, `menu new`,
+`menu rename`, `menu delete`, `menu games`, `menu join`, `menu set`, `menu close`, `menu quit` und `menu help`.
+Liste mit Beispielen: [15](15-Hauptmenue-und-Welten.md#menü-per-befehl-fernsteuerung-ki).
+
+```
+> menu
+screen        game, world "Insel", build mode
+loading       world: Kollisionsformen berechnen: noch 3 (84 %)
+menu          'menu main|worlds|multiplayer|settings' saves and goes back to that page of the main menu; ...
+```
 
 ### Teile der Beispiel-Werkstatt
 

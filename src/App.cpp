@@ -148,6 +148,9 @@ bool App::init(const AppOptions& opt) {
         std::string err;
         if (netJoin(opt.joinAddress, &err)) {
             joinPending_ = true;
+            beginLoading(LoadKind::Join, "LAN-Spiel beitreten", opt.joinAddress);
+            loading_.detail = "Verbinde mit " + opt.joinAddress + " ...";
+            renderLoadingFrame(true);
         } else {
             exitMessage_ = "Beitreten fehlgeschlagen: " + err;
             backToMenu_ = quit_ = true;
@@ -199,6 +202,7 @@ int App::run(const AppOptions& opt) {
         });
         netUpdate(dt);  // LAN: Mitspieler bzw. Gastgeber (auch minimiert)
         updateWorldSession(dt);  // automatisch speichern, Beitritt aus dem Hauptmenü
+        updateLoading(dt);       // Ladebildschirm: Fortschritt, am Ende ausblenden
         processScriptQueue();
         stepJobs();
         for (const std::string& e : world_->takeEvents()) {  // Brüche usw.
@@ -264,6 +268,7 @@ int App::run(const AppOptions& opt) {
             PROFILE("render (cpu + gpu wait)");
             renderer_.render(fd);
         }
+        firstFrameShown();
         prof::frame(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStart).count());
         ++frame_;
         if (!opt_.screenshotPath.empty() && frame_ >= (uint64_t)opt_.screenshotFrames) quit_ = true;
