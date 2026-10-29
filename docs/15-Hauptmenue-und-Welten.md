@@ -120,7 +120,7 @@ man verändert hat; der Rest entsteht aus dem Seed jedes Mal gleich neu.
 | `mouseSensitivity` | 1 | Faktor auf die Mausbewegung im Spiel-Modus (0,2–3) |
 | `fov` | 55 | Sichtfeld in Grad (40–100) |
 | `shadows`, `edges`, `grid` | an | Schatten, Kanten, Raster (auch im Spiel unter *Ansicht*, das wird beim Verlassen übernommen) |
-| `biomeBorders` | an | Linien an den Biomgrenzen (Gelände; auch im Spiel unter *Ansicht → Biomgrenzen*) |
+| `biomeBorders` | aus | Linien an den Biomgrenzen (Gelände; auch im Spiel unter *Ansicht → Biomgrenzen*). Ältere Dateien (ohne `version` 2) hatten hier noch den alten Standard „an“, der wird nicht mehr übernommen |
 | `autosaveMinutes` | 5 | automatisch speichern (0 = nie) |
 | `graphics` | Stufe „Hoch“ | Grafik, siehe unten |
 

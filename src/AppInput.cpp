@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "Materials.h"
+#include "Stones.h"
 
 namespace {
 constexpr double kMaxLiftForce = 420.0;  // so viel Kraft (N) bringt die Figur beim Tragen auf
@@ -624,12 +625,26 @@ void App::playInput(float) {
 void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in) {
     auto tryGrab = [&](bool byMouse) {
         RayHit h;
-        if (!world_->raycast(eye, fwd, h, 0) || !h.obj || h.t > 3.5) return;
-        Object* o = h.obj;
+        const bool hitPart = world_->raycast(eye, fwd, h, 0) && h.obj && h.t <= 3.5;
+        // Steine des Generators: kleine sind nur Bild, bis man sie nimmt (dann ein echtes Teil); große sind fest, bis man
+        // sie anfasst (dann beweglich, meist aber zu schwer zum Tragen)
+        StoneSpot spot;
+        double ts = 0;
+        Object* o = nullptr;
+        glm::dvec3 at;
+        if (world_->pickStone(eye, fwd, hitPart ? h.t : 3.5, spot, ts) && (o = world_->takeStone(spot))) {
+            at = eye + fwd * ts;
+        } else if (hitPart) {
+            o = h.obj;
+            at = h.point;
+            ts = h.t;
+        }
+        if (!o) return;
+        if (o->fixed) world_->wakeStone(*o);
         if (o->fixed || o->body == kNoBody) return;
         hand.grabbed = o->id;
-        hand.grabLocal = h.localPoint;
-        hand.holdDist = std::max(0.5, h.t);
+        hand.grabLocal = glm::conjugate(o->rot) * (at - o->pos);
+        hand.holdDist = std::max(0.5, ts);
         hand.heldByMouse = byMouse;
         // Lage merken (relativ zur Blickrichtung): das Teil bleibt so in der Hand, statt am Griffpunkt zu pendeln
         hand.holdRel = glm::conjugate(glm::angleAxis(yaw, glm::dvec3(0, 1, 0))) * o->rot;

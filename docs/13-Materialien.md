@@ -143,6 +143,8 @@ new box pine 80 10 2
 
 - `soil` (Erde) und `sand` (Sand, Wüste) sind die Materialien des Geländes (Reibung, Rollreibung und Stoßzahl gegen den Boden). Welches Biom welches
   Material hat, steht in `assets/biomes.json` (`material`, siehe [16](16-Weltgenerierung.md)).
+- `fieldstone` (Feldstein) und `sandstone` (Sandstein) sind die Steine, die im Gelände liegen ([19](19-Steine.md)); welches Biom
+  welches nimmt, steht in `biomes.json` (`stones.material`).
 - Der Selbsttest benutzt immer die eingebettete Kopie, damit eigene Änderungen ihn nicht stören.
 - Im LAN-Mehrspieler sollten alle dieselbe Datei haben (Teile werden mit der Nummer ihres Materials übertragen).
 - Schmierstoffe, Kleber und Wärme-Werkzeuge stehen noch im Code (`Materials.cpp`, `Joints.cpp`).

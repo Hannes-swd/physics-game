@@ -27,6 +27,8 @@ class Terrain;
 class WorldGen;
 class TreeLibrary;
 class Forest;
+class StoneField;
+struct StoneSpot;
 struct TreeConfig;
 
 enum class ObjKind : int { Solid = 0, Mesh = 1 };
@@ -489,6 +491,22 @@ public:
     // Bäume des Generators, die gerade Teile sind oder entfernt wurden (nicht zusätzlich zeichnen)
     bool treeHidden(uint64_t key) const { return treesTaken_.count(key) || treeObjects_.count(key); }
 
+    // ---------------------------------------------------------- Steine (Stones.h, World.cpp)
+    // Steine des Generators (mit Gelände). Sie benutzen die Schlüssel der Bäume (Object::treeKey, StoneField::isStoneKey):
+    // unverändert = nicht gespeichert, entfernt = gemerkt (treesTaken)
+    StoneField* stones() { return stones_.get(); }
+    // Große Steine nahe der Punkte als feste Teile (statisch, kosten nichts), unveränderte weit weg wieder nur Bild.
+    // Kleine bleiben Bild, bis man sie nimmt (takeStone). Nur wer die Physik rechnet
+    void updateStones(const std::vector<glm::dvec3>& focus, int budget);
+    // Blick gegen die Steine, die nur Bild sind (bis maxT)
+    bool pickStone(const glm::dvec3& o, const glm::dvec3& dir, double maxT, StoneSpot& hit, double& t);
+    // Stein des Generators als echtes, bewegliches Teil (Aufheben). nullptr: schon eins oder weggenommen
+    Object* takeStone(const StoneSpot& s);
+    static bool isGeneratorStone(const Object& o);
+    // fester Stein des Generators wird angefasst: ab jetzt beweglich (und damit verändert: wird gespeichert)
+    void wakeStone(Object& o);
+    bool stoneHidden(uint64_t key) const { return treesTaken_.count(key) || stoneObjects_.count(key); }
+
     // ---------------------------------------------------------- Rückgängig
     void pushUndo();
     void dropUndo() { if (!undo_.empty()) undo_.pop_back(); }  // letzten Merkpunkt verwerfen (es hat sich nichts geändert)
@@ -602,6 +620,10 @@ private:
     std::unordered_set<uint64_t> treesTaken_;                 // entfernte Bäume des Generators (gespeichert)
     std::unordered_map<uint64_t, uint32_t> treeObjects_;      // Baum des Generators -> Teil (wird je Aufruf neu gezählt)
     void rebuildForest();
+    std::unique_ptr<StoneField> stones_;
+    std::unordered_map<uint64_t, uint32_t> stoneObjects_;    // Stein des Generators -> Teil (wird je Aufruf neu gezählt)
+    void rebuildStones();
+    Object* placeStone(const StoneSpot& s, bool fixed);
     glm::dvec3 fellHint_{0};  // Axt: Richtung, in die ein durchgehackter Baum fällt (einmal, dann wieder 0)
     GpuMesh groundMesh_, boxMesh_;
     ChunkGrid grid_;

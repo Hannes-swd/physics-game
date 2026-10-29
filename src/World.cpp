@@ -17,6 +17,7 @@
 #include "ObjLoader.h"
 #include "Jobs.h"
 #include "Terrain.h"
+#include "Stones.h"
 #include "Trees.h"
 #include "WorldGen.h"
 #include "Profile.h"
@@ -835,7 +836,9 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     const uint32_t id = o.id;
     const std::string baseName = o.name;
     const int mat = o.material;
-    const bool fixed = o.fixed;
+    // Fester Stein des Generators: bearbeiten heißt anfassen, alle Stücke werden beweglich
+    const bool stoneWakes = isGeneratorStone(o) && o.fixed;
+    const bool fixed = o.fixed && !stoneWakes;
     const std::string shape = o.shape;
     const int edits = o.edits + 1;
     const float seed = o.seed;
@@ -891,6 +894,7 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     const int lub = o.lubricant;
     rebuildGeometry(o);
     rebuildBody(o);
+    if (stoneWakes) wakeStone(o);
     // Ein abgesägtes Stück eines stehenden Baums fällt: Anstoß zum Kippen in Richtung seiner Neigung (ein gerader Stamm
     // stünde sonst genau auf dem Stumpf). Ohne Neigung nach der Maserung des Baums (gleich bei jedem Rechner)
     auto topple = [&](Object& p) {
@@ -1142,6 +1146,7 @@ void World::setTerrain(std::shared_ptr<const WorldGen> gen, const std::filesyste
     terrain_ = std::make_unique<Terrain>(physics_, renderer_, std::move(gen), regionDir);
     syncTerrainWater();
     rebuildForest();
+    rebuildStones();
     if (groundBody_ != kNoBody) {  // statt der Ebene bei y = 0
         physics_.destroyBody(groundBody_);
         groundBody_ = kNoBody;
@@ -1153,6 +1158,7 @@ void World::clearTerrain() {
     std::unique_ptr<Terrain> old = std::move(terrain_);
     syncTerrainWater();
     rebuildForest();
+    rebuildStones();
     old.reset();
     groundBody_ = physics_.createGroundPlane(0.0, materialIndex("concrete"), 0.2f);
 }
@@ -1162,6 +1168,7 @@ void World::setTerrainGen(std::shared_ptr<const WorldGen> gen) {
     terrain_->setGen(std::move(gen));
     syncTerrainWater();
     rebuildForest();
+    rebuildStones();
 }
 
 // ============================================================================ Bäume
@@ -1250,7 +1257,7 @@ Object* World::plantTree(int type, int variant, double scale, const glm::dvec3& 
 void World::updateTrees(const std::vector<glm::dvec3>& focus, int budget) {
     treeObjects_.clear();
     for (const auto& op : objects_)
-        if (op->treeKey) treeObjects_[op->treeKey] = op->id;
+        if (op->treeKey && !StoneField::isStoneKey(op->treeKey)) treeObjects_[op->treeKey] = op->id;  // Steine: updateStones
     if (!forest_ || !forest_->any() || focus.empty()) return;  // Mitspieler: nur zählen (die Teile kommen vom Gastgeber)
     const double R = trees().config().solidDistance;
     auto nearest = [&](const glm::dvec3& p) {
@@ -1282,6 +1289,84 @@ void World::updateTrees(const std::vector<glm::dvec3>& focus, int budget) {
         if (treeHidden(s.key)) continue;  // von zwei Fokuspunkten aus gefunden
         plantTree(s.type, s.variant, s.scale, glm::dvec3(s.pos.x, groundHeight(s.pos.x, s.pos.z), s.pos.z), s.yaw, s.key);
     }
+}
+
+// ============================================================================ Steine
+
+void World::rebuildStones() {
+    stones_.reset();
+    stoneObjects_.clear();
+    if (!terrain_) return;
+    stones_ = std::make_unique<StoneField>(terrain_->genPtr(), terrain_.get(), renderer_);
+}
+
+bool World::isGeneratorStone(const Object& o) { return StoneField::isStoneKey(o.treeKey); }
+
+Object* World::placeStone(const StoneSpot& s, bool fixed) {
+    if (!stones_ || s.shape < 0 || s.shape >= stones_->shapes()) return nullptr;
+    solid::Solid sol = stones_->shape(s.shape).solid;
+    solid::transformAffine(sol, glm::dmat3(s.size));
+    const uint32_t last = lastCreated_;
+    Object* o = addSolid(std::move(sol), s.material, s.pos, s.rot, stones_->big(s) ? "Felsbrocken" : "Stein", "stone");
+    lastCreated_ = last;  // Steine des Generators sind nicht "last" für Befehle
+    if (!o) return nullptr;
+    o->treeKey = s.key;
+    if (fixed) setFixed(*o, true);
+    o->treeSig = treeSignature(*o);
+    stoneObjects_[s.key] = o->id;
+    return o;
+}
+
+void World::updateStones(const std::vector<glm::dvec3>& focus, int budget) {
+    stoneObjects_.clear();
+    for (const auto& op : objects_)
+        if (isGeneratorStone(*op)) stoneObjects_[op->treeKey] = op->id;
+    if (!stones_ || !stones_->any() || focus.empty()) return;  // Mitspieler: nur zählen (die Teile kommen vom Gastgeber)
+    const double R = stones_->view().solidDistance;
+    auto nearest = [&](const glm::dvec3& p) {
+        double d = 1e300;
+        for (const glm::dvec3& f : focus) d = std::min(d, glm::length(glm::dvec2(p.x - f.x, p.z - f.z)));
+        return d;
+    };
+    // Feste, unveränderte, die keiner mehr braucht: wieder nur Bild (ohne sie als entfernt zu merken)
+    std::vector<uint32_t> drop;
+    for (const auto& [key, id] : stoneObjects_)
+        if (const Object* o = find(id); o && o->fixed && untouchedTree(*o) && nearest(o->pos) > R + 15.0) drop.push_back(id);
+    for (uint32_t id : drop) {
+        Object* o = find(id);
+        stoneObjects_.erase(o->treeKey);
+        o->treeKey = 0;
+        remove(id);
+    }
+    // Große in der Nähe als feste Teile (man läuft nicht hindurch), die nächsten zuerst. Kleine bleiben Bild
+    std::vector<std::pair<double, StoneSpot>> want;
+    std::vector<StoneSpot> spots;
+    for (const glm::dvec3& f : focus) {
+        stones_->around(glm::dvec2(f.x, f.z), R, spots);
+        for (const StoneSpot& s : spots)
+            if (stones_->big(s) && !stoneHidden(s.key)) want.push_back({glm::length(glm::dvec2(s.pos.x - f.x, s.pos.z - f.z)), s});
+    }
+    std::sort(want.begin(), want.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& [d, s] : want) {
+        if (budget-- <= 0) break;
+        if (!stoneHidden(s.key)) placeStone(s, true);  // (von zwei Fokuspunkten aus gefunden)
+    }
+}
+
+bool World::pickStone(const glm::dvec3& o, const glm::dvec3& dir, double maxT, StoneSpot& hit, double& t) {
+    if (!stones_) return false;
+    return stones_->raycast(o, dir, maxT, [this](uint64_t key) { return stoneHidden(key); }, hit, t);
+}
+
+Object* World::takeStone(const StoneSpot& s) {
+    if (!stones_ || stoneHidden(s.key)) return nullptr;
+    return placeStone(s, false);
+}
+
+void World::wakeStone(Object& o) {
+    if (!isGeneratorStone(o) || !o.fixed) return;
+    setFixed(o, false);
+    if (o.body != kNoBody) physics_.activate(o.body);
 }
 
 void World::syncTerrainWater() {

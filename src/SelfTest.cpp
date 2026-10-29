@@ -17,6 +17,7 @@
 #include "Script.h"
 #include "Solid.h"
 #include "Terrain.h"
+#include "Stones.h"
 #include "Trees.h"
 #include "World.h"
 #include "WorldGen.h"
@@ -1097,6 +1098,55 @@ int runSelfTest() {
         int nursery = 0;
         for (const auto& op : flat.objects()) nursery += op->fixed && op->crown && !op->treeKey;
         check(nursery == (int)tcfg->types.size() * 3, "the tree nursery shows every type in every form", std::to_string(nursery) + " trees");
+    }
+
+    std::printf("== Stones ==\n");
+    {
+        auto bcfg = std::make_shared<GenConfig>(builtinGenConfig());
+        const int hills = bcfg->findBiome("hills");
+        World w(physics, nullptr), w2(physics, nullptr);
+        w.setSimulating(true);
+        w.setTerrain(std::make_shared<WorldGen>(4711, bcfg, hills), {});
+        w2.setTerrain(std::make_shared<WorldGen>(4711, bcfg, hills), {});
+        std::vector<StoneSpot> spots, spots2;
+        w.stones()->around(glm::dvec2(0, 0), 60.0, spots);
+        w2.stones()->around(glm::dvec2(0, 0), 60.0, spots2);
+        bool same = spots.size() == spots2.size();
+        for (size_t i = 0; same && i < spots.size(); ++i) same = spots[i].key == spots2[i].key && spots[i].pos == spots2[i].pos && spots[i].size == spots2[i].size;
+        int small = 0, big = 0;
+        StoneSpot bigSpot, smallSpot;
+        for (const StoneSpot& s : spots) {
+            if (w.stones()->big(s)) {
+                if (big++ == 0) bigSpot = s;
+            } else if (small++ == 0) {
+                smallSpot = s;
+            }
+        }
+        check(same && small > 2 * big && big > 0, "stones lie by biome from the seed: many small, few big",
+              std::to_string(small) + " small, " + std::to_string(big) + " big within 60 m in the hills");
+
+        // groß und nah: festes Teil (kostet nichts); kleine bleiben Bild; anfassen macht den großen beweglich
+        w.updateStones({bigSpot.pos}, 10000);
+        Object* rock = nullptr;
+        int smallParts = 0;
+        for (const auto& op : w.objects())
+            if (World::isGeneratorStone(*op)) {
+                if (op->treeKey == bigSpot.key) rock = op.get();
+                smallParts += op->wMax.y - op->wMin.y < 0.15;
+            }
+        const bool fixedFirst = rock && rock->fixed && w.untouchedTree(*rock) && w.stoneHidden(bigSpot.key);
+        if (rock) w.wakeStone(*rock);
+        check(fixedFirst && rock && !rock->fixed && !w.untouchedTree(*rock) && smallParts == 0,
+              "big stones near a player are fixed parts, small ones only pictures; touching makes a big one movable",
+              rock ? num(rock->mass) + " kg rock" : "no rock part");
+
+        // klein: von oben anschauen und aufheben
+        StoneSpot hit;
+        double t = 0;
+        const bool picked = w.pickStone(smallSpot.pos + glm::dvec3(0, 1.0, 0), glm::dvec3(0, -1, 0), 3.0, hit, t);
+        Object* pebble = picked ? w.takeStone(hit) : nullptr;
+        check(pebble && !pebble->fixed && w.stoneHidden(hit.key) && pebble->mass < 40.0 && !w.takeStone(hit),
+              "a small stone becomes a movable part when picked up (only once)", pebble ? num(pebble->mass) + " kg" : "nothing hit");
     }
 
     std::printf("== Material file ==\n");

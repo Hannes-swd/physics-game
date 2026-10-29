@@ -212,6 +212,18 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
         if (f.grassColors.empty()) f.grassColors = {d.color * 1.3f};
         if (f.flowerColors.empty()) f.flowerColors = {glm::vec3(0.9f, 0.85f, 0.2f)};
         if (f.bushColors.empty()) f.bushColors = {glm::vec3(0.12f, 0.22f, 0.06f)};
+        if (const Json& g = b["stones"]; g.type == Json::Object) {
+            const std::string ws = w + ".stones";
+            GenConfig::Biome::Stones& st = d.stones;
+            st.given = true;
+            if (!num(g, "per_ha", st.perHa, err, ws) || !numRange(g, "size", st.sizeMin, st.sizeMax, err, ws) || !num(g, "skew", st.skew, err, ws))
+                return fail(err);
+            if (g["material"].type == Json::String) st.material = g["material"].str;
+            st.perHa = std::clamp(st.perHa, 0.0, 5000.0);
+            st.sizeMin = std::clamp(st.sizeMin, 0.02, 5.0);
+            st.sizeMax = std::clamp(st.sizeMax, st.sizeMin, 5.0);
+            st.skew = std::clamp(st.skew, 0.2, 10.0);
+        }
         c.biomes.push_back(std::move(d));
     }
     if (const Json& r = j["rivers"]; r.type == Json::Object) {
@@ -255,6 +267,15 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
             return fail(err);
         c.flora.grassDistance = std::clamp(c.flora.grassDistance, 0.0, 150.0);
         c.flora.bushDistance = std::clamp(c.flora.bushDistance, 0.0, 400.0);
+    }
+    if (const Json& sv = j["stones"]; sv.type == Json::Object) {
+        GenConfig::StoneView& v = c.stoneView;
+        if (!num(sv, "distance", v.drawDistance, err, "stones") || !num(sv, "solid_distance", v.solidDistance, err, "stones") ||
+            !num(sv, "big", v.big, err, "stones"))
+            return fail(err);
+        v.drawDistance = std::clamp(v.drawDistance, 0.0, 1000.0);
+        v.solidDistance = std::clamp(v.solidDistance, 0.0, 100.0);
+        v.big = std::clamp(v.big, 0.05, 5.0);
     }
     out = std::move(c);
     return true;

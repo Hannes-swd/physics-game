@@ -208,6 +208,8 @@ bearbeiten*) lassen sie sich ändern und neue Materialien anlegen, siehe [13-Mat
 | `plastic` | Kunststoff (ABS) | 1050 | 0,50 / 0,35 | 0,006 | 0,45 | 40 | 65 | 2,3 | 20 000 | 3 × Dicke |
 | `soil` | Erde (Gelände) | 1500 | 0,70 / 0,60 | 0,03 | 0,05 | 0,02 | 0,3 | 0,05 | 60 | nicht |
 | `sand` | Sand (Wüste) | 1600 | 0,60 / 0,50 | 0,06 | 0,02 | 0,01 | 0,2 | 0,03 | 40 | nicht |
+| `fieldstone` | Feldstein (Steine im Gelände) | 2650 | 0,70 / 0,55 | 0,01 | 0,15 | 8 | 150 | 45 | 5 000 | nicht |
+| `sandstone` | Sandstein (Steine in der Wüste) | 2300 | 0,75 / 0,60 | 0,012 | 0,10 | 3 | 60 | 15 | 800 | nicht |
 
 Haft- und Gleitreibung in der Tabelle sind die Werte des Materials; für ein Paar gilt die Paartabelle oben.
 Holzwerte gelten entlang der Faser. Die Zugfestigkeit begrenzt Klebungen und Schweißnähte, die Bruchenergie bestimmt,

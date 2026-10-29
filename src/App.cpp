@@ -606,6 +606,7 @@ void App::buildFrame(FrameDesc& fd) {
 
     addTrees(fd, visibleAny);  // Bäume des Generators (die nahen sind Teile, oben schon dabei)
     addFlora(fd, visibleAny);  // Gras, Blumen, Büsche
+    addStones(fd, visibleAny); // Steine (die großen in der Nähe sind Teile, oben schon dabei)
     addAvatars(fd);    // andere Spieler im LAN
     addFireFx(fd);     // Flammen, Rauch, Feuerschein
     addWaterData(fd);  // Gewässer: Wellen, Farbe, Lichtflecken

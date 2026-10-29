@@ -87,7 +87,8 @@ GameSettings loadSettings() {
     if (j["shadows"].type == Json::Bool) s.shadows = j["shadows"].num != 0;
     if (j["edges"].type == Json::Bool) s.edges = j["edges"].num != 0;
     if (j["grid"].type == Json::Bool) s.grid = j["grid"].num != 0;
-    if (j["biomeBorders"].type == Json::Bool) s.biomeBorders = j["biomeBorders"].num != 0;
+    // Biomgrenzen: bis Version 1 der Datei stand der alte Standard (an) drin, ohne dass man ihn gewählt hatte
+    if (j["biomeBorders"].type == Json::Bool && j["version"].type == Json::Number && j["version"].num >= 2) s.biomeBorders = j["biomeBorders"].num != 0;
     if (j["autosaveMinutes"].type == Json::Number) s.autosaveMinutes = std::clamp((int)j["autosaveMinutes"].num, 0, 120);
     if (const Json& g = j["graphics"]; g.type == Json::Object) {
         if (g["msaa"].type == Json::Number) {
@@ -105,6 +106,7 @@ GameSettings loadSettings() {
 
 bool saveSettings(const GameSettings& s, std::string* err) {
     Json j = Json::makeObject();
+    j.set("version", Json::makeNumber(2));
     j.set("playerName", Json::makeString(s.playerName));
     j.set("mouseSensitivity", Json::makeNumber(s.mouseSensitivity));
     j.set("fov", Json::makeNumber(s.fovDeg));

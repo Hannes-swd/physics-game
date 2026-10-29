@@ -10,6 +10,7 @@
 
 #include "Materials.h"
 #include "Profile.h"
+#include "Stones.h"
 #include "Trees.h"
 
 namespace {
@@ -152,4 +153,58 @@ void App::addFlora(FrameDesc& fd, const std::function<bool(const glm::dvec3&, co
     flora_->setQuality(settings_.plants, settings_.viewDistance);
     flora_->update(*tr, eye, 3);
     flora_->draw(fd, renderOrigin_, eye, visible);
+}
+
+void App::addStones(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible) {
+    stonesDrawn_ = 0;
+    StoneField* field = world_->stones();
+    if (!field || !field->any()) return;
+    PROFILE("app.stones");
+    const glm::dvec3 O = renderOrigin_;
+    glm::dvec3 eye = play_ ? playerEye() : orbitEye();
+    for (const View& v : views_)
+        if (!v.ortho) {
+            eye = v.eye;
+            break;
+        }
+    const glm::dvec2 e2(eye.x, eye.z);
+    const double view = settings_.viewDistance;  // Sichtweite (Einstellungen -> Grafik)
+    const double R = field->view().drawDistance * view, kTile = StoneField::kTile;
+    const double perMeter = 350.0 * view;  // ein Stein ist bis zu so viel mal seiner Größe weit zu sehen (kleine nur nah)
+    field->prepare(e2, R, 6);  // fehlende Kacheln nach und nach (die nächsten zuerst)
+
+    // je Form alle Lagen sammeln, dann hintereinander (der Renderer zeichnet sie in einem Aufruf)
+    std::vector<std::vector<DrawItem>> buckets((size_t)field->shapes());
+    const int64_t t0x = (int64_t)std::floor((e2.x - R) / kTile), t1x = (int64_t)std::floor((e2.x + R) / kTile);
+    const int64_t t0z = (int64_t)std::floor((e2.y - R) / kTile), t1z = (int64_t)std::floor((e2.y + R) / kTile);
+    for (int64_t tz = t0z; tz <= t1z; ++tz)
+        for (int64_t tx = t0x; tx <= t1x; ++tx) {
+            if (!field->tileReady(tx, tz)) continue;
+            const glm::dvec2 mid((tx + 0.5) * kTile, (tz + 0.5) * kTile);
+            if (glm::length(mid - e2) > R + kTile) continue;
+            const std::vector<StoneSpot>& spots = field->tile(tx, tz, false);
+            if (spots.empty()) continue;
+            double lo = 1e30, hi = -1e30;
+            for (const StoneSpot& s : spots) lo = std::min(lo, s.pos.y - s.size), hi = std::max(hi, s.pos.y + s.size);
+            if (!visible(glm::dvec3(tx * kTile - 2.0, lo, tz * kTile - 2.0), glm::dvec3((tx + 1) * kTile + 2.0, hi, (tz + 1) * kTile + 2.0))) continue;
+            for (const StoneSpot& s : spots) {
+                const double d = glm::length(s.pos - eye);
+                if (d > std::min(R, s.size * perMeter) || world_->stoneHidden(s.key)) continue;  // schon ein Teil oder weg
+                const StoneShape& sh = field->shape(s.shape);
+                if (!sh.mesh.valid()) continue;
+                DrawItem it;
+                it.mesh = &sh.mesh;
+                it.castShadow = d < 40.0 && s.size > 0.12;
+                it.data = woodData(s.material, (float)((s.key * 2654435761ull) % 1000) / 1000.0f);  // Material wie ein Teil
+                it.data.model = glm::translate(glm::mat4(1.0f), glm::vec3(s.pos - O)) * glm::mat4_cast(glm::quat(s.rot)) *
+                                glm::scale(glm::mat4(1.0f), glm::vec3((float)s.size));
+                buckets[(size_t)s.shape].push_back(it);
+            }
+        }
+    for (const std::vector<DrawItem>& b : buckets)
+        for (const DrawItem& it : b) {
+            if (fd.items.size() >= kMaxDrawItems) return;
+            fd.items.push_back(it);
+            ++stonesDrawn_;
+        }
 }

@@ -58,6 +58,14 @@ struct GenConfig {
             double bushSizeMin = 0.6, bushSizeMax = 1.4;  // Durchmesser (m)
             std::vector<glm::vec3> bushColors;
         } flora;
+        // Steine (Stones.h): wie viele, wie groß (Durchmesser), skew: je größer, desto mehr kleine (1 = gleich verteilt)
+        struct Stones {
+            bool given = false;                       // "stones" steht in der Datei
+            double perHa = 0;                         // Steine je Hektar
+            double sizeMin = 0.05, sizeMax = 0.6;     // m
+            double skew = 3.0;
+            std::string material = "fieldstone";
+        } stones;
     };
     std::vector<Biome> biomes;
     // Flüsse. Fehlt "rivers" in der Datei (alte Welten): keine Flüsse, das Gelände bleibt genau wie vorher
@@ -80,6 +88,11 @@ struct GenConfig {
     struct FloraView {
         double grassDistance = 45, bushDistance = 130;
     } flora;
+    // Steine: bis wohin gezeichnet (m; kleine nur näher, je nach Größe), bis wohin große um die Spieler feste Teile
+    // sind (m), ab welchem Durchmesser ein Stein groß ist (m; kleinere hebt man einfach auf)
+    struct StoneView {
+        double drawDistance = 250, solidDistance = 25, big = 0.3;
+    } stoneView;
     std::string text;          // der JSON-Text, aus dem sie stammen (wird in die Welt kopiert)
 
     int findBiome(const std::string& id) const;  // -1: unbekannt

@@ -153,6 +153,7 @@ Flüsse entstehen ebenfalls nur aus dem Seed, mit dem Gelände zusammen:
 | `biomes[].rivers` | wie viele Flüsse hier Wasser führen (0..1), siehe unten |
 | `biomes[].trees` | Bäume: `per_ha` (je Hektar) und `types` (Arten aus `trees.json` mit Gewicht), siehe [17](17-Baeume.md) |
 | `biomes[].grass`, `flowers`, `bushes` | Bewuchs: Dichte, Höhe, Flecken, Farben, siehe [18](18-Bewuchs.md) (dazu oben `flora`: Reichweiten) |
+| `biomes[].stones` | Steine: je Hektar, Größe, wie viele kleine, Material, siehe [19](19-Steine.md) (dazu oben `stones`: Reichweiten, ab wann groß) |
 | `biomes[].border_color` | Farbe der Biomgrenze auf diesem Biom |
 
 Fehler in der Datei werden mit Ort gemeldet (z. B. `biomes[1].climate: unknown value 'warmth'`); dann gilt die beim Bauen
@@ -256,7 +257,8 @@ lattice       ... die vier Rasterpunkte darum (0,5 m), so rechnen Physik und Bil
 
 ## Biomgrenzen sehen
 
-*Ansicht → Biomgrenzen* (oder `terrain borders on`) zeichnet eine Linie genau dort, wo das Biom wechselt, knapp über dem
+Standardmäßig aus. Einschalten: *Einstellungen → Biomgrenzen (Linien)*, im Spiel *Ansicht → Biomgrenzen* (oder
+`terrain borders on`). Dann liegt eine Linie genau dort, wo das Biom wechselt, knapp über dem
 Boden, in der Farbe `border_color` der beiden Biome. Die Linie liegt dort, wo die Scores der beiden Biome gleich sind; sie
 ist also so glatt wie das Klima selbst. Gezeichnet für Kacheln bis etwa 1 km Entfernung.
 
