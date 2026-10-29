@@ -63,7 +63,8 @@ void App::addTrees(FrameDesc& fd, const std::function<bool(const glm::dvec3&, co
             break;
         }
     const glm::dvec2 e2(eye.x, eye.z);
-    forest->prepare(e2, cfg.drawDistance, 4);  // fehlende Kacheln nach und nach (die nächsten zuerst)
+    const double view = settings_.viewDistance;  // Sichtweite (Einstellungen -> Grafik)
+    forest->prepare(e2, cfg.drawDistance * view, 4);  // fehlende Kacheln nach und nach (die nächsten zuerst)
 
     // je Netz alle Lagen sammeln, dann hintereinander (der Renderer zeichnet sie in einem Aufruf)
     std::unordered_map<const GpuMesh*, size_t> index;
@@ -87,7 +88,7 @@ void App::addTrees(FrameDesc& fd, const std::function<bool(const glm::dvec3&, co
         const int m = findMaterialIndex(cfg.types[(size_t)t].wood.c_str());
         woodMat[(size_t)t] = m >= 0 ? m : materialIndex("oak");
     }
-    const double R = cfg.drawDistance, kTile = Forest::kTile;
+    const double R = cfg.drawDistance * view, kTile = Forest::kTile;
     const int64_t t0x = (int64_t)std::floor((e2.x - R) / kTile), t1x = (int64_t)std::floor((e2.x + R) / kTile);
     const int64_t t0z = (int64_t)std::floor((e2.y - R) / kTile), t1z = (int64_t)std::floor((e2.y + R) / kTile);
     for (int64_t tz = t0z; tz <= t1z; ++tz)
@@ -110,7 +111,7 @@ void App::addTrees(FrameDesc& fd, const std::function<bool(const glm::dvec3&, co
                 const double d = glm::length(s.pos - eye);
                 if (d > R) continue;
                 const TreeModel& m = lib.model(s.type, s.variant);
-                const bool detail = d < cfg.detailDistance;
+                const bool detail = d < cfg.detailDistance * view;
                 const glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(s.pos - O)) *
                                         glm::rotate(glm::mat4(1.0f), s.yaw, glm::vec3(0, 1, 0)) * glm::scale(glm::mat4(1.0f), glm::vec3(s.scale));
                 const float seed = (float)((s.key * 2654435761ull) % 1000) / 1000.0f;
@@ -132,4 +133,23 @@ void App::addTrees(FrameDesc& fd, const std::function<bool(const glm::dvec3&, co
             it.data = d;
             fd.items.push_back(it);
         }
+}
+
+void App::addFlora(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible) {
+    const Terrain* tr = world_->terrain();
+    if (!tr || !showFlora_) {
+        if (flora_) flora_->clear();
+        return;
+    }
+    PROFILE("app.flora");
+    if (!flora_) flora_ = std::make_unique<Flora>(&renderer_);
+    glm::dvec3 eye = play_ ? playerEye() : orbitEye();
+    for (const View& v : views_)
+        if (!v.ortho) {
+            eye = v.eye;
+            break;
+        }
+    flora_->setQuality(settings_.plants, settings_.viewDistance);
+    flora_->update(*tr, eye, 3);
+    flora_->draw(fd, renderOrigin_, eye, visible);
 }

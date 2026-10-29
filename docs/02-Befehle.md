@@ -555,6 +555,11 @@ bei `sim` und in Befehlsfolgen).
 Wechselt den Modus (wie Tab). `play` startet die Physik, `build` hält sie an.
 Stecken beim Start Teile ineinander, kommt ein Hinweis; die Physik schiebt sie langsam auseinander.
 
+### `pause [on|off|settings|quit]`
+Das Pausenfenster des Spiel-Modus (wie Esc): ohne Wert auf bzw. zu, `settings` zeigt die Einstellungen, `quit` die Seite
+„Beenden“. Dazu `pause set <key> <value>` (Einstellung wie `menu set`, gilt sofort, z. B. `pause set graphics ultra`) und
+`pause shot <bild.png>` (Bild des Pausenfensters). Siehe [15](15-Hauptmenue-und-Welten.md#pausenfenster-im-spiel).
+
 ### `sim <seconds>`
 Lässt die Physik genau so lange laufen (auch im Bau-Modus) und meldet, welche Teile sich bewegt haben.
 Ruhende Teile werden dafür angestoßen. Anderer Name: `simulate`.
@@ -829,6 +834,7 @@ Positionen und Längen in cm.
 | `terrain reset` | alle Änderungen am Gelände zurück |
 | `terrain reload` | `assets/biomes.json` neu lesen und in diese Welt übernehmen (zum Ausprobieren von Werten) |
 | `terrain borders on\|off` | Linien an den Biomgrenzen |
+| `terrain flora on\|off` | Gras, Blumen, Büsche zeigen oder nicht ([18](18-Bewuchs.md)) |
 | `terrain map <bild.png> [größe_m] [pixel]` | Karte von oben um die Kamera: Biome, Höhe, Flüsse (blau), Raster je km; Anteil jedes Bioms und der Flüsse |
 
 `terrain at` zeigt auch die Zeile `river` (Abstand zur Flussmitte, Breite, Tiefe, Strömung, Wasser an der Stelle).

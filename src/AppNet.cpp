@@ -1127,7 +1127,7 @@ bool App::localCommand(const std::string& line) const {
     static const char* local[] = {"help",   "?",        "materials", "mode",    "view",      "camera", "screenshot",
                                   "photo",  "tool",     "window",    "display", "log",       "select", "drawing",
                                   "threeview", "quit",  "exit",      "save",    "edges",     "list",   "ls",
-                                  "chunks", "lan",      "player",    "menu",    "world",     "tp",     "teleport"};
+                                  "chunks", "lan",      "player",    "menu",    "world",     "tp",     "teleport", "pause"};
     const std::string w = firstWord(line);
     if (w.empty() || w[0] == '#') return true;
     for (const char* l : local)
@@ -1137,7 +1137,7 @@ bool App::localCommand(const std::string& line) const {
         std::string a, sub;
         in >> a >> sub;
         return sub.empty() || sub == "status" || sub == "at" || sub == "here" || sub == "biomes" || sub == "find" || sub == "goto" ||
-               sub == "borders";
+               sub == "borders" || sub == "flora";
     }
     return false;
 }

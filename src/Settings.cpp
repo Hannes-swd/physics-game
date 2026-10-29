@@ -2,6 +2,7 @@
 #include "Settings.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -20,7 +21,52 @@ Json makeBool(bool b) {
     return j;
 }
 
+// Grafikstufen (Werte wie in GameSettings)
+struct Preset {
+    int msaa;
+    bool supersampling;
+    int shadowQuality;
+    double viewDistance, plants;
+};
+constexpr Preset kPresets[kGraphicsPresets] = {
+    {1, false, 0, 0.6, 0.4},  // Niedrig
+    {2, false, 1, 0.8, 0.7},  // Mittel
+    {4, false, 2, 1.0, 1.0},  // Hoch
+    {8, true, 3, 1.5, 1.5},   // Ultra
+};
+
 } // namespace
+
+const char* const kGraphicsPresetNames[kGraphicsPresets] = {"low", "medium", "high", "ultra"};
+
+void applyGraphicsPreset(GameSettings& s, int preset) {
+    const Preset& p = kPresets[std::clamp(preset, 0, kGraphicsPresets - 1)];
+    s.msaa = p.msaa;
+    s.supersampling = p.supersampling;
+    s.shadowQuality = p.shadowQuality;
+    s.viewDistance = p.viewDistance;
+    s.plants = p.plants;
+}
+
+int graphicsPresetOf(const GameSettings& s) {
+    for (int i = 0; i < kGraphicsPresets; ++i) {
+        const Preset& p = kPresets[i];
+        if (s.msaa == p.msaa && s.supersampling == p.supersampling && s.shadowQuality == p.shadowQuality &&
+            std::abs(s.viewDistance - p.viewDistance) < 0.01 && std::abs(s.plants - p.plants) < 0.01)
+            return i;
+    }
+    return -1;
+}
+
+int shadowMapSize(int q) {
+    static const int size[] = {2048, 2048, 4096, 8192};
+    return size[std::clamp(q, 0, 3)];
+}
+
+double shadowRange(int q) {
+    static const double range[] = {10, 14, 18, 36};
+    return range[std::clamp(q, 0, 3)];
+}
 
 std::string defaultPlayerName() {
     const char* user = std::getenv("USERNAME");
@@ -43,6 +89,17 @@ GameSettings loadSettings() {
     if (j["grid"].type == Json::Bool) s.grid = j["grid"].num != 0;
     if (j["biomeBorders"].type == Json::Bool) s.biomeBorders = j["biomeBorders"].num != 0;
     if (j["autosaveMinutes"].type == Json::Number) s.autosaveMinutes = std::clamp((int)j["autosaveMinutes"].num, 0, 120);
+    if (const Json& g = j["graphics"]; g.type == Json::Object) {
+        if (g["msaa"].type == Json::Number) {
+            const int m = (int)g["msaa"].num;
+            s.msaa = m >= 8 ? 8 : m >= 4 ? 4 : m >= 2 ? 2 : 1;
+        }
+        if (g["supersampling"].type == Json::Bool) s.supersampling = g["supersampling"].num != 0;
+        if (g["shadowQuality"].type == Json::Number) s.shadowQuality = std::clamp((int)g["shadowQuality"].num, 0, 3);
+        if (g["viewDistance"].type == Json::Number) s.viewDistance = std::clamp(g["viewDistance"].num, 0.5, 2.0);
+        if (g["plants"].type == Json::Number) s.plants = std::clamp(g["plants"].num, 0.0, 1.5);
+        if (g["vsync"].type == Json::Bool) s.vsync = g["vsync"].num != 0;
+    }
     return s;
 }
 
@@ -56,6 +113,14 @@ bool saveSettings(const GameSettings& s, std::string* err) {
     j.set("grid", makeBool(s.grid));
     j.set("biomeBorders", makeBool(s.biomeBorders));
     j.set("autosaveMinutes", Json::makeNumber(s.autosaveMinutes));
+    Json g = Json::makeObject();
+    g.set("msaa", Json::makeNumber(s.msaa));
+    g.set("supersampling", makeBool(s.supersampling));
+    g.set("shadowQuality", Json::makeNumber(s.shadowQuality));
+    g.set("viewDistance", Json::makeNumber(s.viewDistance));
+    g.set("plants", Json::makeNumber(s.plants));
+    g.set("vsync", makeBool(s.vsync));
+    j.set("graphics", g);
     const std::filesystem::path file = settingsFile();
     std::filesystem::path tmp = file;
     tmp += L".tmp";

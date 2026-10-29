@@ -29,7 +29,11 @@
     "biomes[].surface":      "Oberfläche: Farbe, Farbe an steilen Hängen ab slope_start bis slope_end (1 - Normale.y), Material",
     "biomes[].rivers":       "wie viele Flüsse hier Wasser führen: 0 = keine, 1 = alle (rivers.presence)",
     "biomes[].trees":        "Bäume: per_ha = Bäume je Hektar (100 x 100 m), types = welche Arten aus trees.json, mit Gewicht",
-    "biomes[].border_color": "Farbe der Biomgrenze auf diesem Biom (Ansicht -> Biomgrenzen)"
+    "biomes[].border_color": "Farbe der Biomgrenze auf diesem Biom (Ansicht -> Biomgrenzen)",
+    "biomes[].grass":        "Gras: density = Büschel je m², height = Höhe [von, bis] (m), patches = 0 gleichmäßig .. 1 nur in Flecken, colors = Farben (zufällig gemischt)",
+    "biomes[].flowers":      "Blumen: density = Blumen je m² (wachsen in Gruppen), colors = Farben der Blüten",
+    "biomes[].bushes":       "Büsche: per_ha = Büsche je Hektar, size = Durchmesser [von, bis] (m), colors = Laubfarben",
+    "flora":                 "Bewuchs nur im Bild (keine Physik): grass_distance = bis wohin volles Gras und Blumen (m; dahinter bis zum Dreifachen eine grobe Stufe), bush_distance = bis wohin Büsche (m)"
   },
   "version": 1,
   "climate": {
@@ -39,6 +43,7 @@
     "erosion":         { "label": "Zerklüftung",      "scale": 900,  "octaves": 3, "contrast": 1.9 }
   },
   "border_blend": 0.04,
+  "flora": { "grass_distance": 45, "bush_distance": 130 },
   "rivers": {
     "level":         0.0,
     "spacing":       2500,
@@ -69,6 +74,10 @@
       },
       "rivers":       1.0,
       "trees":        { "per_ha": 4, "types": { "oak_big": 2, "oak_young": 1 } },
+      "grass":        { "density": 5, "height": [0.15, 0.45], "patches": 0.35,
+                        "colors": [[0.17, 0.28, 0.08], [0.21, 0.32, 0.09], [0.25, 0.31, 0.10]] },
+      "flowers":      { "density": 0.25, "colors": [[0.95, 0.95, 0.92], [0.95, 0.82, 0.15], [0.75, 0.15, 0.12], [0.55, 0.40, 0.85]] },
+      "bushes":       { "per_ha": 25, "size": [0.6, 1.5], "colors": [[0.15, 0.26, 0.07], [0.19, 0.29, 0.09]] },
       "border_color": [1.0, 0.85, 0.2]
     },
     {
@@ -85,6 +94,10 @@
       },
       "rivers":       1.0,
       "trees":        { "per_ha": 150, "types": { "oak_big": 1, "oak_young": 2, "spruce_big": 2, "spruce_mid": 2, "spruce_young": 3 } },
+      "grass":        { "density": 10, "height": [0.25, 0.65], "patches": 0.1,
+                        "colors": [[0.12, 0.22, 0.06], [0.15, 0.25, 0.07], [0.17, 0.24, 0.08]] },
+      "flowers":      { "density": 0.05, "colors": [[0.95, 0.95, 0.95], [0.60, 0.45, 0.90]] },
+      "bushes":       { "per_ha": 120, "size": [0.7, 1.8], "colors": [[0.10, 0.19, 0.05], [0.13, 0.21, 0.06], [0.09, 0.16, 0.05]] },
       "border_color": [0.3, 1.0, 0.35]
     },
     {
@@ -101,6 +114,10 @@
       },
       "rivers":       1.0,
       "trees":        { "per_ha": 18, "types": { "spruce_big": 1, "spruce_mid": 2, "spruce_young": 2 } },
+      "grass":        { "density": 4, "height": [0.12, 0.35], "patches": 0.45,
+                        "colors": [[0.17, 0.26, 0.09], [0.21, 0.28, 0.10], [0.27, 0.29, 0.13]] },
+      "flowers":      { "density": 0.12, "colors": [[0.95, 0.95, 0.92], [0.45, 0.35, 0.85], [0.95, 0.80, 0.20]] },
+      "bushes":       { "per_ha": 35, "size": [0.5, 1.2], "colors": [[0.14, 0.21, 0.08], [0.18, 0.22, 0.10]] },
       "border_color": [1.0, 0.45, 0.15]
     },
     {
@@ -117,6 +134,10 @@
       },
       "rivers":       0.0,
       "trees":        { "per_ha": 0 },
+      "grass":        { "density": 0.6, "height": [0.2, 0.55], "patches": 0.9,
+                        "colors": [[0.66, 0.56, 0.24], [0.58, 0.46, 0.20], [0.72, 0.62, 0.30]] },
+      "flowers":      { "density": 0.0 },
+      "bushes":       { "per_ha": 6, "size": [0.4, 1.0], "colors": [[0.40, 0.36, 0.20], [0.34, 0.33, 0.18]] },
       "border_color": [1.0, 0.2, 0.2]
     }
   ]

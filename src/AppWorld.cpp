@@ -513,6 +513,7 @@ void App::updateTerrain() {
             eye = v.eye;
             break;
         }
+    tr->setViewScale(settings_.viewDistance);  // Sichtweite (Einstellungen -> Grafik)
     tr->updateView(eye);
 }
 
@@ -524,6 +525,13 @@ bool App::terrainAppCommand(const std::vector<std::string>& t, std::string& out)
         const std::string v = t.size() > 2 ? t[2] : "";
         showBiomeBorders_ = v == "on" ? true : v == "off" ? false : !showBiomeBorders_;
         out = std::string("biome borders ") + (showBiomeBorders_ ? "on" : "off") + (tr ? "" : " (this world is flat: no terrain)");
+        return true;
+    }
+    if (sub == "flora") {
+        const std::string v = t.size() > 2 ? t[2] : "";
+        showFlora_ = v == "on" ? true : v == "off" ? false : !showFlora_;
+        out = std::string("flora (grass, flowers, bushes) ") + (showFlora_ ? "on" : "off");
+        if (flora_ && showFlora_) out += ": " + std::to_string(flora_->tiles()) + " tiles, " + std::to_string(flora_->drawnTufts()) + " grass tufts drawn";
         return true;
     }
     if (sub == "goto") {

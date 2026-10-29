@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVariant>
+#include <QWindow>
 
 #include <algorithm>
 #include <cstdio>
@@ -91,6 +92,14 @@ bool parseNum(const std::string& v, double& out) {
     return end && end != v.c_str() && *end == 0;
 }
 
+// Grafikstufe aus Name oder Zahl (low|niedrig|0 .. ultra|3); -1: unbekannt
+int presetIndex(const std::string& v) {
+    static const char* const de[kGraphicsPresets] = {"niedrig", "mittel", "hoch", "ultra"};
+    for (int i = 0; i < kGraphicsPresets; ++i)
+        if (v == kGraphicsPresetNames[i] || v == de[i] || v == std::to_string(i)) return i;
+    return -1;
+}
+
 std::string quoted(const std::string& s) { return "\"" + s + "\""; }
 
 const char* kMenuHelp =
@@ -107,6 +116,9 @@ const char* kMenuHelp =
     "  menu games                             LAN games in the network (switches to page multiplayer, it searches there)\n"
     "  menu join <address|n|name>             join a LAN game (address like 192.168.1.20[:port], or number/name from 'menu games')\n"
     "  menu set <key> <value>                 name <text>, mouse <0.2-3>, fov <40-100>, shadows|edges|grid|borders on|off, autosave <minutes, 0 = never>\n"
+    "                                         graphics low|medium|high|ultra (sets all of: msaa 1|2|4|8, supersampling on|off,\n"
+    "                                         shadowquality low..ultra, view <0.5-2>, plants <0-1.5>), vsync on|off. Graphics apply\n"
+    "                                         when a world opens\n"
     "  menu close                             close an open dialog\n"
     "  menu quit                              quit the program\n"
     "In the game: 'menu' tells where you are; 'menu <...>' saves the world, goes back to the main menu and runs the command there\n"
@@ -124,13 +136,16 @@ class MenuBackend : public QObject {
     Q_PROPERTY(QString worldsFolder READ worldsFolder CONSTANT)
     // Biome aus assets/biomes.json (Auswahl "nur ein Biom" beim Erstellen): je {id, label}
     Q_PROPERTY(QVariantList biomes READ biomes CONSTANT)
+    // Im Pausenfenster des Spiels (dort gelten die Einstellungen sofort)
+    Q_PROPERTY(bool inGame READ inGame CONSTANT)
     // Zustand der Oberfläche: QML meldet Seite und Dialog, die Auswahl teilen sich QML und die Befehle
     Q_PROPERTY(QString page READ page WRITE setPage NOTIFY pageChanged)
     Q_PROPERTY(QString dialog READ dialog WRITE setDialog NOTIFY dialogChanged)
     Q_PROPERTY(QString selectedDir READ selectedDir WRITE setSelectedDir NOTIFY selectedDirChanged)
 
 public:
-    MenuBackend(const std::string& message, RemoteServer* remote) : message_(qs(message)), remote_(remote) {
+    MenuBackend(const std::string& message, RemoteServer* remote, bool inGame = false)
+        : message_(qs(message)), remote_(remote), inGame_(inGame) {
         std::string report;
         gen_ = loadBiomesFile(&report);  // Biome für neue Welten (die Welt bekommt eine Kopie)
         if (!report.empty() && message_.isEmpty()) message_ = qs(report);
@@ -159,6 +174,8 @@ public:
     QVariantList lanGames() const { return lanGames_; }
     QString message() const { return message_; }
     QString worldsFolder() const { return qs(worlds::worldsDir().u8string()); }
+    bool inGame() const { return inGame_; }
+    void reloadSettings() { loadSettingsMap(); }  // settings.json neu lesen (das Spiel hat vielleicht etwas umgestellt)
     QString page() const { return page_; }
     QString dialog() const { return dialog_; }
     QString selectedDir() const { return selectedDir_; }
@@ -281,6 +298,14 @@ public:
         else if (k == "grid") s.grid = value.toBool();
         else if (k == "biomeBorders") s.biomeBorders = value.toBool();
         else if (k == "autosaveMinutes") s.autosaveMinutes = std::clamp(value.toInt(), 0, 120);
+        // Grafik: eine Stufe (0 Niedrig .. 3 Ultra) setzt alle Werte, einzelne Werte machen daraus "Eigene"
+        else if (k == "graphicsPreset") applyGraphicsPreset(s, value.toInt());
+        else if (k == "msaa") s.msaa = value.toInt() >= 8 ? 8 : value.toInt() >= 4 ? 4 : value.toInt() >= 2 ? 2 : 1;
+        else if (k == "supersampling") s.supersampling = value.toBool();
+        else if (k == "shadowQuality") s.shadowQuality = std::clamp(value.toInt(), 0, 3);
+        else if (k == "viewDistance") s.viewDistance = std::clamp(value.toDouble(), 0.5, 2.0);
+        else if (k == "plants") s.plants = std::clamp(value.toDouble(), 0.0, 1.5);
+        else if (k == "vsync") s.vsync = value.toBool();
         else return;
         saveSettings(s);
         loadSettingsMap();
@@ -344,6 +369,13 @@ private:
         settings_["grid"] = s.grid;
         settings_["biomeBorders"] = s.biomeBorders;
         settings_["autosaveMinutes"] = s.autosaveMinutes;
+        settings_["graphicsPreset"] = graphicsPresetOf(s);  // -1: eigene Werte
+        settings_["msaa"] = s.msaa;
+        settings_["supersampling"] = s.supersampling;
+        settings_["shadowQuality"] = s.shadowQuality;
+        settings_["viewDistance"] = s.viewDistance;
+        settings_["plants"] = s.plants;
+        settings_["vsync"] = s.vsync;
         Q_EMIT settingsChanged();
     }
     void pollLan() {
@@ -444,6 +476,10 @@ private:
           << s.mouseSensitivity << ", fov " << s.fovDeg << ", shadows " << (s.shadows ? "on" : "off") << ", edges " << (s.edges ? "on" : "off")
           << ", grid " << (s.grid ? "on" : "off") << ", borders " << (s.biomeBorders ? "on" : "off") << ", autosave " << (s.autosaveMinutes ? std::to_string(s.autosaveMinutes) + " min" : "never")
           << "\n";
+        const int preset = graphicsPresetOf(s);
+        o << "graphics      " << (preset >= 0 ? kGraphicsPresetNames[preset] : "custom") << ": msaa " << s.msaa << ", supersampling "
+          << (s.supersampling ? "on" : "off") << ", shadowquality " << kGraphicsPresetNames[s.shadowQuality] << ", view " << s.viewDistance
+          << ", plants " << s.plants << ", vsync " << (s.vsync ? "on" : "off") << " (applies when a world opens)\n";
         o << "commands      'menu help'";
         return o.str();
     }
@@ -572,7 +608,14 @@ private:
             else if ((key == "shadows" || key == "edges" || key == "grid") && parseBool(v, b)) setSetting(qs(key), b);
             else if ((key == "borders" || key == "biomeborders") && parseBool(v, b)) setSetting("biomeBorders", b);
             else if ((key == "autosave" || key == "autosaveminutes") && parseNum(v, d)) setSetting("autosaveMinutes", (int)std::clamp(d, 0.0, 60.0));
-            else return "Error: menu set " + key + " <value>: unknown key or bad value (name <text>, mouse <0.2-3>, fov <40-100>, shadows|edges|grid on|off, autosave <minutes>)";
+            else if ((key == "graphics" || key == "quality" || key == "shadowquality") && presetIndex(lower(v)) >= 0)
+                setSetting(key == "shadowquality" ? "shadowQuality" : "graphicsPreset", presetIndex(lower(v)));
+            else if (key == "msaa" && parseNum(v, d)) setSetting("msaa", (int)d);
+            else if ((key == "supersampling" || key == "vsync") && parseBool(v, b)) setSetting(qs(key), b);
+            else if ((key == "view" || key == "viewdistance") && parseNum(v, d)) setSetting("viewDistance", d);
+            else if ((key == "plants" || key == "grass") && parseNum(v, d)) setSetting("plants", d);
+            else return "Error: menu set " + key + " <value>: unknown key or bad value (name <text>, mouse <0.2-3>, fov <40-100>, shadows|edges|grid on|off, autosave <minutes>, "
+                       "graphics low|medium|high|ultra, msaa 1|2|4|8, supersampling on|off, shadowquality low..ultra, view <0.5-2>, plants <0-1.5>, vsync on|off)";
             const std::string s = status();
             return s.substr(s.find("settings      "), s.find("\ncommands") - s.find("settings      "));
         }
@@ -600,6 +643,135 @@ private:
     QElapsedTimer clock_;
     RemoteServer* remote_ = nullptr;
     bool leaving_ = false;
+    bool inGame_ = false;
+};
+
+// Das Objekt "pause" in qml/PauseWindow.qml: was gewählt wurde, holt das Spiel mit PauseUi::poll() ab
+class PauseBackend : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(bool fromMenu READ fromMenu NOTIFY changed)  // "Zurück zum Hauptmenü" anbieten
+    Q_PROPERTY(QString note READ note NOTIFY changed)       // Hinweis auf der Seite "Beenden"
+
+public:
+    bool fromMenu() const { return fromMenu_; }
+    QString note() const { return note_; }
+    void set(bool fromMenu, const QString& note) {
+        fromMenu_ = fromMenu;
+        note_ = note;
+        Q_EMIT changed();
+    }
+    Q_INVOKABLE void resume() { action = PauseUi::Action::Resume; }
+    Q_INVOKABLE void switchMode() { action = PauseUi::Action::SwitchMode; }
+    Q_INVOKABLE void toMenu() { action = PauseUi::Action::ToMenu; }
+    Q_INVOKABLE void quitGame() { action = PauseUi::Action::QuitGame; }
+
+    PauseUi::Action action = PauseUi::Action::None;
+
+Q_SIGNALS:
+    void changed();
+
+private:
+    bool fromMenu_ = false;
+    QString note_;
+};
+
+// Pausenfenster (PauseUi.h): eigenes Fenster mit qml/PauseWindow.qml, bleibt nach dem ersten Öffnen bis zum Ende der
+// Sitzung geladen (nur versteckt). Die Einstellungsseite ist dieselbe wie im Hauptmenü (MenuBackend ohne Fernsteuerung:
+// die bedient im Spiel das Spiel)
+class QtPause : public PauseUi {
+public:
+    ~QtPause() override { reset(); }
+
+    void open(void* gameWindow, bool fromMenu, const std::string& note) override {
+        if (!engine_) {
+            backend_ = std::make_unique<MenuBackend>("", nullptr, true);
+            pause_ = std::make_unique<PauseBackend>();
+            engine_ = std::make_unique<QQmlApplicationEngine>();
+            engine_->rootContext()->setContextProperty("menu", backend_.get());
+            engine_->rootContext()->setContextProperty("pause", pause_.get());
+            QObject::connect(backend_.get(), &MenuBackend::settingsChanged, [this] { settingsChanged_ = true; });
+            engine_->load(QUrl(QStringLiteral("qrc:/menu/PauseWindow.qml")));
+            if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
+                reset();
+                return;
+            }
+            window_ = qobject_cast<QQuickWindow*>(engine_->rootObjects().first());
+        }
+        if (!window_) return;
+        backend_->reloadSettings();
+        settingsChanged_ = false;
+        pause_->set(fromMenu, qs(note));
+        pause_->action = Action::None;
+        Q_EMIT backend_->pageRequested(QStringLiteral("pause"));
+        // vor dem Spielfenster (gehört zu ihm: kein eigener Knopf in der Taskleiste), mittig darüber
+        window_->setTransientParent(nullptr);
+        foreign_.reset(gameWindow ? QWindow::fromWinId((WId)gameWindow) : nullptr);
+        if (foreign_) {
+            window_->setTransientParent(foreign_.get());
+            const QRect g = foreign_->geometry();
+            if (g.isValid()) window_->setPosition(g.center() - QPoint(window_->width() / 2, window_->height() / 2));
+        }
+        window_->show();
+        window_->raise();
+        window_->requestActivate();
+        open_ = true;
+        QCoreApplication::processEvents();
+    }
+    void close() override {
+        if (window_) window_->hide();
+        open_ = false;
+        QCoreApplication::processEvents();  // sonst verschwindet es erst beim nächsten Öffnen
+    }
+    bool isOpen() const override { return open_; }
+    Action poll() override {
+        if (!open_ || !pause_) return Action::None;
+        QCoreApplication::processEvents();
+        const Action a = pause_->action;
+        pause_->action = Action::None;
+        return a;
+    }
+    bool takeSettingsChanged() override {
+        const bool c = settingsChanged_;
+        settingsChanged_ = false;
+        return c;
+    }
+    void showPage(const std::string& page) override {
+        if (!backend_) return;
+        Q_EMIT backend_->pageRequested(qs(page));
+        QCoreApplication::processEvents();
+    }
+    std::string page() const override { return backend_ ? ss(backend_->page()) : ""; }
+    std::string command(const std::string& line) override {
+        if (!backend_) return "Error: the pause window is not open";
+        const std::vector<std::string> t = words(line);
+        if (t.size() < 2 || t[0] != "menu" || t[1] != "set") return "Error: only 'menu set <key> <value>' works in the pause window";
+        const std::string r = backend_->command(line);
+        QCoreApplication::processEvents();
+        return r;
+    }
+    bool grab(const std::string& file) override {
+        if (!window_ || !open_) return false;
+        QCoreApplication::processEvents();
+        return window_->grabWindow().save(qs(file));
+    }
+
+    // Ende der Sitzung (das Hauptmenü kommt wieder): alles weg
+    void reset() {
+        window_ = nullptr;
+        engine_.reset();  // schließt das Fenster; vor den Objekten, die es benutzt
+        foreign_.reset();
+        backend_.reset();
+        pause_.reset();
+        open_ = settingsChanged_ = false;
+    }
+
+private:
+    std::unique_ptr<MenuBackend> backend_;
+    std::unique_ptr<PauseBackend> pause_;
+    std::unique_ptr<QQmlApplicationEngine> engine_;
+    std::unique_ptr<QWindow> foreign_;  // das Spielfenster aus Sicht von Qt
+    QQuickWindow* window_ = nullptr;
+    bool open_ = false, settingsChanged_ = false;
 };
 
 struct MainMenu::Impl {
@@ -607,8 +779,14 @@ struct MainMenu::Impl {
     // Das Fenster bleibt nach show() noch offen (Ladeseite), bis hide() kommt: dann ist das Spielfenster schon da
     std::unique_ptr<MenuBackend> backend;
     std::unique_ptr<QQmlApplicationEngine> engine;
+    std::unique_ptr<QtPause> pause;  // Pausenfenster im Spiel (vor app abgebaut)
     Impl(int& argc, char** argv) : app(argc, argv) {}
 };
+
+PauseUi* MainMenu::pauseUi() {
+    if (!impl_->pause) impl_->pause = std::make_unique<QtPause>();
+    return impl_->pause.get();
+}
 
 MainMenu::MainMenu(int& argc, char** argv) {
     // "Basic": schlichte Grundform der Qt Quick Controls, lässt sich später vollständig selbst gestalten
@@ -629,6 +807,7 @@ void MainMenu::hide() {
 
 MenuChoice MainMenu::show(const std::string& message, RemoteServer* remote, const std::string& command) {
     hide();
+    if (impl_->pause) impl_->pause->reset();  // das Pausenfenster der letzten Sitzung
     impl_->backend = std::make_unique<MenuBackend>(message, remote);
     impl_->engine = std::make_unique<QQmlApplicationEngine>();
     MenuBackend& backend = *impl_->backend;

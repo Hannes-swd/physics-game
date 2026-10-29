@@ -112,8 +112,9 @@ void imageBarrier(VkCommandBuffer cmd, VkImage img, VkImageAspectFlags aspect, V
 
 // ============================================================================ Init
 
-bool Renderer::init(GLFWwindow* window, bool validation) {
+bool Renderer::init(GLFWwindow* window, bool validation, const RenderQuality& quality) {
     window_ = window;
+    quality_ = quality;
     if (!createInstance(validation)) return false;
     if (glfwCreateWindowSurface(instance_, window_, nullptr, &surface_) != VK_SUCCESS) {
         std::fprintf(stderr, "Fensteroberfläche konnte nicht erstellt werden\n");
@@ -129,7 +130,7 @@ bool Renderer::init(GLFWwindow* window, bool validation) {
     if (!createSwapchain()) return false;
 
     // Schattenkarte
-    shadow_ = createImage(kShadowSize, kShadowSize, depthFormat_,
+    shadow_ = createImage(shadowSize_, shadowSize_, depthFormat_,
                           VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                           VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
     VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -310,14 +311,16 @@ bool Renderer::pickDevice() {
             queueFamily_ = (uint32_t)family;
             gpuName_ = p.deviceName;
             depthClamp_ = f2.features.depthClamp == VK_TRUE;
-            VkSampleCountFlags counts = p.limits.framebufferColorSampleCounts & p.limits.framebufferDepthSampleCounts;
-            samples_ = (counts & VK_SAMPLE_COUNT_4_BIT) ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
+            sampleCounts_ = p.limits.framebufferColorSampleCounts & p.limits.framebufferDepthSampleCounts;
+            canSampleShade_ = f2.features.sampleRateShading == VK_TRUE;
+            maxImageSize_ = p.limits.maxImageDimension2D;
         }
     }
     if (!gpu_) {
         std::fprintf(stderr, "Keine Grafikkarte mit Vulkan 1.3 gefunden\n");
         return false;
     }
+    chooseQuality();
     std::printf("Grafikkarte: %s\n", gpuName_.c_str());
     return true;
 }
@@ -335,6 +338,7 @@ bool Renderer::createDevice() {
     VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     f2.pNext = &f13;
     f2.features.depthClamp = depthClamp_ ? VK_TRUE : VK_FALSE;
+    f2.features.sampleRateShading = canSampleShade_ ? VK_TRUE : VK_FALSE;  // immer, falls vorhanden: Supersampling ist im Spiel umschaltbar
 
     const char* exts[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     VkDeviceCreateInfo ci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
@@ -393,7 +397,18 @@ bool Renderer::createSwapchain() {
     ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;  // VSync, gibt es immer
+    if (!quality_.vsync) {
+        uint32_t pn = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, nullptr);
+        std::vector<VkPresentModeKHR> modes(pn);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, modes.data());
+        for (VkPresentModeKHR want : {VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR})
+            if (std::find(modes.begin(), modes.end(), want) != modes.end()) {
+                ci.presentMode = want;
+                break;
+            }
+    }
     ci.clipped = VK_TRUE;
     VkSwapchainKHR old = swapchain_;
     ci.oldSwapchain = old;
@@ -443,6 +458,57 @@ void Renderer::recreateSwapchain() {
     destroySwapchain();
     createSwapchain();
     if (imgui_ && !swapImages_.empty()) ImGui_ImplVulkan_SetMinImageCount(2);
+}
+
+// Aus der gewünschten Qualität das, was die Grafikkarte kann
+void Renderer::chooseQuality() {
+    // Kantenglättung: die gewünschte Stufe oder die nächstkleinere, die die Karte kann
+    samples_ = VK_SAMPLE_COUNT_1_BIT;
+    for (VkSampleCountFlagBits s : {VK_SAMPLE_COUNT_8_BIT, VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT})
+        if ((int)s <= quality_.msaa && (sampleCounts_ & s)) {
+            samples_ = s;
+            break;
+        }
+    sampleShading_ = quality_.sampleShading && samples_ != VK_SAMPLE_COUNT_1_BIT && canSampleShade_;
+    shadowSize_ = std::clamp(quality_.shadowSize, 1024u, std::max(maxImageSize_, 1024u));
+}
+
+void Renderer::setQuality(const RenderQuality& q) {
+    if (!device_) {
+        quality_ = q;
+        return;
+    }
+    const VkSampleCountFlagBits oldSamples = samples_;
+    const bool oldShading = sampleShading_, oldVsync = quality_.vsync;
+    const uint32_t oldShadow = shadowSize_;
+    quality_ = q;
+    chooseQuality();
+    if (samples_ == oldSamples && sampleShading_ == oldShading && shadowSize_ == oldShadow && quality_.vsync == oldVsync) return;
+    vkDeviceWaitIdle(device_);
+    if (shadowSize_ != oldShadow) {  // neue Schattenkarte, die Deskriptoren zeigen auf sie
+        destroyImage(shadow_);
+        shadow_ = createImage(shadowSize_, shadowSize_, depthFormat_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                              VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+        for (Frame& f : frames_) {
+            VkDescriptorImageInfo shInfo{shadowSampler_, shadow_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w.dstSet = f.set;
+            w.dstBinding = 1;
+            w.descriptorCount = 1;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.pImageInfo = &shInfo;
+            vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
+        }
+    }
+    if (samples_ != oldSamples || sampleShading_ != oldShading) {  // Pipelines mit der neuen Abtastung
+        for (VkPipeline* p : {&meshPipe_, &shadowPipe_, &skyPipe_, &linePipe_, &transPipe_, &firePipe_, &waterPipe_})
+            if (*p) {
+                vkDestroyPipeline(device_, *p, nullptr);
+                *p = VK_NULL_HANDLE;
+            }
+        createPipelines();
+    }
+    recreateSwapchain();  // MSAA-Bilder, VSync
 }
 
 VkShaderModule Renderer::shaderModule(const uint32_t* code, size_t bytes) {
@@ -543,6 +609,10 @@ bool Renderer::createPipelines() {
         }
         VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
         ms.rasterizationSamples = c.shadowPass ? VK_SAMPLE_COUNT_1_BIT : samples_;
+        if (sampleShading_ && c.out == &meshPipe_) {  // Supersampling: Teile und Gelände je Abtastung schattieren
+            ms.sampleShadingEnable = VK_TRUE;
+            ms.minSampleShading = 1.0f;
+        }
         VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         ds.depthTestEnable = c.depthTest;
         ds.depthWriteEnable = c.depthWrite;
@@ -879,13 +949,13 @@ void Renderer::render(const FrameDesc& fd) {
         da.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         da.clearValue.depthStencil = {1.0f, 0};
         VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
-        ri.renderArea = {{0, 0}, {kShadowSize, kShadowSize}};
+        ri.renderArea = {{0, 0}, {shadowSize_, shadowSize_}};
         ri.layerCount = 1;
         ri.pDepthAttachment = &da;
         vkCmdBeginRendering(cmd, &ri);
         if (fd.shadows) {
-            VkViewport v{0, 0, (float)kShadowSize, (float)kShadowSize, 0, 1};
-            VkRect2D sc{{0, 0}, {kShadowSize, kShadowSize}};
+            VkViewport v{0, 0, (float)shadowSize_, (float)shadowSize_, 0, 1};
+            VkRect2D sc{{0, 0}, {shadowSize_, shadowSize_}};
             vkCmdSetViewport(cmd, 0, 1, &v);
             vkCmdSetScissor(cmd, 0, 1, &sc);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipe_);

@@ -1,4 +1,5 @@
 // Einstellungen (settings.json, gelten beim nächsten Öffnen einer Welt). Jede Änderung wird sofort gespeichert.
+// Dieselbe Seite steht im Pausenfenster des Spiels (PauseWindow.qml, menu.inGame): dort gilt alles sofort.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -18,11 +19,17 @@ Page {
         anchors.margins: 10
         spacing: 8
 
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            contentWidth: availableWidth
+            clip: true
+
         GridLayout {
             columns: 2
             columnSpacing: 16
             rowSpacing: 8
-            Layout.fillWidth: true
+            width: parent.width
 
             Label { text: "Name im LAN" }
             TextField {
@@ -108,9 +115,80 @@ Page {
                     onClicked: menu.openFolder(menu.worldsFolder)
                 }
             }
-        }
 
-        Item { Layout.fillHeight: true }
+            // ---- Grafik (im Hauptmenü: gilt beim nächsten Öffnen einer Welt; im Spiel sofort)
+            Label {
+                text: menu.inGame ? "Grafik" : "Grafik (gilt beim nächsten Öffnen einer Welt)"
+                topPadding: 12
+                Layout.columnSpan: 2
+            }
+
+            Label { text: "Qualität" }
+            ComboBox {
+                // Niedrig .. Ultra setzen alle Werte darunter; ändert man einen davon, steht hier "Eigene"
+                model: ["Niedrig", "Mittel", "Hoch", "Ultra", "Eigene"]
+                currentIndex: menu.settings.graphicsPreset < 0 ? 4 : menu.settings.graphicsPreset
+                Layout.preferredWidth: 260
+                onActivated: (index) => { if (index < 4) menu.setSetting("graphicsPreset", index) }
+            }
+
+            Label { text: "Kantenglättung" }
+            ComboBox {
+                model: ["Aus", "2×", "4×", "8×"]
+                currentIndex: [1, 2, 4, 8].indexOf(menu.settings.msaa)
+                Layout.preferredWidth: 260
+                onActivated: (index) => menu.setSetting("msaa", [1, 2, 4, 8][index])
+            }
+
+            Label { text: "Supersampling (schärfere Flächen)" }
+            CheckBox {
+                checked: menu.settings.supersampling
+                onToggled: menu.setSetting("supersampling", checked)
+            }
+
+            Label { text: "Schattenqualität" }
+            ComboBox {
+                model: ["Niedrig", "Mittel", "Hoch", "Ultra"]
+                currentIndex: menu.settings.shadowQuality
+                Layout.preferredWidth: 260
+                onActivated: (index) => menu.setSetting("shadowQuality", index)
+            }
+
+            Label { text: "Sichtweite" }
+            RowLayout {
+                Slider {
+                    id: view
+                    from: 0.5
+                    to: 2.0
+                    stepSize: 0.1
+                    value: menu.settings.viewDistance
+                    Layout.preferredWidth: 260
+                    onMoved: menu.setSetting("viewDistance", value)
+                }
+                Label { text: Math.round(view.value * 100) + " %" }
+            }
+
+            Label { text: "Gras und Blumen" }
+            RowLayout {
+                Slider {
+                    id: plants
+                    from: 0
+                    to: 1.5
+                    stepSize: 0.1
+                    value: menu.settings.plants
+                    Layout.preferredWidth: 260
+                    onMoved: menu.setSetting("plants", value)
+                }
+                Label { text: plants.value < 0.05 ? "aus" : Math.round(plants.value * 100) + " %" }
+            }
+
+            Label { text: "VSync (Bildrate an den Bildschirm binden)" }
+            CheckBox {
+                checked: menu.settings.vsync
+                onToggled: menu.setSetting("vsync", checked)
+            }
+        }
+        }
 
         RowLayout {
             Layout.fillWidth: true

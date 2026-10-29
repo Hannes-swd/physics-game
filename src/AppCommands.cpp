@@ -664,6 +664,41 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         return true;
     }
     if (cmd == "terrain" && terrainAppCommand(t, out)) return true;  // borders, goto, reload (der Rest: Commands.cpp)
+    if (cmd == "pause") {  // Pausenfenster des Spiel-Modus (wie ESC), siehe Hilfe
+        const std::string v = t.size() > 1 ? t[1] : "";
+        if (!play_) {
+            out = "Error: the pause window belongs to play mode ('mode play')";
+            return true;
+        }
+        PauseUi* ui = opt_.pauseUi;
+        if (v == "settings") {
+            setPause(Pause::Menu);
+            if (ui) ui->showPage("settings");
+            else showSettings_ = true;
+        } else if (v == "quit") {
+            setPause(Pause::Quit);
+        } else if (v == "on" || v == "off" || v.empty()) {
+            setPause(v == "on" ? Pause::Menu : v == "off" ? Pause::None : (pause_ == Pause::None ? Pause::Menu : Pause::None));
+        } else if (v == "set" && ui) {  // Einstellung wie im Hauptmenü ("menu set ..."), gilt sofort
+            if (pause_ == Pause::None) setPause(Pause::Menu);
+            std::string line = "menu";  // "pause set graphics ultra" -> "menu set graphics ultra"
+            for (size_t i = 1; i < t.size(); ++i) line += " \"" + t[i] + "\"";
+            out = ui->command(line);
+            if (ui->takeSettingsChanged()) reloadSettings();
+            return true;
+        } else if (v == "shot" && t.size() > 2 && ui) {  // Bild des Pausenfensters
+            if (pause_ == Pause::None) setPause(Pause::Menu);
+            out = ui->grab(t[2]) ? "pause window saved: " + t[2] : "Error: could not save " + t[2];
+            return true;
+        } else {
+            out = ui ? "Error: pause [on|off|settings|quit] | pause set <key> <value> | pause shot <file.png>" : "Error: pause [on|off|settings|quit]";
+            return true;
+        }
+        if (pause_ == Pause::None) out = "pause window closed, playing";
+        else out = "pause window open, page " + (ui ? ui->page() : showSettings_ ? std::string("settings") : pause_ == Pause::Quit ? "quit" : "pause") +
+                   (pauseStopped_ ? ", world paused" : "");
+        return true;
+    }
     if (cmd == "menu") {
         out = menuCommandInGame(t);
         return true;

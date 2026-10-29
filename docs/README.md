@@ -26,6 +26,7 @@ Anleitung sind deutsch.
 | [15-Hauptmenue-und-Welten.md](15-Hauptmenue-und-Welten.md) | Hauptmenü (Qt Quick): Weltliste, neue Welt, Seed, Mehrspieler, Einstellungen; Ladebildschirm; Speichersystem der Welten, Sicherungen, automatisch speichern; das Menü per Befehl bedienen und auslesen (Fernsteuerung, KI) |
 | [16-Weltgenerierung.md](16-Weltgenerierung.md) | Weltgenerierung: Gelände und Biome (Ebene, Wald, Hügel, Wüste) aus dem Seed, Klima, **Flüsse** (mit Tal, echtes Wasser, keine in der Wüste), `biomes.json`, Kacheln und Detailstufen, Physik, Gelände ändern und speichern, Biomgrenzen, Karte (`terrain map`), Befehle `terrain` |
 | [17-Baeume.md](17-Baeume.md) | **Bäume**: Arten (`trees.json`), Wald aus dem Seed je Biom, fällen (Stumpf bleibt, Stamm mit Krone fällt), Holz gewinnen, Baumschule, Teile in der Nähe und Bild in der Ferne, Speichern, Befehle `trees`, `tree`, `tp tree` |
+| [18-Bewuchs.md](18-Bewuchs.md) | **Gras, Blumen, Büsche** je Biom (`biomes.json`: Dichte, Höhe, Flecken, Farben), nur Bild, Wind, Leistung, Befehl `terrain flora` |
 
 ## Schnellstart
 

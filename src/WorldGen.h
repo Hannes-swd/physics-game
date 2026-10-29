@@ -45,6 +45,19 @@ struct GenConfig {
         double rivers = 1.0;    // wie viele Flüsse hier Wasser führen (0 = keine, 1 = so viele wie "rivers.presence")
         double treesPerHa = 0;  // Bäume je Hektar
         std::vector<std::pair<std::string, double>> treeTypes;  // Art (trees.json) und Gewicht
+        // Bewuchs (nur Bild, siehe Flora.h): Gras, Blumen, Büsche
+        struct Flora {
+            bool given = false;                       // "grass", "flowers" oder "bushes" steht in der Datei
+            double grass = 0;                         // Grasbüschel je m²
+            double grassHeightMin = 0.2, grassHeightMax = 0.5;  // m
+            double grassPatches = 0;                  // 0 = gleichmäßig, 1 = nur in Flecken
+            std::vector<glm::vec3> grassColors;
+            double flowers = 0;                       // Blumen je m²
+            std::vector<glm::vec3> flowerColors;
+            double bushesPerHa = 0;                   // Büsche je Hektar
+            double bushSizeMin = 0.6, bushSizeMax = 1.4;  // Durchmesser (m)
+            std::vector<glm::vec3> bushColors;
+        } flora;
     };
     std::vector<Biome> biomes;
     // Flüsse. Fehlt "rivers" in der Datei (alte Welten): keine Flüsse, das Gelände bleibt genau wie vorher
@@ -63,7 +76,11 @@ struct GenConfig {
         double speedMin = 0.4, speedMax = 1.1;  // Strömung: breiter Fluss / schmaler Fluss (m/s)
         glm::vec3 bedColor{0.30f, 0.26f, 0.18f};  // Flussbett und Ufer
     } rivers;
-    std::string text;           // der JSON-Text, aus dem sie stammen (wird in die Welt kopiert)
+    // Bewuchs: bis wohin Gras/Blumen und Büsche gezeichnet werden (m)
+    struct FloraView {
+        double grassDistance = 45, bushDistance = 130;
+    } flora;
+    std::string text;          // der JSON-Text, aus dem sie stammen (wird in die Welt kopiert)
 
     int findBiome(const std::string& id) const;  // -1: unbekannt
 };

@@ -188,7 +188,8 @@ if(MSVC)
 endif()
 
 if(WERKSTATT_MENU)
-  set(MENU_QML qml/Main.qml qml/MainPage.qml qml/WorldsPage.qml qml/MultiplayerPage.qml qml/SettingsPage.qml qml/LoadingPage.qml)
+  set(MENU_QML qml/Main.qml qml/MainPage.qml qml/WorldsPage.qml qml/MultiplayerPage.qml qml/SettingsPage.qml qml/LoadingPage.qml
+               qml/PauseWindow.qml)
   add_library(WerkstattMenu STATIC src/Menu.cpp src/Menu.h)
   set_target_properties(WerkstattMenu PROPERTIES AUTOMOC ON)
   target_include_directories(WerkstattMenu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

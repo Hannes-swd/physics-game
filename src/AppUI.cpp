@@ -139,7 +139,186 @@ void App::drawUI() {
     if (showHelp_) drawHelp();
     if (showNet_) drawNetWindow();
     drawNetRequests();
+    if (!opt_.pauseUi) {  // ohne Hauptmenü: einfache Fenster im Spiel (sonst das Pausenfenster des Menüs)
+        if (showSettings_) drawSettingsWindow();
+        else if (pause_ != Pause::None) drawPauseMenu();
+    }
     drawLoading();  // Ladebildschirm über allem (AppWorld.cpp)
+}
+
+// ============================================================================ Pausenfenster, Einstellungen im Spiel
+
+void App::setPause(Pause p) {
+    const bool was = pause_ != Pause::None;
+    pause_ = play_ ? p : Pause::None;
+    const bool now = pause_ != Pause::None;
+    if (now && !was) {
+        setCursorCaptured(false);
+        // allein hält die Welt an, solange das Fenster offen ist (im LAN laufen die anderen weiter)
+        if (netRole_ == NetRole::Off && world_->simulating()) {
+            world_->setSimulating(false);
+            pauseStopped_ = true;
+        }
+        if (opt_.pauseUi) {
+            std::string note;
+            if (haveWorld_ && !worldReadOnly_ && !netClient()) note = "Die Welt wird beim Verlassen gespeichert.";
+            else if (!haveWorld_) note = "Nicht gespeicherte Änderungen gehen verloren.";
+            opt_.pauseUi->open(glfwGetWin32Window(window_), opt_.menu, note);
+        }
+    } else if (!now && was) {
+        if (opt_.pauseUi) opt_.pauseUi->close();
+        if (pauseStopped_ && play_) world_->setSimulating(true);
+        pauseStopped_ = false;
+        showSettings_ = false;
+        if (play_) {
+            glfwFocusWindow(window_);  // war beim Pausenfenster
+            setCursorCaptured(true);
+        }
+    }
+    if (now && opt_.pauseUi) opt_.pauseUi->showPage(pause_ == Pause::Quit ? "quit" : "pause");
+}
+
+void App::updatePause() {
+    if (!opt_.pauseUi || pause_ == Pause::None) return;
+    PauseUi& ui = *opt_.pauseUi;
+    const PauseUi::Action a = ui.poll();
+    if (ui.takeSettingsChanged()) reloadSettings();
+    switch (a) {
+    case PauseUi::Action::Resume: setPause(Pause::None); break;
+    case PauseUi::Action::SwitchMode: leavePlay(); break;  // schließt das Fenster
+    case PauseUi::Action::ToMenu:
+    case PauseUi::Action::QuitGame:
+        ui.close();
+        pause_ = Pause::None;
+        pauseStopped_ = false;
+        if (a == PauseUi::Action::ToMenu) leaveToMenu();  // speichert die Welt
+        else quit_ = true;
+        break;
+    case PauseUi::Action::None: break;
+    }
+}
+
+void App::reloadSettings() {
+    const GameSettings s = loadSettings();
+    showEdges_ = s.edges;
+    showGrid_ = s.grid;
+    showBiomeBorders_ = s.biomeBorders;
+    const std::string name = s.playerName.empty() ? defaultPlayerName() : s.playerName;
+    std::snprintf(netName_, sizeof(netName_), "%s", name.c_str());
+    changeSettings(s, false);  // Maus, Sichtfeld, Schatten, Grafik (steht schon in der Datei)
+}
+
+void App::drawPauseMenu() {
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
+    if (!ImGui::Begin("Pause", nullptr, flags)) {
+        ImGui::End();
+        return;
+    }
+    const ImVec2 button(260, 0);
+    if (pause_ == Pause::Menu) {
+        if (ImGui::Button("Weiterspielen", button)) setPause(Pause::None);
+        if (ImGui::Button("Modus wechseln (Bauen)", button)) leavePlay();
+        if (ImGui::Button("Einstellungen", button)) showSettings_ = true;
+        if (ImGui::Button("Beenden", button)) pause_ = Pause::Quit;
+    } else {
+        if (haveWorld_ && !worldReadOnly_ && !netClient()) ImGui::TextUnformatted("Die Welt wird beim Verlassen gespeichert.");
+        else if (!haveWorld_) ImGui::TextUnformatted("Nicht gespeicherte Änderungen gehen verloren.");
+        if (opt_.menu && ImGui::Button("Zurück zum Hauptmenü", button)) leaveToMenu();
+        if (ImGui::Button("Spiel beenden", button)) quit_ = true;
+        if (ImGui::Button("Abbrechen", button)) pause_ = Pause::Menu;
+    }
+    ImGui::End();
+}
+
+void App::drawSettingsWindow() {
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    bool open = true;
+    if (!ImGui::Begin("Einstellungen", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::End();
+        return;
+    }
+    GameSettings s = settings_;
+    s.shadows = showShadows_;  // im Spiel umschaltbar (Ansicht -> Schatten)
+    bool changed = false, save = false;
+    // Schieber: sofort übernehmen, in die Datei erst beim Loslassen
+    auto slider = [&](const char* label, double& v, float lo, float hi, const char* fmt) {
+        float f = (float)v;
+        if (ImGui::SliderFloat(label, &f, lo, hi, fmt)) {
+            v = f;
+            changed = true;
+        }
+        save |= ImGui::IsItemDeactivatedAfterEdit();
+    };
+    auto pick = [&](bool edited) {
+        changed |= edited;
+        save |= edited;
+    };
+    ImGui::PushItemWidth(260);
+    slider("Mausempfindlichkeit", s.mouseSensitivity, 0.2f, 3.0f, "%.2f ×");
+    slider("Sichtfeld", s.fovDeg, 40.0f, 100.0f, "%.0f °");
+    pick(ImGui::Checkbox("Schatten", &s.shadows));
+
+    ImGui::SeparatorText("Grafik");
+    const int preset = graphicsPresetOf(s);
+    int sel = preset < 0 ? kGraphicsPresets : preset;
+    if (ImGui::Combo("Qualität", &sel, "Niedrig\0Mittel\0Hoch\0Ultra\0Eigene\0") && sel < kGraphicsPresets) {
+        applyGraphicsPreset(s, sel);
+        pick(true);
+    }
+    static const int kMsaa[] = {1, 2, 4, 8};
+    int m = s.msaa >= 8 ? 3 : s.msaa >= 4 ? 2 : s.msaa >= 2 ? 1 : 0;
+    if (ImGui::Combo("Kantenglättung", &m, "Aus\0" "2×\0" "4×\0" "8×\0")) {
+        s.msaa = kMsaa[m];
+        pick(true);
+    }
+    pick(ImGui::Checkbox("Supersampling (schärfere Flächen)", &s.supersampling));
+    pick(ImGui::Combo("Schattenqualität", &s.shadowQuality, "Niedrig\0Mittel\0Hoch\0Ultra\0"));
+    slider("Sichtweite", s.viewDistance, 0.5f, 2.0f, "%.1f ×");
+    slider("Gras und Blumen", s.plants, 0.0f, 1.5f, s.plants < 0.05 ? "aus" : "%.1f ×");
+    pick(ImGui::Checkbox("VSync (Bildrate an den Bildschirm binden)", &s.vsync));
+    ImGui::PopItemWidth();
+    ImGui::TextDisabled("%s: %d× Kantenglättung%s, Schattenkarte %u px", renderer_.gpuName(), renderer_.msaa(),
+                        renderer_.sampleShading() ? " mit Supersampling" : "", renderer_.shadowSize());
+    if (s.msaa > renderer_.msaa()) ImGui::TextDisabled("(mehr Kantenglättung kann diese Grafikkarte nicht)");
+
+    ImGui::Spacing();
+    if (ImGui::Button(pause_ != Pause::None ? "Zurück" : "Schließen", ImVec2(120, 0))) open = false;
+    ImGui::End();
+    if (changed || save) changeSettings(s, save);
+    if (!open) showSettings_ = false;
+}
+
+void App::changeSettings(const GameSettings& s, bool save) {
+    const GameSettings old = settings_;
+    settings_ = s;
+    mouseSens_ = s.mouseSensitivity;
+    fov_ = glm::radians(s.fovDeg);
+    showShadows_ = s.shadows;
+    // Kantenglättung, Supersampling, Schattenkarte, VSync: der Renderer baut neu (kurzes Stocken)
+    if (s.msaa != old.msaa || s.supersampling != old.supersampling || s.shadowQuality != old.shadowQuality || s.vsync != old.vsync) {
+        RenderQuality q;
+        q.msaa = s.msaa;
+        q.sampleShading = s.supersampling;
+        q.shadowSize = (uint32_t)shadowMapSize(s.shadowQuality);
+        q.vsync = s.vsync;
+        renderer_.setQuality(q);
+    }
+    if (!save) return;
+    GameSettings f = loadSettings();  // der Rest der Datei bleibt
+    f.mouseSensitivity = s.mouseSensitivity;
+    f.fovDeg = s.fovDeg;
+    f.shadows = s.shadows;
+    f.msaa = s.msaa;
+    f.supersampling = s.supersampling;
+    f.shadowQuality = s.shadowQuality;
+    f.viewDistance = s.viewDistance;
+    f.plants = s.plants;
+    f.vsync = s.vsync;
+    std::string err;
+    if (!saveSettings(f, &err)) log("settings: " + err, 2);
 }
 
 void App::openImportDialog() {
@@ -209,6 +388,7 @@ void App::drawMenuBar() {
         ImGui::MenuItem("Kanten", nullptr, &showEdges_);
         ImGui::MenuItem("Raster", nullptr, &showGrid_);
         if (world_->terrain()) ImGui::MenuItem("Biomgrenzen", nullptr, &showBiomeBorders_);
+        if (world_->terrain()) ImGui::MenuItem("Gras und Büsche", nullptr, &showFlora_);
         ImGui::Separator();
         ImGui::MenuItem("Physik-Inspektor", "F3", &showInspector_);
         ImGui::MenuItem("Materialien bearbeiten", nullptr, &showMaterials_);
@@ -292,7 +472,7 @@ void App::drawMenuBar() {
     ImGui::SameLine(ImGui::GetWindowWidth() - 330);
     const bool simOn = netClient() ? netHostSim_ : world_->simulating();  // im LAN läuft sie, sobald irgendwer spielt
     ImGui::TextColored(play_ ? ImVec4(0.4f, 1.0f, 0.5f, 1) : kAccent,
-                       play_ ? "SPIEL-MODUS (Physik an)" : simOn ? "BAU-MODUS (Physik an)" : "BAU-MODUS (Physik aus)");
+                       play_ ? (pauseStopped_ ? "SPIEL-MODUS (Pause)" : "SPIEL-MODUS (Physik an)") : simOn ? "BAU-MODUS (Physik an)" : "BAU-MODUS (Physik aus)");
     ImGui::EndMainMenuBar();
 }
 

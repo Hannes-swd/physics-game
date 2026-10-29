@@ -118,7 +118,14 @@ void App::handleInput(float dt) {
     if (loadingBlocks()) return;  // Ladebildschirm: keine Eingaben an die Welt
     ImGuiIO& io = ImGui::GetIO();
     const bool typing = io.WantTextInput;
+    escTaken_ = false;
     if (!typing) {
+        // ESC: offene Einstellungen schließen; im Spiel-Modus sonst das Pausenfenster auf bzw. zu
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && (showSettings_ || play_)) {
+            if (showSettings_) showSettings_ = false;
+            else setPause(pause_ == Pause::None ? Pause::Menu : Pause::None);
+            escTaken_ = true;
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) setMode(!play_);
         if (ImGui::IsKeyPressed(ImGuiKey_F1, false) || ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false)) {
             showConsole_ = !showConsole_;
@@ -235,7 +242,7 @@ void App::buildInput(float) {
                 if (shift) axis = axis == 0 ? 2 : 0;  // Y/Z -> X, X -> Z
                 rotateSelected(axis, 90.0);
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !escTaken_) {
                 if (tool_ != Tool::Select) tool_ = Tool::Select;
                 else selection_.clear();
             }
@@ -527,6 +534,12 @@ void App::enterPlay() {
 
 void App::leavePlay() {
     if (!play_) return;
+    if (pause_ != Pause::None && opt_.pauseUi) {  // das Pausenfenster gehört zum Spiel-Modus
+        opt_.pauseUi->close();
+        glfwFocusWindow(window_);
+    }
+    pause_ = Pause::None;
+    pauseStopped_ = false;
     glm::dvec3 eye = playerEye(), fwd = playerForward();
     play_ = false;
     hand_.grabbed = 0;
@@ -552,10 +565,7 @@ void App::playInput(float) {
     cursorX_ = cx;
     cursorY_ = cy;
 
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false) && cursorCaptured_) {
-        setCursorCaptured(false);
-        return;
-    }
+    if (pause_ != Pause::None || showSettings_) return;  // Pausenfenster oder Einstellungen offen: keine Spielsteuerung
     if (!cursorCaptured_) {
         if (glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !io.WantCaptureMouse) setCursorCaptured(true);
         return;

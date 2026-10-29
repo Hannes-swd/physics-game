@@ -535,7 +535,7 @@ bool Terrain::selectTile(const TerrainKey& key, const glm::dvec3& eye, double ey
         dr.border = &t.border;
         return dr;
     };
-    if (key.level > 0 && d < kSplit * size) {
+    if (key.level > 0 && d < kSplit * std::clamp(viewScale_, 0.75, 1.5) * size) {
         std::vector<Drawn> sub;
         bool all = true;
         for (int c = 0; c < 4; ++c) {
@@ -598,18 +598,19 @@ void Terrain::updateView(const glm::dvec3& eye) {
     collect();
     if (!std::isfinite(eye.x) || !std::isfinite(eye.y) || !std::isfinite(eye.z)) return;  // die Auswahl vom letzten Bild bleibt
     const double eyeAbove = std::max(0.0, eye.y - surfaceHeight(eye.x, eye.z));
+    const double viewDist = kViewDistance * std::clamp(viewScale_, 0.5, 2.0);
     draw_.clear();
     missing_ = 0;
     std::vector<std::pair<double, TerrainKey>> want;
     const int top = kTerrainLevels - 1;
     const double size = tileSize(top);
-    const int64_t tx0 = (int64_t)std::floor((eye.x - kViewDistance) / size), tx1 = (int64_t)std::floor((eye.x + kViewDistance) / size);
-    const int64_t tz0 = (int64_t)std::floor((eye.z - kViewDistance) / size), tz1 = (int64_t)std::floor((eye.z + kViewDistance) / size);
+    const int64_t tx0 = (int64_t)std::floor((eye.x - viewDist) / size), tx1 = (int64_t)std::floor((eye.x + viewDist) / size);
+    const int64_t tz0 = (int64_t)std::floor((eye.z - viewDist) / size), tz1 = (int64_t)std::floor((eye.z + viewDist) / size);
     for (int64_t tz = tz0; tz <= tz1; ++tz)
         for (int64_t tx = tx0; tx <= tx1; ++tx) {
             const double dx = std::max({tx * size - eye.x, 0.0, eye.x - (tx + 1) * size});
             const double dz = std::max({tz * size - eye.z, 0.0, eye.z - (tz + 1) * size});
-            if (dx * dx + dz * dz > kViewDistance * kViewDistance) continue;
+            if (dx * dx + dz * dz > viewDist * viewDist) continue;
             selectTile(TerrainKey{top, tx, tz}, eye, eyeAbove, draw_, want);
         }
     // Erzeugen, wichtigste zuerst; nicht mehr gleichzeitig, als Hilfs-Threads da sind (das Bild soll flüssig bleiben)

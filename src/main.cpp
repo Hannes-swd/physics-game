@@ -120,6 +120,7 @@ int runWithMenu(int& argc, char** argv, const AppOptions& base) {
         opt.lanHost = c.kind == MenuChoice::Play && c.lan;
         opt.joinAddress = c.kind == MenuChoice::Join ? c.address : "";
         opt.onFirstFrame = [&menu] { menu.hide(); };  // das Menü zeigt seine Ladeseite, bis das Spielfenster da ist
+        opt.pauseUi = menu.pauseUi();  // ESC im Spiel-Modus: Pausenfenster mit derselben Oberfläche wie das Menü
         auto app = std::make_unique<App>();
         const int code = app->run(opt);
         menu.hide();  // falls das Spiel gar nicht erst ein Bild zeigen konnte

@@ -93,7 +93,15 @@ bool App::init(const AppOptions& opt) {
     if (!window_) return false;
     glfwSetWindowUserPointer(window_, this);
     glfwSetScrollCallback(window_, [](GLFWwindow* w, double, double y) { static_cast<App*>(glfwGetWindowUserPointer(w))->scrollAccum_ += y; });
-    if (!renderer_.init(window_, opt.validation)) return false;
+    RenderQuality quality;  // Grafik aus den Einstellungen (Hauptmenü oder --world), sonst die Standardwerte
+    if (opt.menu || !opt.worldDir.empty()) {
+        const GameSettings s = loadSettings();
+        quality.msaa = s.msaa;
+        quality.sampleShading = s.supersampling;
+        quality.shadowSize = (uint32_t)shadowMapSize(s.shadowQuality);
+        quality.vsync = s.vsync;
+    }
+    if (!renderer_.init(window_, opt.validation, quality)) return false;
     if (!physics_.init()) return false;
     world_ = std::make_unique<World>(physics_, &renderer_);
     world_->setAsyncCollision(true);  // bearbeitete Teile: genaue Kollisionsform im Hintergrund, das Bild wartet nicht
@@ -169,6 +177,7 @@ void App::shutdown() {
     if (remote_ == &ownRemote_) remote_->stop();
     netStop("");
     renderer_.destroyMesh(avatarMesh_);
+    flora_.reset();
     world_.reset();
     physics_.shutdown();
     renderer_.shutdown();
@@ -232,6 +241,7 @@ int App::run(const AppOptions& opt) {
         computeViews();
         {
             PROFILE("app.input");
+            updatePause();  // Pausenfenster des Hauptmenüs (eigenes Qt-Fenster)
             handleInput(dt);
             heatToolInput(dt);
         }
@@ -276,6 +286,7 @@ int App::run(const AppOptions& opt) {
         ++frame_;
         if (!opt_.screenshotPath.empty() && frame_ >= (uint64_t)opt_.screenshotFrames) quit_ = true;
     }
+    if (opt_.pauseUi) opt_.pauseUi->close();
     endWorldSession();  // Welt speichern (auch beim Schließen des Fensters), Einstellungen zurückschreiben
     shutdown();
     return 0;
@@ -443,6 +454,7 @@ void App::buildFrame(FrameDesc& fd) {
     fd.shadows = showShadows_;
     fd.time = (float)time_;
     fd.sunDir = glm::normalize(glm::vec3(0.45f, 0.85f, 0.3f));
+    fd.fogDensity = (float)(0.00035 / settings_.viewDistance);  // Sichtweite (Einstellungen -> Grafik)
 
     for (const View& v : views_) {
         ViewDesc vd;
@@ -456,15 +468,16 @@ void App::buildFrame(FrameDesc& fd) {
         fd.views.push_back(vd);
     }
 
-    // Schattenbereich um den Blickpunkt
-    glm::dvec3 shadowCenter = play_ ? playerEye() + playerForward() * 4.0 : orbitTarget_;
-    double R = play_ ? 14.0 : std::clamp(orbitDist_ * 1.1, 2.0, 60.0);
+    // Schattenbereich um den Blickpunkt (im Spiel-Modus so weit, wie die Schattenstufe in den Einstellungen sagt)
+    const double playShadow = shadowRange(settings_.shadowQuality);
+    glm::dvec3 shadowCenter = play_ ? playerEye() + playerForward() * std::max(4.0, playShadow * 0.3) : orbitTarget_;
+    double R = play_ ? playShadow : std::clamp(orbitDist_ * 1.1, 2.0, 60.0);
     if (!play_ && viewMode_ != ViewMode::Perspective) R = std::clamp(orbitDist_ * 1.4, 2.0, 80.0);
     {
         glm::vec3 c = glm::vec3(shadowCenter - O);
         glm::vec3 L = fd.sunDir;
         glm::mat4 lv = glm::lookAt(c + L * 150.0f, c, glm::vec3(0, 1, 0));
-        float texel = float(2.0 * R / 4096.0);
+        float texel = float(2.0 * R / renderer_.shadowSize());
         glm::vec4 lc = lv * glm::vec4(c, 1.0f);
         glm::vec2 snapped = glm::floor(glm::vec2(lc) / texel) * texel;
         lv = glm::translate(glm::mat4(1.0f), glm::vec3(snapped - glm::vec2(lc), 0.0f)) * lv;
@@ -592,6 +605,7 @@ void App::buildFrame(FrameDesc& fd) {
     });
 
     addTrees(fd, visibleAny);  // Bäume des Generators (die nahen sind Teile, oben schon dabei)
+    addFlora(fd, visibleAny);  // Gras, Blumen, Büsche
     addAvatars(fd);    // andere Spieler im LAN
     addFireFx(fd);     // Flammen, Rauch, Feuerschein
     addWaterData(fd);  // Gewässer: Wellen, Farbe, Lichtflecken

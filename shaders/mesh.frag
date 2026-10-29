@@ -88,7 +88,17 @@ vec3 leaves(vec3 p, vec3 c1, vec3 c2, float seed) {
     return col * (0.72 + 0.5 * fine);
 }
 
-vec3 brick(vec3 p, vec3 c1, vec3 c2, float seed) {
+// Bewuchs (Flora.h): Farbe je Eckpunkt, leicht fleckig; Büsche (a = 0) mit Blattmuster
+vec3 plant(vec3 rel, vec4 c) {
+    vec3 wp = rel + frame.originMod.xyz;
+    if (c.a < 0.002) {
+        float fine = mix(0.5, vnoise(wp * 14.0), aaFade(wp, 14.0));
+        return c.rgb * (0.7 + 0.55 * fine) * (0.9 + 0.2 * vnoise(wp * 1.7));
+    }
+    return c.rgb * (0.88 + 0.24 * vnoise(wp * 0.8));
+}
+
+vec3 brick(vec3 p,vec3 c1, vec3 c2, float seed) {
     float n = fbm(p * 35.0 + seed * 7.0);
     vec3 col = mix(c2, c1, smoothstep(0.25, 0.75, n));
     float speck = smoothstep(0.80, 0.86, vnoise(p * 380.0)) * aaFade(p, 380.0);
@@ -272,6 +282,7 @@ void main() {
     else if (shading == 10) albedo = ground(vWorldPos, rough);
     else if (shading == 11) albedo = terrain(vWorldPos, vColor.rgb, rough);
     else if (shading == 12) albedo = leaves(p, o.color.rgb, o.color2.rgb, seed);
+    else if (shading == 13) albedo = plant(vWorldPos, vColor);
     else albedo = o.color.rgb;
 
     // Wärme: Anlauffarben, Verkohlung, Glühen, Schmelze, Reif
@@ -311,6 +322,13 @@ void main() {
         vec3 q = p * 4.0 + seed;
         N = normalize(N + 0.7 * (vec3(vnoise(q), vnoise(q + 7.1), vnoise(q + 13.7)) - 0.5));
         rough = 0.85;
+    }
+    if (shading == 13) {  // Bewuchs: Büsche (a = 0) wie Laub, Gras matt
+        if (vColor.a < 0.002) {
+            vec3 q = (vWorldPos + frame.originMod.xyz) * 5.0;
+            N = normalize(N + 0.8 * (vec3(vnoise(q), vnoise(q + 7.1), vnoise(q + 13.7)) - 0.5));
+        }
+        rough = 0.9;
     }
     bool ortho = pc.camPos.w > 0.5;
     vec3 V = normalize(pc.camPos.xyz - vWorldPos);

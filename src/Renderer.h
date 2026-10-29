@@ -99,10 +99,20 @@ struct FrameDesc {
     std::string screenshotPath;  // nicht leer: dieses Bild als PNG speichern
 };
 
+// Bildqualität (Einstellungen -> Grafik), gilt ab init
+struct RenderQuality {
+    int msaa = 4;                // Kantenglättung: Abtastungen je Pixel (1, 2, 4, 8; höchstens, was die Grafikkarte kann)
+    bool sampleShading = false;  // Teile und Gelände je Abtastung schattieren (Supersampling der Flächen)
+    uint32_t shadowSize = 4096;  // Schattenkarte, Pixel je Seite
+    bool vsync = true;           // false: so schnell wie möglich (Mailbox, sonst sofort)
+};
+
 class Renderer {
 public:
-    bool init(GLFWwindow* window, bool validation);
+    bool init(GLFWwindow* window, bool validation, const RenderQuality& quality = {});
     void shutdown();
+    // Qualität im laufenden Spiel ändern (wartet auf die Grafikkarte, legt Pipelines, MSAA-Bilder, Schattenkarte neu an)
+    void setQuality(const RenderQuality& quality);
 
     GpuMesh createMesh(const std::vector<solid::Vertex>& vertices);
     void destroyMesh(GpuMesh& mesh);  // verzögert, bis die GPU fertig ist
@@ -114,6 +124,10 @@ public:
     int width() const { return (int)swapExtent_.width; }
     int height() const { return (int)swapExtent_.height; }
     const char* gpuName() const { return gpuName_.c_str(); }
+    // was tatsächlich gilt (die Grafikkarte kann weniger können als gewünscht)
+    int msaa() const { return (int)samples_; }
+    bool sampleShading() const { return sampleShading_; }
+    uint32_t shadowSize() const { return shadowSize_; }
 
 private:
     struct Buffer {
@@ -179,7 +193,14 @@ private:
 
     Image shadow_;
     VkSampler shadowSampler_ = VK_NULL_HANDLE;
-    static constexpr uint32_t kShadowSize = 4096;
+    uint32_t shadowSize_ = 4096;
+    RenderQuality quality_;
+    bool sampleShading_ = false;
+    // was die Grafikkarte kann
+    VkSampleCountFlags sampleCounts_ = VK_SAMPLE_COUNT_1_BIT;
+    bool canSampleShade_ = false;
+    uint32_t maxImageSize_ = 4096;
+    void chooseQuality();
 
     VkDescriptorSetLayout setLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descPool_ = VK_NULL_HANDLE;

@@ -47,6 +47,35 @@ bool num(const Json& obj, const char* key, double& out, std::string& err, const 
     return true;
 }
 
+// Liste von Farben [[r, g, b], ...] (oder eine einzelne [r, g, b])
+bool readColors(const Json& j, std::vector<glm::vec3>& out) {
+    out.clear();
+    glm::vec3 c;
+    if (readVec3(j, c)) {
+        out.push_back(c);
+        return true;
+    }
+    if (j.type != Json::Array || j.size() == 0) return false;
+    for (size_t i = 0; i < j.size(); ++i) {
+        if (!readVec3(j[i], c)) return false;
+        out.push_back(c);
+    }
+    return true;
+}
+
+// [von, bis]; fehlt er, bleibt der Standard
+bool numRange(const Json& obj, const char* key, double& lo, double& hi, std::string& err, const std::string& where) {
+    const Json& a = obj[key];
+    if (a.type == Json::Null) return true;
+    if (a.type != Json::Array || a.size() != 2 || a[0].type != Json::Number || a[1].type != Json::Number) {
+        err = where + "." + key + ": [from, to] expected";
+        return false;
+    }
+    lo = a[0].num;
+    hi = std::max(a[1].num, lo);
+    return true;
+}
+
 double smooth01(double t) {
     t = std::clamp(t, 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
@@ -152,6 +181,37 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
                     if (v.num > 0) d.treeTypes.emplace_back(key, v.num);
                 }
         }
+        GenConfig::Biome::Flora& f = d.flora;
+        if (const Json& g = b["grass"]; g.type == Json::Object) {
+            const std::string wg = w + ".grass";
+            f.given = true;
+            if (!num(g, "density", f.grass, err, wg) || !numRange(g, "height", f.grassHeightMin, f.grassHeightMax, err, wg) ||
+                !num(g, "patches", f.grassPatches, err, wg))
+                return fail(err);
+            if (g.has("colors") && !readColors(g["colors"], f.grassColors)) return fail(wg + ".colors: [[r, g, b], ...] expected");
+            f.grass = std::clamp(f.grass, 0.0, 40.0);
+            f.grassHeightMin = std::clamp(f.grassHeightMin, 0.02, 1.9);
+            f.grassHeightMax = std::clamp(f.grassHeightMax, f.grassHeightMin, 1.9);
+            f.grassPatches = std::clamp(f.grassPatches, 0.0, 1.0);
+        }
+        if (const Json& g = b["flowers"]; g.type == Json::Object) {
+            f.given = true;
+            if (!num(g, "density", f.flowers, err, w + ".flowers")) return fail(err);
+            if (g.has("colors") && !readColors(g["colors"], f.flowerColors)) return fail(w + ".flowers.colors: [[r, g, b], ...] expected");
+            f.flowers = std::clamp(f.flowers, 0.0, 10.0);
+        }
+        if (const Json& g = b["bushes"]; g.type == Json::Object) {
+            const std::string wb = w + ".bushes";
+            f.given = true;
+            if (!num(g, "per_ha", f.bushesPerHa, err, wb) || !numRange(g, "size", f.bushSizeMin, f.bushSizeMax, err, wb)) return fail(err);
+            if (g.has("colors") && !readColors(g["colors"], f.bushColors)) return fail(wb + ".colors: [[r, g, b], ...] expected");
+            f.bushesPerHa = std::clamp(f.bushesPerHa, 0.0, 3000.0);
+            f.bushSizeMin = std::clamp(f.bushSizeMin, 0.1, 6.0);
+            f.bushSizeMax = std::clamp(f.bushSizeMax, f.bushSizeMin, 6.0);
+        }
+        if (f.grassColors.empty()) f.grassColors = {d.color * 1.3f};
+        if (f.flowerColors.empty()) f.flowerColors = {glm::vec3(0.9f, 0.85f, 0.2f)};
+        if (f.bushColors.empty()) f.bushColors = {glm::vec3(0.12f, 0.22f, 0.06f)};
         c.biomes.push_back(std::move(d));
     }
     if (const Json& r = j["rivers"]; r.type == Json::Object) {
@@ -189,6 +249,12 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
         v.floor = std::max(v.floor, 0.05);
         v.valley = std::max(v.valley, 5.0);
         v.valleySlope = std::clamp(v.valleySlope, 0.05, 2.0);
+    }
+    if (const Json& fl = j["flora"]; fl.type == Json::Object) {
+        if (!num(fl, "grass_distance", c.flora.grassDistance, err, "flora") || !num(fl, "bush_distance", c.flora.bushDistance, err, "flora"))
+            return fail(err);
+        c.flora.grassDistance = std::clamp(c.flora.grassDistance, 0.0, 150.0);
+        c.flora.bushDistance = std::clamp(c.flora.bushDistance, 0.0, 400.0);
     }
     out = std::move(c);
     return true;

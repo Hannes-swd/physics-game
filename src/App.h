@@ -14,7 +14,9 @@
 #include "Avatar.h"
 #include "Commands.h"
 #include "Drawing.h"
+#include "Flora.h"
 #include "Net.h"
+#include "PauseUi.h"
 #include "Physics.h"
 #include "Remote.h"
 #include "Renderer.h"
@@ -117,6 +119,7 @@ struct AppOptions {
     std::string joinAddress;      // gleich einem LAN-Spiel beitreten (ohne eigene Welt)
     RemoteServer* remote = nullptr;  // Fernsteuerung des Hauptmenüs (bleibt zwischen Menü und Spiel offen); sonst eine eigene
     std::function<void()> onFirstFrame;  // nach dem ersten Bild des Spielfensters (Hauptmenü: sein Ladebild schließen)
+    PauseUi* pauseUi = nullptr;          // Hauptmenü: Pausenfenster mit seiner Oberfläche (sonst ein einfaches im Spiel)
 };
 
 class App : public CommandHost {
@@ -238,6 +241,16 @@ private:
     // AppTrees.cpp: Bäume des Generators (Vorlagen), Krone eines Baum-Teils (false: hat keine)
     void addTrees(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
     bool addCrown(FrameDesc& fd, const Object& o, const glm::mat4& model, bool low, bool shadow);
+    // Gras, Blumen, Büsche (Flora.h)
+    void addFlora(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
+    // AppUI.cpp: Pausenfenster im Spiel-Modus (ESC) und Einstellungen im Spiel (Grafik wirkt sofort)
+    enum class Pause { None, Menu, Quit };
+    void setPause(Pause p);
+    void drawPauseMenu();
+    void drawSettingsWindow();
+    void changeSettings(const GameSettings& s, bool save);  // übernehmen und (save) in settings.json schreiben
+    void reloadSettings();  // settings.json neu lesen und sofort anwenden (Einstellungsseite des Pausenfensters)
+    void updatePause();     // Pausenfenster des Hauptmenüs: Ereignisse, Wahl abholen (jedes Bild)
     struct GroundWindow {  // Meer: Grund um die Kamera für die Shader, nur neu, wenn die Kamera weit wandert oder er sich ändert
         uint32_t water = 0;
         uint64_t rev = 0;
@@ -383,6 +396,12 @@ private:
     bool showBiomeBorders_ = true;  // Gelände: Linien an den Biomgrenzen
     size_t terrainDrawn_ = 0;       // Geländekacheln im letzten Bild
     size_t treesDrawn_ = 0;         // Bäume des Generators im letzten Bild (ohne die Teile)
+    std::unique_ptr<Flora> flora_;  // Bewuchs des Geländes (nur Bild)
+    bool showFlora_ = true;
+    Pause pause_ = Pause::None;     // Pausenfenster (Spiel-Modus, ESC)
+    bool pauseStopped_ = false;     // die Physik steht, solange es offen ist (allein; im LAN läuft sie weiter)
+    bool showSettings_ = false;     // Fenster "Einstellungen" (Pausenfenster, Datei -> Einstellungen)
+    bool escTaken_ = false;         // ESC wurde in diesem Bild schon verbraucht
 
     // Wärme-Werkzeug (Bau-Modus: Werkzeug H, Spiel-Modus: F halten) und Effekte
     int heatTool_ = 1;                     // Index in heatTools()

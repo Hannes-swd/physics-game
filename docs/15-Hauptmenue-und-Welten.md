@@ -7,7 +7,7 @@ Beim Start öffnet sich das **Hauptmenü**, nicht gleich eine Welt. Es ist mit *
 |---|---|
 | **Spielen** | Liste aller Welten mit Namen und „zuletzt geöffnet“, die zuletzt geöffnete oben |
 | **Mehrspieler** | offene LAN-Spiele im Netz (werden gesucht, solange die Seite offen ist) oder Adresse eintippen, eigener Name |
-| **Einstellungen** | Name im LAN, Mausempfindlichkeit, Sichtfeld, Schatten, Kanten, Raster, automatisch speichern, Ordner der Welten |
+| **Einstellungen** | Name im LAN, Mausempfindlichkeit, Sichtfeld, Schatten, Kanten, Raster, automatisch speichern, Ordner der Welten, **Grafik** (siehe unten) |
 | **Beenden** | Programm beenden (wie das Schließen des Fensters) |
 
 ## Weltliste
@@ -122,8 +122,35 @@ man verändert hat; der Rest entsteht aus dem Seed jedes Mal gleich neu.
 | `shadows`, `edges`, `grid` | an | Schatten, Kanten, Raster (auch im Spiel unter *Ansicht*, das wird beim Verlassen übernommen) |
 | `biomeBorders` | an | Linien an den Biomgrenzen (Gelände; auch im Spiel unter *Ansicht → Biomgrenzen*) |
 | `autosaveMinutes` | 5 | automatisch speichern (0 = nie) |
+| `graphics` | Stufe „Hoch“ | Grafik, siehe unten |
 
-Die Einstellungen gelten, wenn eine Welt geöffnet wird.
+Die Einstellungen gelten, wenn eine Welt geöffnet wird. Im Spiel stellt man sie im **Pausenfenster** um (siehe unten), dort
+gelten sie sofort.
+
+### Grafik
+
+Die **Qualität** setzt alle Werte auf einmal; ändert man danach einen einzelnen, steht dort „Eigene“.
+
+| Wert (`graphics.*`) | Niedrig | Mittel | Hoch | Ultra | Bedeutung |
+|---|---|---|---|---|---|
+| Kantenglättung (`msaa`) | aus | 2× | 4× | 8× | Abtastungen je Pixel: glatte statt treppiger Kanten. Mehr, als die Grafikkarte kann, wird auf ihr Höchstes begrenzt |
+| Supersampling (`supersampling`) | aus | aus | aus | an | jede Abtastung wird ganz berechnet: feine Muster (Holz, Rinde, Gelände, Gras) scharf statt flimmernd. Kostet am meisten |
+| Schattenqualität (`shadowQuality` 0–3) | 2048 px, 10 m | 2048 px, 14 m | 4096 px, 18 m | 8192 px, 36 m | Auflösung der Schattenkarte und wie weit um die Spielfigur Schatten fallen |
+| Sichtweite (`viewDistance`) | 60 % | 80 % | 100 % | 150 % | wie weit Gelände, Bäume und Büsche reichen, wie früh das Gelände feiner wird, Nebel |
+| Gras und Blumen (`plants`) | 40 % | 70 % | 100 % | 150 % | Dichte und Reichweite (0 = kein Gras, siehe [18](18-Bewuchs.md)) |
+| VSync (`vsync`) | – | – | – | – | eigener Schalter: Bildrate an den Bildschirm binden (aus: so schnell wie möglich, kann zerreißen) |
+
+## Pausenfenster im Spiel
+
+Im **Spiel-Modus** öffnet **Esc** das Pausenfenster: **Weiterspielen**, **Modus wechseln** (in den Bau-Modus),
+**Einstellungen** (dieselbe Seite wie im Hauptmenü, alles gilt sofort, auch die Grafik) und **Beenden** (zurück ins
+Hauptmenü oder das Programm beenden; die Welt wird dabei gespeichert). Es gehört zum Menü (`qml/PauseWindow.qml`, gleicher
+Rohbau-Stil) und steht als eigenes kleines Fenster mittig vor dem Spiel. Solange es offen ist, steht die Welt still (im
+LAN läuft sie für die anderen weiter). Esc im Pausenfenster: eine Seite zurück, auf der ersten weiterspielen.
+
+Per Befehl: `pause [on|off|settings|quit]`, `pause set <key> <value>` (wie `menu set`, gilt sofort),
+`pause shot <bild.png>` (Bild des Pausenfensters). Ohne Hauptmenü (Start mit `--world`, `--script`) zeigt das Spiel ein
+einfaches Ersatzfenster.
 
 ## Kommandozeile und Befehle
 

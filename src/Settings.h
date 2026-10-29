@@ -10,7 +10,24 @@ struct GameSettings {
     bool shadows = true, edges = true, grid = true;
     bool biomeBorders = true;        // Gelände: Linien an den Biomgrenzen
     int autosaveMinutes = 5;         // Welt automatisch speichern (0 = nie)
+
+    // Grafik (gilt beim nächsten Öffnen einer Welt). Die Stufen Niedrig..Ultra setzen alle Werte auf einmal
+    int msaa = 4;                    // Kantenglättung: Abtastungen je Pixel (1 = aus, 2, 4, 8)
+    bool supersampling = false;      // Flächen je Abtastung berechnen: feine Muster scharf statt flimmernd (teuer)
+    int shadowQuality = 2;           // 0 Niedrig .. 3 Ultra: Auflösung und Reichweite der Schatten
+    double viewDistance = 1.0;       // Sichtweite (Faktor 0,5..2): Gelände-Detail, Bäume, Büsche, Nebel
+    double plants = 1.0;             // Gras und Blumen (Faktor 0 = aus .. 1,5): Dichte und Reichweite
+    bool vsync = true;               // Bildrate an den Bildschirm binden (kein Zerreißen)
 };
+
+// Grafikstufen: 0 Niedrig, 1 Mittel, 2 Hoch, 3 Ultra
+constexpr int kGraphicsPresets = 4;
+extern const char* const kGraphicsPresetNames[kGraphicsPresets];  // "low", "medium", "high", "ultra"
+void applyGraphicsPreset(GameSettings& s, int preset);
+int graphicsPresetOf(const GameSettings& s);  // die Stufe, zu der alle Werte passen; -1: eigene Werte
+// Schatten je Stufe: Kantenlänge der Schattenkarte (Pixel) und Reichweite um die Spielfigur (m)
+int shadowMapSize(int shadowQuality);
+double shadowRange(int shadowQuality);
 
 GameSettings loadSettings();
 bool saveSettings(const GameSettings& s, std::string* err = nullptr);

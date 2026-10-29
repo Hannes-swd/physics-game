@@ -86,7 +86,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | im Wasser | Waten bremst; ab der Brust schwimmt die Figur: **W** in Blickrichtung (nach unten schauen = tauchen), **Leertaste** hoch, **Strg** runter |
 | **F5** | Ansicht wechseln: durch die Augen der Figur / von hinten über die Schulter |
 | **X** | Axt nehmen / weglegen. Mit der Axt hackt die linke Maustaste eine Kerbe in Holz (bis 2,6 m, ein Hieb alle 0,4 s); ist ein Stamm durch, fällt der Baum vom Hackenden weg ([17](17-Baeume.md)) |
-| **Esc** | Maus freigeben (Pause). Klick ins Bild: weiterspielen |
+| **Esc** | Pausenfenster: Weiterspielen, Modus wechseln, Einstellungen, Beenden; die Welt steht so lange still ([15](15-Hauptmenue-und-Welten.md#pausenfenster-im-spiel)). Esc nochmal: weiterspielen |
 
 Die Spielfigur ist ein Bauarbeiter (Modell von Quaternius, CC0, siehe `assets/characters`). Sie steht, geht und rennt
 je nach Tempo, macht seitwärts und rückwärts eigene Schritte (auch schräg gemischt) und neigt den Kopf mit dem Blick.

@@ -87,6 +87,8 @@ public:
     // ---- je Bild
     // Kacheln um das Auge wählen, Erzeugung anstoßen, Fertiges übernehmen (nur mit Bild)
     void updateView(const glm::dvec3& eye);
+    // Sichtweite (Faktor, Einstellungen -> Grafik): wie weit Gelände gezeichnet wird und wie früh es feiner wird
+    void setViewScale(double s) { viewScale_ = s; }
     // Physik: Höhenfelder für alle Chunks unter diesen Bereichen (Teile, Spielfigur); andere nach einer Weile weg
     void updatePhysics(const std::vector<std::pair<glm::dvec3, glm::dvec3>>& boxes);
 
@@ -154,6 +156,7 @@ private:
 
     std::unordered_map<TerrainKey, Tile, TerrainKeyHash> tiles_;
     std::vector<Drawn> draw_;
+    double viewScale_ = 1.0;
     size_t missing_ = 0, inFlight_ = 0;
     uint64_t nextJob_ = 1;
     std::shared_ptr<Queue> queue_;
