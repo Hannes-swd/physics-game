@@ -243,8 +243,8 @@ private:
     bool addCrown(FrameDesc& fd, const Object& o, const glm::mat4& model, bool low, bool shadow);
     // Gras, Blumen, Büsche (Flora.h)
     void addFlora(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
-    // Steine des Generators, die nur Bild sind (Stones.h)
-    void addStones(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
+    // Zeug am Boden des Generators, das nur Bild ist (Scatter.h): Steine, Stöcke, Stämme, Stümpfe
+    void addScatter(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
     // AppUI.cpp: Pausenfenster im Spiel-Modus (ESC) und Einstellungen im Spiel (Grafik wirkt sofort)
     enum class Pause { None, Menu, Quit };
     void setPause(Pause p);
@@ -398,7 +398,7 @@ private:
     bool showBiomeBorders_ = false; // Gelände: Linien an den Biomgrenzen (Einstellungen)
     size_t terrainDrawn_ = 0;       // Geländekacheln im letzten Bild
     size_t treesDrawn_ = 0;         // Bäume des Generators im letzten Bild (ohne die Teile)
-    size_t stonesDrawn_ = 0;        // Steine des Generators im letzten Bild (ohne die Teile)
+    size_t scatterDrawn_ = 0;       // Zeug am Boden im letzten Bild (ohne die Teile)
     std::unique_ptr<Flora> flora_;  // Bewuchs des Geländes (nur Bild)
     bool showFlora_ = true;
     Pause pause_ = Pause::None;     // Pausenfenster (Spiel-Modus, ESC)

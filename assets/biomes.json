@@ -34,7 +34,10 @@
     "biomes[].flowers":      "Blumen: density = Blumen je m² (wachsen in Gruppen), colors = Farben der Blüten",
     "biomes[].bushes":       "Büsche: per_ha = Büsche je Hektar, size = Durchmesser [von, bis] (m), colors = Laubfarben",
     "biomes[].stones":       "Steine: per_ha = Steine je Hektar, size = Durchmesser [von, bis] (m), skew = je größer, desto mehr kleine (1 = gleich verteilt), material = Material (materials.json)",
-    "stones":                "Steine: distance = bis wohin gezeichnet (m, kleine nur näher), solid_distance = bis wohin große um die Spieler feste Teile sind (m), big = ab diesem Durchmesser (m) ist ein Stein groß: fest, bis man ihn anfasst; kleinere sind nur Bild, bis man sie aufhebt",
+    "biomes[].sticks":       "Stöcke und Äste: per_ha, length = Länge [von, bis] (m), thickness = Dicke [von, bis] (m), skew, material = ein Holz oder eine Liste (zufällig)",
+    "biomes[].logs":         "Umgefallene Stämme: per_ha, length (m), thickness = Durchmesser (m), skew, material",
+    "biomes[].stumps":       "Baumstümpfe: per_ha, height = Höhe (m), thickness = Durchmesser (m), material",
+    "scatter":               "Zeug am Boden (Steine, Stöcke, Stämme, Stümpfe): distance = bis wohin gezeichnet (m, kleine Steine nur näher), stick_distance = bis wohin Stöcke (m), solid_distance = bis wohin große Stücke um die Spieler feste Teile sind (m), big_stone = ab diesem Durchmesser (m) ist ein Stein groß. Kleines ist nur Bild, bis man es aufhebt; Großes ist fest, bis man es anfasst (Stümpfe bleiben fest)",
     "flora":                 "Bewuchs nur im Bild (keine Physik): grass_distance = bis wohin volles Gras und Blumen (m; dahinter bis zum Dreifachen eine grobe Stufe), bush_distance = bis wohin Büsche (m)"
   },
   "version": 1,
@@ -46,7 +49,7 @@
   },
   "border_blend": 0.04,
   "flora": { "grass_distance": 45, "bush_distance": 130 },
-  "stones": { "distance": 250, "solid_distance": 25, "big": 0.3 },
+  "scatter": { "distance": 250, "stick_distance": 45, "solid_distance": 25, "big_stone": 0.3 },
   "rivers": {
     "level":         0.0,
     "spacing":       2500,
@@ -82,6 +85,9 @@
       "flowers":      { "density": 0.25, "colors": [[0.95, 0.95, 0.92], [0.95, 0.82, 0.15], [0.75, 0.15, 0.12], [0.55, 0.40, 0.85]] },
       "bushes":       { "per_ha": 25, "size": [0.6, 1.5], "colors": [[0.15, 0.26, 0.07], [0.19, 0.29, 0.09]] },
       "stones":       { "per_ha": 120, "size": [0.04, 0.9], "skew": 3.5, "material": "fieldstone" },
+      "sticks":       { "per_ha": 40, "length": [0.3, 1.2], "thickness": [0.015, 0.04], "skew": 2, "material": "oak" },
+      "logs":         { "per_ha": 1, "length": [2.5, 6], "thickness": [0.2, 0.45], "material": "oak" },
+      "stumps":       { "per_ha": 2, "height": [0.25, 0.5], "thickness": [0.3, 0.7], "material": "oak" },
       "border_color": [1.0, 0.85, 0.2]
     },
     {
@@ -103,6 +109,9 @@
       "flowers":      { "density": 0.05, "colors": [[0.95, 0.95, 0.95], [0.60, 0.45, 0.90]] },
       "bushes":       { "per_ha": 120, "size": [0.7, 1.8], "colors": [[0.10, 0.19, 0.05], [0.13, 0.21, 0.06], [0.09, 0.16, 0.05]] },
       "stones":       { "per_ha": 150, "size": [0.05, 1.4], "skew": 3.0, "material": "fieldstone" },
+      "sticks":       { "per_ha": 700, "length": [0.3, 1.6], "thickness": [0.015, 0.06], "skew": 2, "material": ["spruce", "spruce", "oak"] },
+      "logs":         { "per_ha": 14, "length": [2.5, 9], "thickness": [0.15, 0.5], "skew": 1.5, "material": ["spruce", "spruce", "oak"] },
+      "stumps":       { "per_ha": 14, "height": [0.25, 0.7], "thickness": [0.25, 0.75], "material": ["spruce", "oak"] },
       "border_color": [0.3, 1.0, 0.35]
     },
     {
@@ -124,6 +133,9 @@
       "flowers":      { "density": 0.12, "colors": [[0.95, 0.95, 0.92], [0.45, 0.35, 0.85], [0.95, 0.80, 0.20]] },
       "bushes":       { "per_ha": 35, "size": [0.5, 1.2], "colors": [[0.14, 0.21, 0.08], [0.18, 0.22, 0.10]] },
       "stones":       { "per_ha": 450, "size": [0.05, 2.2], "skew": 2.5, "material": "fieldstone" },
+      "sticks":       { "per_ha": 120, "length": [0.3, 1.2], "thickness": [0.015, 0.045], "skew": 2, "material": "spruce" },
+      "logs":         { "per_ha": 4, "length": [2.5, 8], "thickness": [0.15, 0.45], "skew": 1.5, "material": "spruce" },
+      "stumps":       { "per_ha": 5, "height": [0.25, 0.6], "thickness": [0.25, 0.6], "material": "spruce" },
       "border_color": [1.0, 0.45, 0.15]
     },
     {

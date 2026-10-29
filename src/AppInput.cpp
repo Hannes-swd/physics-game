@@ -9,7 +9,7 @@
 #include <cmath>
 
 #include "Materials.h"
-#include "Stones.h"
+#include "Scatter.h"
 
 namespace {
 constexpr double kMaxLiftForce = 420.0;  // so viel Kraft (N) bringt die Figur beim Tragen auf
@@ -626,13 +626,13 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
     auto tryGrab = [&](bool byMouse) {
         RayHit h;
         const bool hitPart = world_->raycast(eye, fwd, h, 0) && h.obj && h.t <= 3.5;
-        // Steine des Generators: kleine sind nur Bild, bis man sie nimmt (dann ein echtes Teil); große sind fest, bis man
-        // sie anfasst (dann beweglich, meist aber zu schwer zum Tragen)
-        StoneSpot spot;
+        // Zeug am Boden (Steine, Stöcke, Stämme, Stümpfe): Kleines ist nur Bild, bis man es nimmt (dann ein echtes Teil);
+        // Großes ist fest, bis man es anfasst (dann beweglich, meist aber zu schwer zum Tragen; Stümpfe bleiben fest)
+        ScatterSpot spot;
         double ts = 0;
         Object* o = nullptr;
         glm::dvec3 at;
-        if (world_->pickStone(eye, fwd, hitPart ? h.t : 3.5, spot, ts) && (o = world_->takeStone(spot))) {
+        if (world_->pickScatter(eye, fwd, hitPart ? h.t : 3.5, spot, ts) && (o = world_->takeScatter(spot))) {
             at = eye + fwd * ts;
         } else if (hitPart) {
             o = h.obj;
@@ -640,7 +640,7 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
             ts = h.t;
         }
         if (!o) return;
-        if (o->fixed) world_->wakeStone(*o);
+        if (o->fixed) world_->wakeScatter(*o);
         if (o->fixed || o->body == kNoBody) return;
         hand.grabbed = o->id;
         hand.grabLocal = glm::conjugate(o->rot) * (at - o->pos);

@@ -10,6 +10,7 @@
 
 #include "Materials.h"
 #include "Terrain.h"
+#include "Scatter.h"
 #include "Trees.h"
 #include "WorldGen.h"
 
@@ -519,6 +520,31 @@ std::string App::teleportCommand(const std::vector<std::string>& t) {
         const glm::dvec2 at = glm::dvec2(s.pos.x, s.pos.z) + away * (2.0 + f->library().config().types[(size_t)s.type].diameter * s.scale);
         const glm::dvec3 feet(at.x, world_->groundHeight(at.x, at.y) + 0.05, at.y);
         return done(feet, glm::dvec3(s.pos.x, feet.y + 1.0, s.pos.z), 6.0, "tree " + f->library().config().types[(size_t)s.type].id);
+    }
+
+    // Zeug am Boden: neben das nächste Stück dieser Art (Stein, Stock, Stamm, Stumpf), Blick darauf
+    int scatterKind = -1;
+    for (int k = 0; k < kScatterKinds; ++k)
+        if (w == kScatterNames[k] || w + "s" == kScatterNames[k]) scatterKind = k;
+    if (scatterKind >= 0) {
+        ScatterField* f = world_->scatter();
+        if (!f || !f->any()) return "Error: this world has nothing lying on the ground (flat world, or made before)";
+        std::vector<ScatterSpot> spots;
+        for (double r = 30.0; r <= 960.0; r *= 2.0) {
+            f->around(here2, r, spots);
+            spots.erase(std::remove_if(spots.begin(), spots.end(), [&](const ScatterSpot& s) { return s.kind != scatterKind || world_->scatterHidden(s.key); }),
+                        spots.end());
+            if (!spots.empty()) break;
+        }
+        if (spots.empty()) return std::string("Error: no ") + kScatterNames[scatterKind] + " within 1 km";
+        const ScatterSpot* s = &spots[0];
+        for (const ScatterSpot& c : spots)
+            if (glm::length(glm::dvec2(c.pos.x, c.pos.z) - here2) < glm::length(glm::dvec2(s->pos.x, s->pos.z) - here2)) s = &c;
+        glm::dvec2 away = here2 - glm::dvec2(s->pos.x, s->pos.z);
+        away = glm::length(away) > 1e-6 ? glm::normalize(away) : glm::dvec2(1, 0);
+        const glm::dvec2 at = glm::dvec2(s->pos.x, s->pos.z) + away * (1.5 + f->shape(s->shape).radius * s->size);
+        const glm::dvec3 feet(at.x, world_->groundHeight(at.x, at.y) + 0.05, at.y);
+        return done(feet, s->pos, 4.0, std::string(kScatterNames[scatterKind]).substr(0, std::string(kScatterNames[scatterKind]).size() - 1));
     }
 
     // Biom: die nächste Stelle, an der es ganz es selbst ist; man schaut tiefer hinein

@@ -61,6 +61,9 @@ struct TreeModel {
     GpuMesh woodMesh, leafMesh, woodLowMesh, leafLowMesh;  // nur mit Bild
 };
 TreeModel buildTreeModel(const TreeType& t, uint64_t seed);
+// Kegelstumpf als konvexes Stück: Ringe um c0 und c1 (senkrecht zu axis), Mantel = Rinde (Stamm, Äste, auch Stöcke und
+// liegende Stämme am Boden, Scatter.h)
+solid::Piece barkFrustum(const glm::dvec3& c0, double r0, const glm::dvec3& c1, double r1, const glm::dvec3& axis, int seg);
 
 // Alle Formen einer Welt (aus ihrer trees.json), dazu ihre Netze fürs Bild
 class TreeLibrary {

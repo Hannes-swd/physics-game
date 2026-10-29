@@ -79,7 +79,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **Leertaste** | springen (ca. 1,1 m hoch) |
 | Maus | umschauen |
 | Linke Maustaste **halten** | angeschautes Teil tragen (loslassen = fallen lassen) |
-| **E** | Teil aufnehmen / ablegen, ohne die Taste zu halten. Auch Steine im Gelände: kleine hebt man auf, große werden beim Anfassen beweglich ([19](19-Steine.md)) |
+| **E** | Teil aufnehmen / ablegen, ohne die Taste zu halten. Auch Steine und Holz am Boden: Kleines (Kiesel, Stöcke) hebt man auf, Großes (Felsbrocken, Stämme) wird beim Anfassen beweglich ([19](19-Steine-und-Holz.md)) |
 | Rechte Maustaste | getragenes Teil werfen |
 | Mausrad | Abstand des getragenen Teils ändern |
 | **F** halten | Wärme-Werkzeug (Brenner, Kälte; Auswahl im Bau-Modus unter H) auf das angeschaute Teil richten |

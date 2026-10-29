@@ -17,7 +17,7 @@
 #include "Script.h"
 #include "Solid.h"
 #include "Terrain.h"
-#include "Stones.h"
+#include "Scatter.h"
 #include "Trees.h"
 #include "World.h"
 #include "WorldGen.h"
@@ -1108,15 +1108,16 @@ int runSelfTest() {
         w.setSimulating(true);
         w.setTerrain(std::make_shared<WorldGen>(4711, bcfg, hills), {});
         w2.setTerrain(std::make_shared<WorldGen>(4711, bcfg, hills), {});
-        std::vector<StoneSpot> spots, spots2;
-        w.stones()->around(glm::dvec2(0, 0), 60.0, spots);
-        w2.stones()->around(glm::dvec2(0, 0), 60.0, spots2);
+        std::vector<ScatterSpot> spots, spots2;
+        w.scatter()->around(glm::dvec2(0, 0), 60.0, spots);
+        w2.scatter()->around(glm::dvec2(0, 0), 60.0, spots2);
         bool same = spots.size() == spots2.size();
         for (size_t i = 0; same && i < spots.size(); ++i) same = spots[i].key == spots2[i].key && spots[i].pos == spots2[i].pos && spots[i].size == spots2[i].size;
         int small = 0, big = 0;
-        StoneSpot bigSpot, smallSpot;
-        for (const StoneSpot& s : spots) {
-            if (w.stones()->big(s)) {
+        ScatterSpot bigSpot, smallSpot;
+        for (const ScatterSpot& s : spots) {
+            if (s.kind != kScatterStone) continue;
+            if (w.scatter()->big(s)) {
                 if (big++ == 0) bigSpot = s;
             } else if (small++ == 0) {
                 smallSpot = s;
@@ -1126,27 +1127,75 @@ int runSelfTest() {
               std::to_string(small) + " small, " + std::to_string(big) + " big within 60 m in the hills");
 
         // groß und nah: festes Teil (kostet nichts); kleine bleiben Bild; anfassen macht den großen beweglich
-        w.updateStones({bigSpot.pos}, 10000);
+        w.updateScatter({bigSpot.pos}, 10000);
         Object* rock = nullptr;
         int smallParts = 0;
         for (const auto& op : w.objects())
-            if (World::isGeneratorStone(*op)) {
+            if (World::isGeneratorScatter(*op)) {
                 if (op->treeKey == bigSpot.key) rock = op.get();
-                smallParts += op->wMax.y - op->wMin.y < 0.15;
+                const glm::dvec3 ext = op->wMax - op->wMin;
+                const int kind = ScatterField::kindOf(op->treeKey);
+                smallParts += kind == kScatterStick || (kind == kScatterStone && std::max({ext.x, ext.y, ext.z}) < 0.25);
             }
-        const bool fixedFirst = rock && rock->fixed && w.untouchedTree(*rock) && w.stoneHidden(bigSpot.key);
-        if (rock) w.wakeStone(*rock);
+        const bool fixedFirst = rock && rock->fixed && w.untouchedTree(*rock) && w.scatterHidden(bigSpot.key);
+        if (rock) w.wakeScatter(*rock);
         check(fixedFirst && rock && !rock->fixed && !w.untouchedTree(*rock) && smallParts == 0,
               "big stones near a player are fixed parts, small ones only pictures; touching makes a big one movable",
               rock ? num(rock->mass) + " kg rock" : "no rock part");
 
         // klein: von oben anschauen und aufheben
-        StoneSpot hit;
+        ScatterSpot hit;
         double t = 0;
-        const bool picked = w.pickStone(smallSpot.pos + glm::dvec3(0, 1.0, 0), glm::dvec3(0, -1, 0), 3.0, hit, t);
-        Object* pebble = picked ? w.takeStone(hit) : nullptr;
-        check(pebble && !pebble->fixed && w.stoneHidden(hit.key) && pebble->mass < 40.0 && !w.takeStone(hit),
+        const bool picked = w.pickScatter(smallSpot.pos + glm::dvec3(0, 1.0, 0), glm::dvec3(0, -1, 0), 3.0, hit, t);
+        Object* pebble = picked ? w.takeScatter(hit) : nullptr;
+        check(pebble && !pebble->fixed && w.scatterHidden(hit.key) && pebble->mass < 40.0 && !w.takeScatter(hit),
               "a small stone becomes a movable part when picked up (only once)", pebble ? num(pebble->mass) + " kg" : "nothing hit");
+
+        // Wald: Stöcke (klein, zum Aufheben), umgefallene Stämme (groß: fest, angefasst beweglich), Stümpfe (bleiben fest)
+        World wf(physics, nullptr);
+        wf.setSimulating(true);
+        wf.setTrees(std::make_shared<TreeConfig>(builtinTreeConfig()));
+        wf.setTerrain(std::make_shared<WorldGen>(4711, bcfg, bcfg->findBiome("forest")), {});
+        std::vector<ScatterSpot> fs;
+        wf.scatter()->around(glm::dvec2(0, 0), 80.0, fs);
+        int kinds[kScatterKinds] = {}, logsInTrees = 0;
+        ScatterSpot stick, log, stump;
+        std::vector<TreeSpot> trees;
+        const TreeConfig& tc = wf.trees().config();
+        for (const ScatterSpot& s : fs) {
+            if (kinds[s.kind]++ == 0) (s.kind == kScatterStick ? stick : s.kind == kScatterLog ? log : stump) = s;
+            if (s.kind != kScatterLog) continue;
+            // liegt kein Stamm in einem Baum?
+            const glm::dvec3 axis = s.rot * glm::dvec3(0, 1, 0) * (s.size * 0.5);
+            const glm::dvec2 p(s.pos.x - axis.x, s.pos.z - axis.z), q(s.pos.x + axis.x, s.pos.z + axis.z);
+            wf.forest()->around(glm::dvec2(s.pos.x, s.pos.z), s.size * 0.5 + 3.0, trees);
+            for (const TreeSpot& ts : trees) {
+                const glm::dvec2 c(ts.pos.x, ts.pos.z), pq = q - p;
+                const double u = std::clamp(glm::dot(c - p, pq) / std::max(glm::dot(pq, pq), 1e-12), 0.0, 1.0);
+                logsInTrees += glm::length(c - (p + pq * u)) < tc.types[(size_t)ts.type].diameter * 0.5 * ts.scale;
+            }
+        }
+        check(kinds[kScatterStick] > 100 && kinds[kScatterLog] > 0 && kinds[kScatterStump] > 0 && logsInTrees == 0,
+              "the forest floor has sticks, fallen logs and stumps; no log lies inside a tree",
+              std::to_string(kinds[kScatterStick]) + " sticks, " + std::to_string(kinds[kScatterLog]) + " logs, " +
+                  std::to_string(kinds[kScatterStump]) + " stumps within 80 m");
+        wf.updateScatter({log.pos, stump.pos}, 10000);
+        Object *logPart = nullptr, *stumpPart = nullptr;
+        for (const auto& op : wf.objects()) {
+            if (op->treeKey == log.key) logPart = op.get();
+            if (op->treeKey == stump.key) stumpPart = op.get();
+        }
+        const bool bothFixed = logPart && logPart->fixed && stumpPart && stumpPart->fixed;
+        if (logPart) wf.wakeScatter(*logPart);
+        if (stumpPart) wf.wakeScatter(*stumpPart);
+        check(bothFixed && !logPart->fixed && stumpPart->fixed && logPart->mass > 10.0,
+              "fallen logs and stumps near a player are fixed parts; touching frees a log, a stump stays rooted",
+              logPart ? num(logPart->mass) + " kg log" : "no log part");
+        ScatterSpot twig;
+        const bool pickedStick = wf.pickScatter(stick.pos + glm::dvec3(0, 0.6, 0), glm::dvec3(0, -1, 0), 2.0, twig, t) && twig.kind == kScatterStick;
+        Object* held = pickedStick ? wf.takeScatter(twig) : nullptr;
+        check(held && !held->fixed && held->mass < 8.0 && held->name == "Ast", "a stick becomes a movable piece of wood when picked up",
+              held ? num(held->mass) + " kg" : "nothing hit");
     }
 
     std::printf("== Material file ==\n");

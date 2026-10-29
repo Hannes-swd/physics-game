@@ -175,6 +175,10 @@ void coneTier(std::vector<solid::Vertex>& out, const dvec3& axis0, double y0, do
 
 } // namespace
 
+solid::Piece barkFrustum(const dvec3& c0, double r0, const dvec3& c1, double r1, const dvec3& axis, int seg) {
+    return frustum(c0, r0, c1, r1, axis, seg);
+}
+
 // ============================================================================ trees.json
 
 int TreeConfig::find(const std::string& id) const {

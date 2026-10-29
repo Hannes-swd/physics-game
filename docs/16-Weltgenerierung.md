@@ -153,7 +153,7 @@ Flüsse entstehen ebenfalls nur aus dem Seed, mit dem Gelände zusammen:
 | `biomes[].rivers` | wie viele Flüsse hier Wasser führen (0..1), siehe unten |
 | `biomes[].trees` | Bäume: `per_ha` (je Hektar) und `types` (Arten aus `trees.json` mit Gewicht), siehe [17](17-Baeume.md) |
 | `biomes[].grass`, `flowers`, `bushes` | Bewuchs: Dichte, Höhe, Flecken, Farben, siehe [18](18-Bewuchs.md) (dazu oben `flora`: Reichweiten) |
-| `biomes[].stones` | Steine: je Hektar, Größe, wie viele kleine, Material, siehe [19](19-Steine.md) (dazu oben `stones`: Reichweiten, ab wann groß) |
+| `biomes[].stones`, `sticks`, `logs`, `stumps` | Zeug am Boden: je Hektar, Größe, Dicke, wie viele kleine, Material, siehe [19](19-Steine-und-Holz.md) (dazu oben `scatter`: Reichweiten, ab wann ein Stein groß ist) |
 | `biomes[].border_color` | Farbe der Biomgrenze auf diesem Biom |
 
 Fehler in der Datei werden mit Ort gemeldet (z. B. `biomes[1].climate: unknown value 'warmth'`); dann gilt die beim Bauen

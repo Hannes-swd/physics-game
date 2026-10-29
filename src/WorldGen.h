@@ -22,6 +22,9 @@ constexpr int kClimateCount = 4;
 enum ClimateParam { kTemperature = 0, kHumidity = 1, kContinentalness = 2, kErosion = 3 };
 extern const char* const kClimateNames[kClimateCount];  // "temperature", "humidity", "continentalness", "erosion"
 constexpr int kMaxBiomes = 32;
+// Zeug am Boden (Scatter.h): Steine, Stöcke, umgefallene Stämme, Baumstümpfe
+enum ScatterKind { kScatterStone = 0, kScatterStick = 1, kScatterLog = 2, kScatterStump = 3, kScatterKinds = 4 };
+extern const char* const kScatterNames[kScatterKinds];  // Schlüssel in biomes.json: "stones", "sticks", "logs", "stumps"
 
 struct GenConfig {
     struct Climate {
@@ -58,14 +61,15 @@ struct GenConfig {
             double bushSizeMin = 0.6, bushSizeMax = 1.4;  // Durchmesser (m)
             std::vector<glm::vec3> bushColors;
         } flora;
-        // Steine (Stones.h): wie viele, wie groß (Durchmesser), skew: je größer, desto mehr kleine (1 = gleich verteilt)
-        struct Stones {
-            bool given = false;                       // "stones" steht in der Datei
-            double perHa = 0;                         // Steine je Hektar
-            double sizeMin = 0.05, sizeMax = 0.6;     // m
-            double skew = 3.0;
-            std::string material = "fieldstone";
-        } stones;
+        // Zeug am Boden (Scatter.h), je Art (kScatterNames): wie viele, wie groß, woraus
+        struct Scatter {
+            bool given = false;                        // steht in der Datei
+            double perHa = 0;                          // je Hektar
+            double sizeMin = 0.05, sizeMax = 0.6;      // Steine: größte Ausdehnung, Stöcke/Stämme: Länge, Stümpfe: Höhe (m)
+            double thickMin = 0.02, thickMax = 0.05;   // Stöcke, Stämme, Stümpfe: Durchmesser (m)
+            double skew = 1.0;                         // je größer, desto mehr kleine (1 = alle Größen gleich oft)
+            std::vector<std::string> materials;        // eines davon, zufällig
+        } scatter[kScatterKinds];
     };
     std::vector<Biome> biomes;
     // Flüsse. Fehlt "rivers" in der Datei (alte Welten): keine Flüsse, das Gelände bleibt genau wie vorher
@@ -88,11 +92,11 @@ struct GenConfig {
     struct FloraView {
         double grassDistance = 45, bushDistance = 130;
     } flora;
-    // Steine: bis wohin gezeichnet (m; kleine nur näher, je nach Größe), bis wohin große um die Spieler feste Teile
-    // sind (m), ab welchem Durchmesser ein Stein groß ist (m; kleinere hebt man einfach auf)
-    struct StoneView {
-        double drawDistance = 250, solidDistance = 25, big = 0.3;
-    } stoneView;
+    // Zeug am Boden: bis wohin gezeichnet (m; kleine Steine nur näher, je nach Größe), Stöcke bis stickDistance, bis wohin
+    // große Stücke um die Spieler feste Teile sind (m), ab welcher Größe ein Stein groß ist (m; kleinere hebt man auf)
+    struct ScatterView {
+        double drawDistance = 250, stickDistance = 45, solidDistance = 25, bigStone = 0.3;
+    } scatterView;
     std::string text;          // der JSON-Text, aus dem sie stammen (wird in die Welt kopiert)
 
     int findBiome(const std::string& id) const;  // -1: unbekannt

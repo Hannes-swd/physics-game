@@ -1157,8 +1157,8 @@ void App::drawPlayHud() {
         dl->AddRectFilled(ImVec2(c.x - ts.x / 2 - 8, c.y + 22), ImVec2(c.x + ts.x / 2 + 8, c.y + 26 + ts.y), IM_COL32(0, 0, 0, 140), 4);
         dl->AddText(ImVec2(c.x - ts.x / 2, c.y + 24), IM_COL32(255, 255, 255, 240), info.c_str());
     }
-    if (!cursorCaptured_) {
-        const char* t = "Pausiert - klicken zum Weiterspielen (Tab = Bau-Modus)";
+    if (!cursorCaptured_ && pause_ == Pause::None && !showSettings_) {  // Maus frei (z.B. Konsole), ohne Pausenfenster
+        const char* t = "Maus frei - klicken zum Weiterspielen (Esc = Pause, Tab = Bau-Modus)";
         ImVec2 ts = ImGui::CalcTextSize(t);
         dl->AddRectFilled(ImVec2(c.x - ts.x / 2 - 12, c.y - 60), ImVec2(c.x + ts.x / 2 + 12, c.y - 52 + ts.y), IM_COL32(0, 0, 0, 170), 6);
         dl->AddText(ImVec2(c.x - ts.x / 2, c.y - 56), IM_COL32(255, 220, 160, 255), t);

@@ -506,7 +506,7 @@ void App::updateTerrain() {
             if (p->accepted && physics_.hasCharacter((int)p->id)) treeFocus.push_back(physics_.characterPosition((int)p->id));
     }
     world_->updateTrees(treeFocus, 6);
-    world_->updateStones(treeFocus, 8);  // große Steine in der Nähe als feste Teile
+    world_->updateScatter(treeFocus, 8);  // große Steine, Stämme, Stümpfe in der Nähe als feste Teile
     // Kacheln um das Auge der (perspektivischen) Ansicht; vor dem ersten Bild um das Ziel der Baukamera
     glm::dvec3 eye = play_ ? playerEye() : orbitEye();
     for (const View& v : views_)

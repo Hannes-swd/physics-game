@@ -27,7 +27,7 @@ Anleitung sind deutsch.
 | [16-Weltgenerierung.md](16-Weltgenerierung.md) | Weltgenerierung: Gelände und Biome (Ebene, Wald, Hügel, Wüste) aus dem Seed, Klima, **Flüsse** (mit Tal, echtes Wasser, keine in der Wüste), `biomes.json`, Kacheln und Detailstufen, Physik, Gelände ändern und speichern, Biomgrenzen, Karte (`terrain map`), Befehle `terrain` |
 | [17-Baeume.md](17-Baeume.md) | **Bäume**: Arten (`trees.json`), Wald aus dem Seed je Biom, fällen (Stumpf bleibt, Stamm mit Krone fällt), Holz gewinnen, Baumschule, Teile in der Nähe und Bild in der Ferne, Speichern, Befehle `trees`, `tree`, `tp tree` |
 | [18-Bewuchs.md](18-Bewuchs.md) | **Gras, Blumen, Büsche** je Biom (`biomes.json`: Dichte, Höhe, Flecken, Farben), nur Bild, Wind, Leistung, Befehl `terrain flora` |
-| [19-Steine.md](19-Steine.md) | **Steine** je Biom (`biomes.json`: Anzahl, Größe, Material): nur Bild, bis man sie anfasst; kleine aufheben, große sind in der Nähe fest und werden beim Anfassen beweglich; Speichern wie bei Bäumen |
+| [19-Steine-und-Holz.md](19-Steine-und-Holz.md) | **Steine, Stöcke, umgefallene Stämme, Baumstümpfe** je Biom (`biomes.json`): nur Bild, bis man sie anfasst; Kleines aufheben, Großes ist in der Nähe fest und wird beim Anfassen beweglich (Stümpfe wurzeln); Speichern wie bei Bäumen; `tp stone`, `tp stick`, `tp log`, `tp stump` |
 
 ## Schnellstart
 

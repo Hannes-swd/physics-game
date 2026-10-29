@@ -14,6 +14,7 @@
 #include "Noise.h"
 
 const char* const kClimateNames[kClimateCount] = {"temperature", "humidity", "continentalness", "erosion"};
+const char* const kScatterNames[kScatterKinds] = {"stones", "sticks", "logs", "stumps"};
 
 namespace {
 
@@ -212,16 +213,28 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
         if (f.grassColors.empty()) f.grassColors = {d.color * 1.3f};
         if (f.flowerColors.empty()) f.flowerColors = {glm::vec3(0.9f, 0.85f, 0.2f)};
         if (f.bushColors.empty()) f.bushColors = {glm::vec3(0.12f, 0.22f, 0.06f)};
-        if (const Json& g = b["stones"]; g.type == Json::Object) {
-            const std::string ws = w + ".stones";
-            GenConfig::Biome::Stones& st = d.stones;
+        // Zeug am Boden: "stones" (size), "sticks" und "logs" (length, thickness), "stumps" (height, thickness)
+        for (int k = 0; k < kScatterKinds; ++k) {
+            const Json& g = b[kScatterNames[k]];
+            if (g.type != Json::Object) continue;
+            const std::string ws = w + "." + kScatterNames[k];
+            GenConfig::Biome::Scatter& st = d.scatter[k];
             st.given = true;
-            if (!num(g, "per_ha", st.perHa, err, ws) || !numRange(g, "size", st.sizeMin, st.sizeMax, err, ws) || !num(g, "skew", st.skew, err, ws))
+            const char* sizeKey = k == kScatterStone ? "size" : k == kScatterStump ? "height" : "length";
+            if (!num(g, "per_ha", st.perHa, err, ws) || !numRange(g, sizeKey, st.sizeMin, st.sizeMax, err, ws) ||
+                !numRange(g, "thickness", st.thickMin, st.thickMax, err, ws) || !num(g, "skew", st.skew, err, ws))
                 return fail(err);
-            if (g["material"].type == Json::String) st.material = g["material"].str;
+            if (const Json& m = g["material"]; m.type == Json::String) {
+                st.materials = {m.str};
+            } else if (m.type == Json::Array) {
+                for (size_t i = 0; i < m.size(); ++i)
+                    if (m[i].type == Json::String) st.materials.push_back(m[i].str);
+            }
             st.perHa = std::clamp(st.perHa, 0.0, 5000.0);
-            st.sizeMin = std::clamp(st.sizeMin, 0.02, 5.0);
-            st.sizeMax = std::clamp(st.sizeMax, st.sizeMin, 5.0);
+            st.sizeMin = std::clamp(st.sizeMin, 0.02, 20.0);
+            st.sizeMax = std::clamp(st.sizeMax, st.sizeMin, 20.0);
+            st.thickMin = std::clamp(st.thickMin, 0.005, 3.0);
+            st.thickMax = std::clamp(st.thickMax, st.thickMin, 3.0);
             st.skew = std::clamp(st.skew, 0.2, 10.0);
         }
         c.biomes.push_back(std::move(d));
@@ -268,14 +281,15 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
         c.flora.grassDistance = std::clamp(c.flora.grassDistance, 0.0, 150.0);
         c.flora.bushDistance = std::clamp(c.flora.bushDistance, 0.0, 400.0);
     }
-    if (const Json& sv = j["stones"]; sv.type == Json::Object) {
-        GenConfig::StoneView& v = c.stoneView;
-        if (!num(sv, "distance", v.drawDistance, err, "stones") || !num(sv, "solid_distance", v.solidDistance, err, "stones") ||
-            !num(sv, "big", v.big, err, "stones"))
+    if (const Json& sv = j["scatter"]; sv.type == Json::Object) {
+        GenConfig::ScatterView& v = c.scatterView;
+        if (!num(sv, "distance", v.drawDistance, err, "scatter") || !num(sv, "stick_distance", v.stickDistance, err, "scatter") ||
+            !num(sv, "solid_distance", v.solidDistance, err, "scatter") || !num(sv, "big_stone", v.bigStone, err, "scatter"))
             return fail(err);
         v.drawDistance = std::clamp(v.drawDistance, 0.0, 1000.0);
+        v.stickDistance = std::clamp(v.stickDistance, 0.0, 200.0);
         v.solidDistance = std::clamp(v.solidDistance, 0.0, 100.0);
-        v.big = std::clamp(v.big, 0.05, 5.0);
+        v.bigStone = std::clamp(v.bigStone, 0.05, 5.0);
     }
     out = std::move(c);
     return true;

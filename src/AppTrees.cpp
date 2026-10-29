@@ -10,7 +10,7 @@
 
 #include "Materials.h"
 #include "Profile.h"
-#include "Stones.h"
+#include "Scatter.h"
 #include "Trees.h"
 
 namespace {
@@ -155,11 +155,11 @@ void App::addFlora(FrameDesc& fd, const std::function<bool(const glm::dvec3&, co
     flora_->draw(fd, renderOrigin_, eye, visible);
 }
 
-void App::addStones(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible) {
-    stonesDrawn_ = 0;
-    StoneField* field = world_->stones();
+void App::addScatter(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible) {
+    scatterDrawn_ = 0;
+    ScatterField* field = world_->scatter();
     if (!field || !field->any()) return;
-    PROFILE("app.stones");
+    PROFILE("app.scatter");
     const glm::dvec3 O = renderOrigin_;
     glm::dvec3 eye = play_ ? playerEye() : orbitEye();
     for (const View& v : views_)
@@ -169,8 +169,9 @@ void App::addStones(FrameDesc& fd, const std::function<bool(const glm::dvec3&, c
         }
     const glm::dvec2 e2(eye.x, eye.z);
     const double view = settings_.viewDistance;  // Sichtweite (Einstellungen -> Grafik)
-    const double R = field->view().drawDistance * view, kTile = StoneField::kTile;
+    const double R = field->view().drawDistance * view, kTile = ScatterField::kTile;
     const double perMeter = 350.0 * view;  // ein Stein ist bis zu so viel mal seiner Größe weit zu sehen (kleine nur nah)
+    const double stickR = field->view().stickDistance * view;
     field->prepare(e2, R, 6);  // fehlende Kacheln nach und nach (die nächsten zuerst)
 
     // je Form alle Lagen sammeln, dann hintereinander (der Renderer zeichnet sie in einem Aufruf)
@@ -182,19 +183,25 @@ void App::addStones(FrameDesc& fd, const std::function<bool(const glm::dvec3&, c
             if (!field->tileReady(tx, tz)) continue;
             const glm::dvec2 mid((tx + 0.5) * kTile, (tz + 0.5) * kTile);
             if (glm::length(mid - e2) > R + kTile) continue;
-            const std::vector<StoneSpot>& spots = field->tile(tx, tz, false);
+            const std::vector<ScatterSpot>& spots = field->tile(tx, tz, false);
             if (spots.empty()) continue;
             double lo = 1e30, hi = -1e30;
-            for (const StoneSpot& s : spots) lo = std::min(lo, s.pos.y - s.size), hi = std::max(hi, s.pos.y + s.size);
-            if (!visible(glm::dvec3(tx * kTile - 2.0, lo, tz * kTile - 2.0), glm::dvec3((tx + 1) * kTile + 2.0, hi, (tz + 1) * kTile + 2.0))) continue;
-            for (const StoneSpot& s : spots) {
+            for (const ScatterSpot& s : spots) {
+                const double r = field->shape(s.shape).radius * s.size;
+                lo = std::min(lo, s.pos.y - r), hi = std::max(hi, s.pos.y + r);
+            }
+            const double pad = 6.0;  // liegende Stämme ragen über die Kachel
+            if (!visible(glm::dvec3(tx * kTile - pad, lo, tz * kTile - pad), glm::dvec3((tx + 1) * kTile + pad, hi, (tz + 1) * kTile + pad))) continue;
+            for (const ScatterSpot& s : spots) {
                 const double d = glm::length(s.pos - eye);
-                if (d > std::min(R, s.size * perMeter) || world_->stoneHidden(s.key)) continue;  // schon ein Teil oder weg
-                const StoneShape& sh = field->shape(s.shape);
+                // kleine Steine je nach Größe, Stöcke nur nah, Stämme und Stümpfe bis R
+                const double reach = s.kind == kScatterStone ? std::min(R, s.size * perMeter) : s.kind == kScatterStick ? std::min(R, stickR) : R;
+                if (d > reach || world_->scatterHidden(s.key)) continue;  // schon ein Teil oder weg
+                const ScatterShape& sh = field->shape(s.shape);
                 if (!sh.mesh.valid()) continue;
                 DrawItem it;
                 it.mesh = &sh.mesh;
-                it.castShadow = d < 40.0 && s.size > 0.12;
+                it.castShadow = d < 40.0 && s.kind != kScatterStick && (s.kind != kScatterStone || s.size > 0.12);
                 it.data = woodData(s.material, (float)((s.key * 2654435761ull) % 1000) / 1000.0f);  // Material wie ein Teil
                 it.data.model = glm::translate(glm::mat4(1.0f), glm::vec3(s.pos - O)) * glm::mat4_cast(glm::quat(s.rot)) *
                                 glm::scale(glm::mat4(1.0f), glm::vec3((float)s.size));
@@ -205,6 +212,6 @@ void App::addStones(FrameDesc& fd, const std::function<bool(const glm::dvec3&, c
         for (const DrawItem& it : b) {
             if (fd.items.size() >= kMaxDrawItems) return;
             fd.items.push_back(it);
-            ++stonesDrawn_;
+            ++scatterDrawn_;
         }
 }

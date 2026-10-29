@@ -411,7 +411,7 @@ std::string commandHelp() {
         "  player position x y z | player look <id | x y z> | player turn <deg> [pitch]\n"
         "  player walk <forward|back|left|right> <seconds> [run] | player jump | player stop | player view [first|third]\n"
         "  player grab [id] | player release | player throw [N·s] | player rotate <deg> [tilt]   (carried part, like R)\n"
-        "  tp | tp <biome> | tp river | tp water | tp tree [type] | tp <player> | tp spawn | tp <x> <z> | tp <x> <y> <z>   teleport to the nearest such\n"
+        "  tp | tp <biome> | tp river | tp water | tp tree [type] | tp stone|stick|log|stump | tp <player> | tp spawn | tp <x> <z> | tp <x> <y> <z>   teleport to the nearest such\n"
         "      spot, always onto the surface (build mode: moves the camera; 'tp' alone lists the targets)\n"
         "  tool select|saw [x|y|z] [angle] [kerf_mm]|drill [D_mm] [depth_mm]|round [r_mm] [chamfer]|mill [L W depth]|plane [mm]\n"
         "  tool heat [lighter|gas|welding|spray|nitrogen]   hold the mouse on a part (build) or F (play) to heat/cool it\n"
