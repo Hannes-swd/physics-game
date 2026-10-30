@@ -1,0 +1,8 @@
+{
+  "id": "plank",
+  "label": "Brett 80 cm",
+  "order": 30,
+  "pieces": [
+    { "from": [-0.4, 0, -0.075], "to": [0.4, 0.02, 0.075], "material": "wood" }
+  ]
+}

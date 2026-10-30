@@ -251,6 +251,13 @@ private:
     void planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbPress, bool rmbPress);
     bool planPlacement(const glm::dvec3& eye, const glm::dvec3& fwd, BuildPlan& out, bool& snapped);
     std::string planHudText();
+    const std::vector<PlanTemplate>& planList() const { return planCraft_ ? craftRecipes() : planTemplates(); }
+    int& planIndex() { return planCraft_ ? craftType_ : planType_; }
+    // AppCraft.cpp: Herstellen (C, docs/22-Herstellen.md). Rezept-Hologramm mit Material aus dem Inventar füllen;
+    // fertig kommt das Ergebnis ins Inventar
+    bool craftFill(uint32_t plan);                  // false: kein Rezept-Hologramm
+    void craftDone(uint32_t crafted, const std::string& text);  // hergestelltes Teil ins Inventar (sonst bleibt es liegen)
+    std::string craftNeeds(const PlanTemplate& recipe) const;    // "Holz 180 cm³ (da) + Stein 300 cm³ (im Inventar 40)"
     // AppInventory.cpp: Inventar (E). Teile darin sind nicht mehr in der Welt; begrenzt durch das Gewicht, das die
     // Figur tragen kann. Jedes Teil belegt im Raster so viele Zellen, wie es wiegt (Form etwa wie das Teil)
     struct InvItem {
@@ -461,7 +468,9 @@ private:
     bool invOpen_ = false;
     // Bauvorlagen (AppPlans.cpp): B = Vorlage setzen, E = getragenes Teil einsetzen, Q halten = abbauen
     bool planMode_ = false;
+    bool planCraft_ = false;      // C: Bauplan-Modus zeigt Rezepte zum Herstellen statt Bauvorlagen
     int planType_ = 0;            // Index in planTemplates()
+    int craftType_ = 0;           // Index in craftRecipes()
     int planTurns_ = 0;           // R: je 90°
     bool planFixed_ = true;       // G: fertige Bauteile schweben fest (true) oder echte Physik
     bool planPreviewOk_ = false;

@@ -1,0 +1,9 @@
+{
+  "id": "spear",
+  "label": "Speer",
+  "order": 14,
+  "pieces": [
+    { "from": [-0.8, 0, -0.0125], "to": [0.65, 0.025, 0.0125], "material": "wood" },
+    { "from": [0.65, 0, -0.02], "to": [0.8, 0.025, 0.02], "material": "stone" }
+  ]
+}

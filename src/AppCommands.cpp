@@ -759,6 +759,30 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
                    std::to_string(it.x) + "," + std::to_string(it.y) + " " + std::to_string(it.w) + "x" + std::to_string(it.h);
         return true;
     }
+    if (cmd == "craft" || cmd == "herstellen") {  // Herstellen (C), siehe docs/22; setzen: plan place craft:<rezept> ...
+        const std::string v = t.size() > 1 ? t[1] : "";
+        if (v.empty() || v == "list") {
+            out = "recipes (place with 'plan place craft:<id> <x y z>', or C in play mode):";
+            for (const PlanTemplate& r : craftRecipes()) out += "\n  " + r.id + "  " + r.label + ": " + craftNeeds(r);
+        } else if (v == "fill" && t.size() > 2) {
+            const uint32_t id = (uint32_t)std::strtoul(t[2].c_str(), nullptr, 10);
+            const size_t before = inv_.size();
+            if (!play_ || !craftFill(id)) {
+                out = play_ ? "Error: plan " + t[2] + " is not a recipe hologram" : "Error: crafting from the inventory belongs to play mode";
+                return true;
+            }
+            const BuildPlan* p = world_->findPlan(id);
+            int full = 0;
+            if (p)
+                for (const PlanPiece& c : p->pieces) full += p->pieceDone(c) ? 1 : 0;
+            out = p ? "plan " + t[2] + ": " + std::to_string(full) + "/" + std::to_string(p->pieces.size()) + " pieces full, inventory " +
+                          std::to_string(before) + " -> " + std::to_string(inv_.size()) + " items"
+                    : "plan " + t[2] + " is done, the result is in the inventory (or next to where the hologram was)";
+        } else {
+            out = "Error: craft [list] | craft fill <plan>";
+        }
+        return true;
+    }
     if (cmd == "menu") {
         out = menuCommandInGame(t);
         return true;

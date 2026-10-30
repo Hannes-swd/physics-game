@@ -522,8 +522,11 @@ public:
     bool pickPlan(const glm::dvec3& o, const glm::dvec3& dir, double maxT, uint32_t& plan, int& piece, double& t, bool built = false) const;
     bool planPieceOf(uint32_t objId, uint32_t& plan, int& piece) const;  // ist das Teil ein fertiges Bauteil?
     // Teil in ein Bauteil einsetzen (passendes Material; ist es zu groß, wird nur das Fehlende abgesägt, rest = übriges
-    // Stück). Ist genug drin, wird das Bauteil ein echtes Teil (done). text = Meldung (auch bei false)
-    bool fillPlan(uint32_t plan, int piece, uint32_t objId, std::string& text, bool* done = nullptr, uint32_t* rest = nullptr);
+    // Stück). Ist genug drin, wird das Bauteil ein echtes Teil (done). text = Meldung (auch bei false).
+    // Rezept (Herstellen): Bauteile werden nur voll; ist alles voll, wird aus allen zusammen ein Teil (crafted) und das
+    // Hologramm verschwindet
+    bool fillPlan(uint32_t plan, int piece, uint32_t objId, std::string& text, bool* done = nullptr, uint32_t* rest = nullptr,
+                  uint32_t* crafted = nullptr);
     // fertiges Bauteil abbauen: wird ein loses Teil, an seiner Stelle ist wieder das leere Hologramm
     bool dismantle(uint32_t objId, std::string* err);
     void updatePlans();  // Bauteile, deren Teil verschwunden ist, werden wieder Hologramm

@@ -1,6 +1,8 @@
 // Bauvorlagen (siehe Blueprints.h, docs/20-Bauvorlagen.md): Vorlagen, Hologramme setzen, mit Material füllen, abbauen.
 #include "Blueprints.h"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -25,16 +27,17 @@ std::filesystem::path exeDirectory() {
     return n ? std::filesystem::path(buf).parent_path() : std::filesystem::current_path();
 }
 
-std::filesystem::path builtinDir() {
+// sub: "blueprints" (Bauvorlagen) oder "recipes" (Rezepte zum Herstellen)
+std::filesystem::path builtinDir(const char* sub) {
     std::error_code ec;
     const std::filesystem::path dir = exeDirectory();
-    for (const std::filesystem::path& p : {dir / "blueprints", std::filesystem::current_path(ec) / "assets" / "blueprints",
-                                           dir / "assets" / "blueprints", dir.parent_path().parent_path() / "assets" / "blueprints"})
+    for (const std::filesystem::path& p : {dir / sub, std::filesystem::current_path(ec) / "assets" / sub, dir / "assets" / sub,
+                                           dir.parent_path().parent_path() / "assets" / sub})
         if (std::filesystem::is_directory(p, ec)) return p;
     return {};
 }
 
-std::filesystem::path userDir() { return worlds::dataDir() / "blueprints"; }
+std::filesystem::path userDir(const char* sub = "blueprints") { return worlds::dataDir() / sub; }
 
 bool vec3(const Json& j, glm::dvec3& v) {
     if (j.type != Json::Array || j.size() != 3) return false;
@@ -79,6 +82,7 @@ bool readTemplate(const std::filesystem::path& file, PlanTemplate& t, std::strin
         const Json& q = p["rotation"];  // w x y z
         if (q.type == Json::Array && q.size() == 4) d.rot = glm::normalize(glm::dquat(q[0].num, q[1].num, q[2].num, q[3].num));
         d.mat = matOf(p["material"].str);
+        if (p["main"].type == Json::Bool && p["main"].num != 0) t.mainPiece = (int)t.pieces.size();
         t.pieces.push_back(d);
     }
     if (t.pieces.empty()) {
@@ -88,14 +92,10 @@ bool readTemplate(const std::filesystem::path& file, PlanTemplate& t, std::strin
     return true;
 }
 
-std::vector<PlanTemplate>& templates() {
-    static std::vector<PlanTemplate> t;
-    static bool loaded = false;
-    if (loaded) return t;
-    loaded = true;
+void loadTemplates(const char* sub, bool craft, std::vector<PlanTemplate>& t) {
     std::error_code ec;
     for (int custom = 0; custom < 2; ++custom) {
-        const std::filesystem::path dir = custom ? userDir() : builtinDir();
+        const std::filesystem::path dir = custom ? userDir(sub) : builtinDir(sub);
         if (dir.empty() || !std::filesystem::is_directory(dir, ec)) continue;
         std::vector<std::filesystem::path> files;
         for (const auto& e : std::filesystem::directory_iterator(dir, ec))
@@ -105,10 +105,11 @@ std::vector<PlanTemplate>& templates() {
             PlanTemplate p;
             std::string err;
             if (!readTemplate(f, p, err)) {
-                std::fprintf(stderr, "blueprint %s: %s\n", f.u8string().c_str(), err.c_str());
+                std::fprintf(stderr, "%s %s: %s\n", craft ? "recipe" : "blueprint", f.u8string().c_str(), err.c_str());
                 continue;
             }
             p.custom = custom != 0;
+            p.craft = craft;
             auto it = std::find_if(t.begin(), t.end(), [&](const PlanTemplate& o) { return o.id == p.id; });
             if (it != t.end()) *it = p;  // gleicher Name: die eigene ersetzt die mitgelieferte
             else t.push_back(p);
@@ -116,6 +117,21 @@ std::vector<PlanTemplate>& templates() {
     }
     // Reihenfolge beim Durchblättern: "order" aus der Datei, dann nach Name
     std::stable_sort(t.begin(), t.end(), [](const PlanTemplate& a, const PlanTemplate& b) { return a.order != b.order ? a.order < b.order : a.id < b.id; });
+}
+
+std::vector<PlanTemplate>& templates() {
+    static std::vector<PlanTemplate> t;
+    static bool loaded = false;
+    if (!loaded) loadTemplates("blueprints", false, t);
+    loaded = true;
+    return t;
+}
+
+std::vector<PlanTemplate>& recipes() {
+    static std::vector<PlanTemplate> t;
+    static bool loaded = false;
+    if (!loaded) loadTemplates("recipes", true, t);
+    loaded = true;
     return t;
 }
 
@@ -153,6 +169,16 @@ bool fitsMat(PlanMat m, int material) {
 } // namespace
 
 const std::vector<PlanTemplate>& planTemplates() { return templates(); }
+const std::vector<PlanTemplate>& craftRecipes() { return recipes(); }
+
+const PlanTemplate* planTemplateFor(const std::string& type) {
+    const size_t n = std::char_traits<char>::length(kCraftPrefix);
+    const bool craft = type.rfind(kCraftPrefix, 0) == 0;
+    const std::string id = craft ? type.substr(n) : type;
+    for (const PlanTemplate& t : craft ? recipes() : templates())
+        if (t.id == id) return &t;
+    return nullptr;
+}
 
 bool savePlanTemplate(const PlanTemplate& t, std::string* err) {
     auto& list = templates();
@@ -237,11 +263,11 @@ const char* planMatLabel(PlanMat m) {
 }
 
 bool World::makePlan(const std::string& type, const glm::dvec3& pos, double yaw, bool fixed, BuildPlan& out) const {
-    const int ti = findPlanTemplate(type);
-    if (ti < 0) return false;
-    const PlanTemplate& tp = planTemplates()[(size_t)ti];
+    const PlanTemplate* found = planTemplateFor(type);
+    if (!found) return false;
+    const PlanTemplate& tp = *found;
     out = BuildPlan();
-    out.type = tp.id;
+    out.type = type;
     out.pos = pos;
     out.yaw = yaw;
     out.fixed = fixed;
@@ -277,8 +303,10 @@ BuildPlan* World::addPlan(const std::string& type, const glm::dvec3& pos, double
     BuildPlan p;
     if (!makePlan(type, pos, yaw, fixed, p)) {
         if (err) {
-            *err = "unknown template '" + type + "' (";
-            for (const PlanTemplate& t : planTemplates()) *err += t.id + (&t == &planTemplates().back() ? ")" : ", ");
+            const bool craft = type.rfind(kCraftPrefix, 0) == 0;
+            const auto& list = craft ? craftRecipes() : planTemplates();
+            *err = std::string(craft ? "unknown recipe '" : "unknown template '") + type + "' (";
+            for (const PlanTemplate& t : list) *err += (craft ? kCraftPrefix : "") + t.id + (&t == &list.back() ? ")" : ", ");
         }
         return nullptr;
     }
@@ -308,7 +336,7 @@ bool World::pickPlan(const glm::dvec3& o, const glm::dvec3& dir, double maxT, ui
     for (const BuildPlan& bp : plans_)
         for (size_t i = 0; i < bp.pieces.size(); ++i) {
             const PlanPiece& p = bp.pieces[i];
-            if (p.built && !built) continue;
+            if (bp.pieceDone(p) && !built) continue;
             double ti;
             if (rayBox(o, dir, bp.pieceCenter(p), bp.pieceRot(p), p.half, ti) && ti < t) {
                 t = ti;
@@ -332,9 +360,10 @@ bool World::planPieceOf(uint32_t objId, uint32_t& plan, int& piece) const {
     return false;
 }
 
-bool World::fillPlan(uint32_t planId, int pieceIdx, uint32_t objId, std::string& text, bool* done, uint32_t* rest) {
+bool World::fillPlan(uint32_t planId, int pieceIdx, uint32_t objId, std::string& text, bool* done, uint32_t* rest, uint32_t* crafted) {
     if (done) *done = false;
     if (rest) *rest = 0;
+    if (crafted) *crafted = 0;
     BuildPlan* bp = findPlan(planId);
     Object* o = find(objId);
     if (!bp || pieceIdx < 0 || pieceIdx >= (int)bp->pieces.size()) {
@@ -349,8 +378,8 @@ bool World::fillPlan(uint32_t planId, int pieceIdx, uint32_t objId, std::string&
     const PlanMat want = (PlanMat)pc.mat;
     uint32_t dummyPlan;
     int dummyPiece;
-    if (pc.built) {
-        text = "this piece is already built";
+    if (bp->pieceDone(pc)) {
+        text = bp->craft() ? "this piece is already full" : "this piece is already built";
         return false;
     }
     if (planPieceOf(objId, dummyPlan, dummyPiece)) {
@@ -405,9 +434,46 @@ bool World::fillPlan(uint32_t planId, int pieceIdx, uint32_t objId, std::string&
     }
     if (pc.material < 0) pc.material = material;
     pc.filled += taken;
-    const PlanTemplate* tp = nullptr;
-    if (int ti = findPlanTemplate(bp->type); ti >= 0) tp = &planTemplates()[(size_t)ti];
+    const PlanTemplate* tp = planTemplateFor(bp->type);
     const std::string label = tp ? tp->label : bp->type;
+    if (bp->craft()) {
+        // Rezept: Bauteile werden nur voll; sind alle voll, wird aus allen zusammen ein einziges Teil
+        auto cm3 = [](double v) { return fmtNum(v * 1e6, 0) + " cm3"; };
+        if (pc.filled < pc.volume() * 0.97) {
+            text = label + ": " + cm3(taken) + " inserted, " + cm3(pc.filled) + " of " + cm3(pc.volume());
+            return true;
+        }
+        pc.filled = pc.volume();
+        if (done) *done = true;
+        int left = 0;
+        for (const PlanPiece& p : bp->pieces) left += bp->pieceDone(p) ? 0 : 1;
+        if (left) {
+            text = label + ": piece " + std::to_string(pieceIdx + 1) + " full (" + std::to_string(left) + " to go)";
+            return true;
+        }
+        solid::Solid s;
+        // Material des Ergebnisses: das des Hauptteils ("main"), sonst das des größten Bauteils
+        int main = tp && tp->mainPiece >= 0 && tp->mainPiece < (int)bp->pieces.size() ? tp->mainPiece : -1;
+        const bool mainGiven = main >= 0;
+        for (size_t i = 0; i < bp->pieces.size(); ++i) {
+            const PlanPiece& p = bp->pieces[i];
+            solid::Piece box = solid::makeBox(p.half);
+            solid::transform(box, glm::translate(glm::dmat4(1.0), p.center) * glm::mat4_cast(p.rot));
+            s.pieces.push_back(std::move(box));
+            if (!mainGiven && (main < 0 || p.volume() > bp->pieces[(size_t)main].volume())) main = (int)i;
+        }
+        solid::classifyInternalFaces(s);
+        const int mat = bp->pieces[(size_t)main].material;
+        Object* n = addSolid(std::move(s), mat, bp->pos, bp->rot(), label, "crafted " + (tp ? tp->id : bp->type));
+        if (!n) {
+            text = "could not create " + label;
+            return false;
+        }
+        if (crafted) *crafted = n->id;
+        text = label + " made (" + materials()[(size_t)n->material].label + ", " + fmtNum(n->mass, 2) + " kg)";
+        removePlan(planId);
+        return true;
+    }
     if (pc.filled < pc.volume() * 0.97) {
         text = label + ": " + fmtNum(taken * 1000, 1) + " dm3 inserted, " + fmtNum(pc.filled * 1000, 0) + " of " +
                fmtNum(pc.volume() * 1000, 0) + " dm3";
@@ -506,3 +572,8 @@ bool templateFromParts(World& w, const std::vector<uint32_t>& ids, PlanTemplate&
 }
 
 bool planMatFits(PlanMat m, int material) { return fitsMat(m, material); }
+
+bool planPieceFits(const PlanPiece& p, int material) {
+    if (p.material >= 0) return materialClass(material) == materialClass(p.material);
+    return fitsMat((PlanMat)p.mat, material);
+}

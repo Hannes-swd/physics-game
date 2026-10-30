@@ -1,0 +1,8 @@
+{
+  "id": "stoneslab",
+  "label": "Steinplatte",
+  "order": 33,
+  "pieces": [
+    { "from": [-0.15, 0, -0.15], "to": [0.15, 0.03, 0.15], "material": "stone" }
+  ]
+}

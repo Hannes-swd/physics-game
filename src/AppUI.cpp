@@ -1012,6 +1012,11 @@ void App::drawStatusBar() {
     std::string left;
     if (!status_.empty() && time_ - statusTime_ < 6.0) {
         left = status_;
+    } else if (play_ && planMode_ && planCraft_ && !craftRecipes().empty()) {
+        const int n = (int)craftRecipes().size(), k = std::clamp(craftType_, 0, n - 1);
+        const PlanTemplate& r = craftRecipes()[(size_t)k];
+        left = "HERSTELLEN: " + r.label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) + ") braucht " + craftNeeds(r) +
+               " · Rad / 1-0 wechseln · R drehen · Maus links hinlegen · C / rechts fertig";
     } else if (play_ && planMode_ && !planTemplates().empty()) {
         const int n = (int)planTemplates().size(), k = std::clamp(planType_, 0, n - 1);
         left = "BAUPLAN: " + planTemplates()[(size_t)k].label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) +
@@ -1021,7 +1026,7 @@ void App::drawStatusBar() {
         left = "AXT: Maus links hackt (auf Holz zielen, bis 2,6 m) · X Axt weglegen · WASD laufen · Tab Bauen";
     } else if (play_) {
         left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · F " +
-               std::string(heatTools()[heatTool_].label) + " · X Axt · B Bauplan · Tab Bauen";
+               std::string(heatTools()[heatTool_].label) + " · X Axt · B Bauplan · C Herstellen · Tab Bauen";
     } else if (Object* o = world_->find(hovered_)) {
         left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg";
         if (!o->heat.empty() && (std::abs(o->heatInfo.tMax - world_->ambient()) > 5 || o->heatInfo.tMin < world_->ambient() - 5))

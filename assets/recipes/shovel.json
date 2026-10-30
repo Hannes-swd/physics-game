@@ -1,0 +1,9 @@
+{
+  "id": "shovel",
+  "label": "Holzschaufel",
+  "order": 15,
+  "pieces": [
+    { "from": [-0.6, 0, -0.015], "to": [0.4, 0.03, 0.015], "material": "wood" },
+    { "from": [0.4, 0, -0.1], "to": [0.65, 0.02, 0.1], "material": "wood" }
+  ]
+}

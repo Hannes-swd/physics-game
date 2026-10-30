@@ -28,6 +28,9 @@ struct PlanTemplate {
     bool toGround = false;       // Fundament: Bauteile reichen von oben (y = 0) bis in den Boden
     int order = 1000;            // Reihenfolge beim Durchblättern (kleiner = früher), dann nach Name
     bool custom = false;         // selbst erstellt (gespeichert in %APPDATA%\Werkstatt\blueprints.txt)
+    // Rezept (Herstellen, docs/22-Herstellen.md): fertig gefüllt wird daraus ein einziges Teil, das ins Inventar kommt
+    bool craft = false;
+    int mainPiece = -1;          // aus dem Material dieses Bauteils ist das Ergebnis ("main": true; -1 = das größte)
 };
 
 // eingebaute und eigene Vorlagen (eigene werden beim ersten Aufruf aus der Datei gelesen)
@@ -36,6 +39,11 @@ const std::vector<PlanTemplate>& planTemplates();
 bool savePlanTemplate(const PlanTemplate& t, std::string* err);
 bool deletePlanTemplate(const std::string& id, std::string* err);
 int findPlanTemplate(const std::string& name);  // -1: unbekannt
+// Rezepte zum Herstellen: assets/recipes/*.json und %APPDATA%\Werkstatt\recipes\*.json, gleiches Format wie Vorlagen
+const std::vector<PlanTemplate>& craftRecipes();
+// Gesetzte Rezepte heißen "craft:<id>" (BuildPlan::type), Bauvorlagen nur "<id>"
+constexpr const char* kCraftPrefix = "craft:";
+const PlanTemplate* planTemplateFor(const std::string& type);  // Vorlage oder Rezept zu BuildPlan::type, nullptr: unbekannt
 const char* planMatLabel(PlanMat m);
 bool planMatFits(PlanMat m, int material);  // passt das Material (Index in materials()) zu dieser Art?
 
@@ -49,6 +57,8 @@ struct PlanPiece {
     uint32_t built = 0;             // fertig: Nummer des echten Teils (0 = noch Hologramm)
     double volume() const { return 8.0 * half.x * half.y * half.z; }
 };
+// passt das Material in dieses Bauteil? (Art des Bauteils, und hat es schon Material: dieselbe Art wie das)
+bool planPieceFits(const PlanPiece& p, int material);
 
 // Eine gesetzte Vorlage
 struct BuildPlan {
@@ -61,9 +71,11 @@ struct BuildPlan {
     glm::dquat rot() const { return glm::angleAxis(yaw, glm::dvec3(0, 1, 0)); }
     glm::dvec3 pieceCenter(const PlanPiece& p) const { return pos + rot() * p.center; }
     glm::dquat pieceRot(const PlanPiece& p) const { return rot() * p.rot; }
+    bool craft() const { return type.rfind(kCraftPrefix, 0) == 0; }  // Rezept: Bauteile werden nur gefüllt, nicht gebaut
+    bool pieceDone(const PlanPiece& p) const { return p.built || (craft() && p.filled >= p.volume() * 0.97); }
     bool complete() const {
         for (const PlanPiece& p : pieces)
-            if (!p.built) return false;
+            if (!pieceDone(p)) return false;
         return !pieces.empty();
     }
 };

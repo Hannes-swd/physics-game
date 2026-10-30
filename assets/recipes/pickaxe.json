@@ -1,0 +1,9 @@
+{
+  "id": "pickaxe",
+  "label": "Spitzhacke",
+  "order": 11,
+  "pieces": [
+    { "from": [-0.33, 0, -0.0175], "to": [0.27, 0.035, 0.0175], "material": "wood" },
+    { "from": [0.27, 0, -0.2], "to": [0.33, 0.04, 0.2], "material": "stone" }
+  ]
+}

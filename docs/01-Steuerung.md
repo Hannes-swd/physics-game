@@ -87,6 +87,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | im Wasser | Waten bremst; ab der Brust schwimmt die Figur: **W** in Blickrichtung (nach unten schauen = tauchen), **Leertaste** hoch, **Strg** runter |
 | **F5** | Ansicht wechseln: durch die Augen der Figur / von hinten über die Schulter |
 | **B** | Bauplan-Modus: Vorlage (Wand, Boden, Treppe …) als Hologramm setzen; mit Teil in der Hand auf ein Hologramm schauen + **E** = einsetzen; **Q** halten = abbauen ([20](20-Bauvorlagen.md)) |
+| **C** | Herstellen: Rezept (Steinaxt, Brett, Hocker …) als oranges Hologramm hinlegen; mit leerer Hand darauf schauen + **E** = aus dem Inventar füllen; fertig kommt es ins Inventar ([22](22-Herstellen.md)) |
 | **X** | Axt nehmen / weglegen. Mit der Axt hackt die linke Maustaste eine Kerbe in Holz (bis 2,6 m, ein Hieb alle 0,4 s); ist ein Stamm durch, fällt der Baum vom Hackenden weg ([17](17-Baeume.md)) |
 | **Esc** | Pausenfenster: Weiterspielen, Modus wechseln, Einstellungen, Beenden; die Welt steht so lange still ([15](15-Hauptmenue-und-Welten.md#pausenfenster-im-spiel)). Esc nochmal: weiterspielen |
 

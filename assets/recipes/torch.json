@@ -1,0 +1,9 @@
+{
+  "id": "torch",
+  "label": "Fackel",
+  "order": 16,
+  "pieces": [
+    { "from": [-0.25, 0, -0.015], "to": [0.2, 0.03, 0.015], "material": "wood" },
+    { "from": [0.2, 0, -0.025], "to": [0.3, 0.05, 0.025], "material": "wood" }
+  ]
+}

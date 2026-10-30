@@ -1,0 +1,9 @@
+{
+  "id": "hammer",
+  "label": "Steinhammer",
+  "order": 12,
+  "pieces": [
+    { "from": [-0.18, 0, -0.015], "to": [0.12, 0.03, 0.015], "material": "wood" },
+    { "from": [0.12, 0, -0.06], "to": [0.18, 0.06, 0.06], "material": "stone" }
+  ]
+}

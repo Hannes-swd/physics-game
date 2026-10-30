@@ -7,7 +7,7 @@ herausnimmt. Grenze ist das Gewicht: zusammen höchstens **30 kg**.
 
 | Eingabe | Wirkung |
 |---|---|
-| **E** (nichts in der Hand) | Inventar öffnen; im Fenster **E** oder **ESC**: schließen |
+| **E** (nichts in der Hand) | Inventar öffnen; im Fenster **E** oder **ESC**: schließen. Schaut man auf ein Rezept-Hologramm, wird es stattdessen aus dem Inventar gefüllt ([22](22-Herstellen.md)) |
 | **E** (Teil in der Hand) | Teil ins Inventar. Schaut man dabei auf ein Hologramm, wird es stattdessen eingesetzt ([20](20-Bauvorlagen.md)) |
 | **F** | das Teil, auf das man schaut, direkt ins Inventar, auch Kiesel und Stöcke am Boden |
 | Rechtsklick auf ein Kästchen (oder mit rechts aus dem Fenster ziehen und loslassen) | Teil herausnehmen: es hängt vor der Figur |

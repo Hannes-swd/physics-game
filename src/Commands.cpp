@@ -1530,7 +1530,7 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         const std::string sub = word(1);
         auto planText = [&](const BuildPlan& p) {
             int built = 0;
-            for (const PlanPiece& c : p.pieces) built += c.built ? 1 : 0;
+            for (const PlanPiece& c : p.pieces) built += p.pieceDone(c) ? 1 : 0;
             return "plan " + std::to_string(p.id) + ": " + p.type + " at " + v3(p.pos) + " cm, " + fmtNum(glm::degrees(p.yaw), 0) + " deg, " +
                    (p.fixed ? "fixed" : "physics") + ", " + std::to_string(built) + "/" + std::to_string(p.pieces.size()) + " built";
         };
@@ -1538,6 +1538,9 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             out << "templates:";
             for (const PlanTemplate& t : planTemplates())
                 out << "\n  " << t.id << "  " << t.label << " (" << t.pieces.size() << " pieces" << (t.custom ? ", own" : "") << ")";
+            out << "\nrecipes (docs/22-Herstellen.md):";
+            for (const PlanTemplate& t : craftRecipes())
+                out << "\n  " << kCraftPrefix << t.id << "  " << t.label << " (" << t.pieces.size() << " pieces" << (t.custom ? ", own" : "") << ")";
             out << "\nplaced: " << w.plans().size();
             for (const BuildPlan& p : w.plans()) out << "\n  " << planText(p);
             res.text = out.str();
@@ -1577,7 +1580,7 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             int piece = (int)pi - 1;
             if (word(3) == "auto")
                 for (size_t i = 0; i < p->pieces.size() && piece < 0; ++i)
-                    if (!p->pieces[i].built) piece = (int)i;
+                    if (!p->pieceDone(p->pieces[i])) piece = (int)i;
             w.pushUndo();
             std::string msg;
             if (!w.fillPlan(p->id, piece, o->id, msg)) {

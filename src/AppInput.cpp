@@ -691,15 +691,29 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
         if (!world_->pickPlan(eye, fwd, maxT, plan, piece, t)) return false;
         world_->pushUndo();
         std::string msg;
-        uint32_t rest = 0;
-        const bool ok = world_->fillPlan(plan, piece, hand.grabbed, msg, nullptr, &rest);
+        uint32_t rest = 0, crafted = 0;
+        const bool ok = world_->fillPlan(plan, piece, hand.grabbed, msg, nullptr, &rest, &crafted);
         if (!ok) world_->dropUndo();
-        if (&hand == &hand_) toast(msg, ok);
         if (ok) {  // der abgesägte Rest bleibt in der Hand (an seiner Mitte gehalten)
             hand.grabbed = rest;
             hand.grabLocal = glm::dvec3(0);
         }
+        if (crafted && &hand == &hand_) {
+            world_->dropUndo();  // das Ergebnis ist im Inventar: Rückgängig würde es verdoppeln
+            craftDone(crafted, msg);
+        } else if (&hand == &hand_) {
+            toast(msg, ok);
+        }
         return true;
+    };
+    // Leere Hand, Blick auf ein Rezept-Hologramm: E füllt es mit passendem Material aus dem Inventar
+    auto tryCraftFill = [&]() {
+        RayHit h;
+        const double maxT = world_->raycast(eye, fwd, h, 0) ? std::min(4.5, h.t) : 4.5;
+        uint32_t plan;
+        int piece;
+        double t;
+        return world_->pickPlan(eye, fwd, maxT, plan, piece, t) && craftFill(plan);
     };
     // Eigene Figur: E mit einem Teil in der Hand steckt es ins Inventar (außer auf ein Hologramm), ohne öffnet E das
     // Inventar. Mitspieler (kein Inventar): E nimmt auf und legt ab wie bisher
@@ -708,7 +722,7 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
         if (hand.grabbed) {
             if (!tryInsert() && !(own && invStore(hand.grabbed)) && !own) hand.grabbed = 0;
         } else if (own) {
-            invOpen(true);
+            if (!tryCraftFill()) invOpen(true);
         } else {
             tryGrab(false);
         }

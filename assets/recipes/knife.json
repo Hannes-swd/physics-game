@@ -1,0 +1,9 @@
+{
+  "id": "knife",
+  "label": "Steinmesser",
+  "order": 13,
+  "pieces": [
+    { "from": [-0.11, 0, -0.0125], "to": [-0.01, 0.02, 0.0125], "material": "wood" },
+    { "from": [-0.01, 0, -0.015], "to": [0.11, 0.008, 0.015], "material": "stone", "main": true }
+  ]
+}

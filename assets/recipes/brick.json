@@ -1,0 +1,8 @@
+{
+  "id": "brick",
+  "label": "Mauerstein",
+  "order": 32,
+  "pieces": [
+    { "from": [-0.12, 0, -0.0575], "to": [0.12, 0.07, 0.0575], "material": "stone" }
+  ]
+}
