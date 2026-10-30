@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "Blueprints.h"
 #include "Chunks.h"
 #include "Collision.h"
 #include "Physics.h"
@@ -508,6 +509,24 @@ public:
     void wakeScatter(Object& o);
     bool scatterHidden(uint64_t key) const { return treesTaken_.count(key) || scatterObjects_.count(key); }
 
+    // ---------------------------------------------------------- Bauvorlagen (Blueprints.cpp, docs/20-Bauvorlagen.md)
+    // Vorlage berechnen, ohne sie zu setzen (Vorschau). Fundamente reichen bis in den Boden. false: unbekannte Vorlage
+    bool makePlan(const std::string& type, const glm::dvec3& pos, double yaw, bool fixed, BuildPlan& out) const;
+    BuildPlan* addPlan(const std::string& type, const glm::dvec3& pos, double yaw, bool fixed, std::string* err);
+    bool removePlan(uint32_t id);  // Hologramm weg, fertige Bauteile bleiben als normale Teile stehen
+    BuildPlan* findPlan(uint32_t id);
+    const std::vector<BuildPlan>& plans() const { return plans_; }
+    // Blick gegen die Hologramme (built = true: auch fertige Bauteile). t = Abstand
+    bool pickPlan(const glm::dvec3& o, const glm::dvec3& dir, double maxT, uint32_t& plan, int& piece, double& t, bool built = false) const;
+    bool planPieceOf(uint32_t objId, uint32_t& plan, int& piece) const;  // ist das Teil ein fertiges Bauteil?
+    // Teil in ein Bauteil einsetzen (passendes Material; ist es zu groß, wird nur das Fehlende abgesägt, rest = übriges
+    // Stück). Ist genug drin, wird das Bauteil ein echtes Teil (done). text = Meldung (auch bei false)
+    bool fillPlan(uint32_t plan, int piece, uint32_t objId, std::string& text, bool* done = nullptr, uint32_t* rest = nullptr);
+    // fertiges Bauteil abbauen: wird ein loses Teil, an seiner Stelle ist wieder das leere Hologramm
+    bool dismantle(uint32_t objId, std::string* err);
+    void updatePlans();  // Bauteile, deren Teil verschwunden ist, werden wieder Hologramm
+    std::vector<BuildPlan>& editablePlans() { return plans_; }  // Laden
+
     // ---------------------------------------------------------- Rückgängig
     void pushUndo();
     void dropUndo() { if (!undo_.empty()) undo_.pop_back(); }  // letzten Merkpunkt verwerfen (es hat sich nichts geändert)
@@ -559,7 +578,8 @@ private:
         std::vector<ObjectState> objects;
         std::vector<JointState> joints;
         std::vector<WaterBody> waters;
-        uint32_t nextId = 1, nextJointId = 1, nextWaterId = 1;
+        std::vector<BuildPlan> plans;
+        uint32_t nextId = 1, nextJointId = 1, nextWaterId = 1, nextPlanId = 1;
     };
     Joint* addJoint(JointState s, std::string* err);
     void computeCapacity(Joint& j);
@@ -637,6 +657,8 @@ private:
     bool legacyCollision_ = false;
     std::vector<std::unique_ptr<Joint>> joints_;
     uint32_t nextJointId_ = 1;
+    std::vector<BuildPlan> plans_;   // gesetzte Bauvorlagen
+    uint32_t nextPlanId_ = 1;
     bool breakage_ = true;
     int brokenCount_ = 0;
     std::vector<std::string> events_;

@@ -555,7 +555,7 @@ void App::leavePlay() {
     orbitPitch_ = -playPitch_;
 }
 
-void App::playInput(float) {
+void App::playInput(float dt) {
     ImGuiIO& io = ImGui::GetIO();
     double cx, cy;
     glfwGetCursorPos(window_, &cx, &cy);
@@ -589,8 +589,11 @@ void App::playInput(float) {
     // Axt: X nimmt sie (oder legt sie weg); dann hackt die linke Maustaste statt zu tragen
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_X, false)) {
         axe_ = !axe_;
+        if (axe_) planMode_ = false;
         toast(axe_ ? "Axt in der Hand: Linksklick auf Holz hackt (X legt sie weg)" : "Axt weggelegt");
     }
+    // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
+    planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
     if (axe_ && lmbDown && !prevLmb_ && time_ >= axeReady_) {
         axeReady_ = time_ + 0.4;  // ein Hieb braucht etwas Zeit
         if (lookHit_.obj && lookHit_.t < 2.6) {
@@ -609,6 +612,11 @@ void App::playInput(float) {
     in.ePresses = !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false);
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_R, false)) ++(io.KeyShift ? in.tilts : in.turns);
     in.scroll = scrollAccum_;
+    if (planMode_) {  // die Maus setzt Vorlagen, R dreht sie: nicht tragen, werfen, drehen
+        in.lmbDown = false;
+        in.lmbPresses = in.rmbPresses = in.turns = in.tilts = 0;
+        in.scroll = 0;
+    }
     if (netClient()) {  // Tragen und Werfen rechnet der Gastgeber: sammeln, netUpdate schickt es
         netHand_.lmbDown = in.lmbDown;
         netHand_.lmbPresses += in.lmbPresses;
@@ -651,9 +659,32 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
         physics_.activate(o->body);
     };
     // Maus links halten = tragen, E = aufnehmen/ablegen ohne Halten
+    // Trägt man etwas und schaut auf ein Hologramm einer Bauvorlage, setzt E es dort ein (zu Großes wird abgesägt)
+    auto tryInsert = [&]() {
+        RayHit h;
+        const double maxT = world_->raycast(eye, fwd, h, hand.grabbed) ? std::min(4.5, h.t) : 4.5;
+        uint32_t plan;
+        int piece;
+        double t;
+        if (!world_->pickPlan(eye, fwd, maxT, plan, piece, t)) return false;
+        world_->pushUndo();
+        std::string msg;
+        uint32_t rest = 0;
+        const bool ok = world_->fillPlan(plan, piece, hand.grabbed, msg, nullptr, &rest);
+        if (!ok) world_->dropUndo();
+        if (&hand == &hand_) toast(msg, ok);
+        if (ok) {  // der abgesägte Rest bleibt in der Hand (an seiner Mitte gehalten)
+            hand.grabbed = rest;
+            hand.grabLocal = glm::dvec3(0);
+        }
+        return true;
+    };
     for (int i = 0; i < in.ePresses; ++i) {
-        if (hand.grabbed) hand.grabbed = 0;
-        else tryGrab(false);
+        if (hand.grabbed) {
+            if (!tryInsert()) hand.grabbed = 0;
+        } else {
+            tryGrab(false);
+        }
     }
     if (in.ePresses == 0 && in.lmbPresses > 0 && !hand.grabbed) tryGrab(true);
     if (hand.grabbed && hand.heldByMouse && !in.lmbDown) hand.grabbed = 0;

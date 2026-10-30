@@ -245,6 +245,10 @@ private:
     void addFlora(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
     // Zeug am Boden des Generators, das nur Bild ist (Scatter.h): Steine, Stöcke, Stämme, Stümpfe
     void addScatter(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
+    void addPlans(FrameDesc& fd);  // Hologramme der Bauvorlagen
+    void planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbPress, bool rmbPress);
+    bool planPlacement(const glm::dvec3& eye, const glm::dvec3& fwd, BuildPlan& out, bool& snapped);
+    std::string planHudText();
     // AppUI.cpp: Pausenfenster im Spiel-Modus (ESC) und Einstellungen im Spiel (Grafik wirkt sofort)
     enum class Pause { None, Menu, Quit };
     void setPause(Pause p);
@@ -431,6 +435,18 @@ private:
     glm::dvec2 autoMove_{0};      // per Befehl: x = vorwärts, y = rechts
     double autoMoveTime_ = 0;
     bool axe_ = false;            // Spiel-Modus: Axt in der Hand (X), Linksklick hackt
+    // Bauvorlagen (AppPlans.cpp): B = Vorlage setzen, E = getragenes Teil einsetzen, Q halten = abbauen
+    bool planMode_ = false;
+    int planType_ = 0;            // Index in planTemplates()
+    int planTurns_ = 0;           // R: je 90°
+    bool planFixed_ = true;       // G: fertige Bauteile schweben fest (true) oder echte Physik
+    bool planPreviewOk_ = false;
+    bool planSnapped_ = false;
+    BuildPlan planPreview_;
+    uint32_t planLook_ = 0;       // angeschautes Hologramm (Vorlage, Bauteil)
+    int planLookPiece_ = -1;
+    double dismantleHold_ = 0;    // so lange wird Q schon auf dasselbe Bauteil gehalten
+    uint32_t dismantleId_ = 0;
     double axeReady_ = 0;         // nächster Hieb frühestens dann (Spielzeit)
     bool autoRun_ = false, jumpRequest_ = false;
     double playYaw_ = 0, playPitch_ = 0;

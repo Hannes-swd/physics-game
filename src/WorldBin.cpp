@@ -7,19 +7,21 @@
 //   Verbindungen: Anzahl, je writeJoint
 //   Gewässer:    Anzahl, je Werte und Grund (Meer)
 //   Bäume:       Anzahl entfernter, je Platz (u64)
+//   ab Version 2: nächste Vorlagen-Nummer, Bauvorlagen: Anzahl, je Vorlage Werte und Bauteile
 #include "World.h"
 
 #include <cstring>
 #include <fstream>
 #include <sstream>
 
+#include "Materials.h"
 #include "ObjectIO.h"
 #include "Profile.h"
 
 namespace {
 
 constexpr char kMagic[8] = {'W', 'K', 'B', 'I', 'N', 0, 0, 0};
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;
 
 void u64(net::Writer& w, uint64_t v) {
     w.u32((uint32_t)v);
@@ -80,6 +82,25 @@ bool World::saveBinary(const std::filesystem::path& file, std::string* err) cons
     }
     w.u32((uint32_t)treesTaken_.size());
     for (uint64_t k : treesTaken_) u64(w, k);
+    w.u32(nextPlanId_);
+    w.u32((uint32_t)plans_.size());
+    for (const BuildPlan& p : plans_) {
+        w.u32(p.id);
+        w.str(p.type);
+        w.dvec3(p.pos);
+        w.f64(p.yaw);
+        w.u8(p.fixed);
+        w.u32((uint32_t)p.pieces.size());
+        for (const PlanPiece& c : p.pieces) {
+            w.dvec3(c.center);
+            w.dvec3(c.half);
+            w.dquat(c.rot);
+            w.u32((uint32_t)c.mat);
+            w.f64(c.filled);
+            w.u32((uint32_t)(c.material + 1));
+            w.u32(c.built);
+        }
+    }
 
     std::string data = w.data();
     std::memcpy(data.data(), kMagic, 8);
@@ -146,6 +167,29 @@ bool World::loadBinary(const std::filesystem::path& file, std::string* err, cons
     std::unordered_set<uint64_t> taken;
     const uint32_t nt = readCount(r, 8);
     for (uint32_t i = 0; i < nt && r.ok(); ++i) taken.insert(u64(r));
+    uint32_t nextPlanId = 1;
+    std::vector<BuildPlan> plans;
+    if (version >= 2) {
+        nextPlanId = r.u32();
+        plans.resize(readCount(r, 16));
+        for (BuildPlan& p : plans) {
+            p.id = r.u32();
+            p.type = r.str();
+            p.pos = r.dvec3();
+            p.yaw = r.f64();
+            p.fixed = r.u8() != 0;
+            p.pieces.resize(readCount(r, 64));
+            for (PlanPiece& c : p.pieces) {
+                c.center = r.dvec3();
+                c.half = r.dvec3();
+                c.rot = r.dquat();
+                c.mat = (int)r.u32();
+                c.filled = r.f64();
+                c.material = std::min((int)r.u32() - 1, (int)materials().size() - 1);
+                c.built = r.u32();
+            }
+        }
+    }
     if (!r.ok()) return fail("damaged (cut short)");
 
     clear();
@@ -164,5 +208,8 @@ bool World::loadBinary(const std::filesystem::path& file, std::string* err, cons
     for (auto& o : objects_) nextId_ = std::max(nextId_, o->id + 1);
     for (const JointState& j : joints) addJoint(j, nullptr);
     nextJointId_ = std::max(nextJointId_, nextJointId);
+    plans_ = std::move(plans);
+    nextPlanId_ = nextPlanId;
+    for (const BuildPlan& p : plans_) nextPlanId_ = std::max(nextPlanId_, p.id + 1);
     return true;
 }

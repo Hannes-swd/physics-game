@@ -28,6 +28,7 @@ Anleitung sind deutsch.
 | [17-Baeume.md](17-Baeume.md) | **Bäume**: Arten (`trees.json`), Wald aus dem Seed je Biom, fällen (Stumpf bleibt, Stamm mit Krone fällt), Holz gewinnen, Baumschule, Teile in der Nähe und Bild in der Ferne, Speichern, Befehle `trees`, `tree`, `tp tree` |
 | [18-Bewuchs.md](18-Bewuchs.md) | **Gras, Blumen, Büsche** je Biom (`biomes.json`: Dichte, Höhe, Flecken, Farben), nur Bild, Wind, Leistung, Befehl `terrain flora` |
 | [19-Steine-und-Holz.md](19-Steine-und-Holz.md) | **Steine, Stöcke, umgefallene Stämme, Baumstümpfe** je Biom (`biomes.json`): nur Bild, bis man sie anfasst; Kleines aufheben, Großes ist in der Nähe fest und wird beim Anfassen beweglich (Stümpfe wurzeln); Speichern wie bei Bäumen; `tp stone`, `tp stick`, `tp log`, `tp stump` |
+| [20-Bauvorlagen.md](20-Bauvorlagen.md) | **Bauvorlagen**: Wand, Fenster, Tür, Steinwand, Boden, Fundament, Treppe, Pfosten, Geländer, Dach als blaues Hologramm setzen (B), mit echtem Material füllen (E), abbauen (Q halten); fest schwebend oder mit Physik; eigene Vorlagen aus gebauten Teilen (`plan save`), alles als JSON-Dateien |
 
 ## Schnellstart
 

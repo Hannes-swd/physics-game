@@ -699,6 +699,8 @@ void World::clear() {
     for (auto& j : joints_)
         if (j->constraint) physics_.destroyConstraint(j->constraint);
     joints_.clear();
+    plans_.clear();
+    nextPlanId_ = 1;
     for (auto& o : objects_) releaseAll(*o);
     objects_.clear();
     grid_.clear();
@@ -2019,6 +2021,8 @@ World::Snapshot World::capture() const {
     for (auto& o : objects_) s.objects.push_back(static_cast<const ObjectState&>(*o));
     for (auto& j : joints_) s.joints.push_back(static_cast<const JointState&>(*j));
     s.waters = waters_;
+    s.plans = plans_;
+    s.nextPlanId = nextPlanId_;
     return s;
 }
 
@@ -2035,6 +2039,8 @@ void World::restore(const Snapshot& s) {
     }
     for (const JointState& js : s.joints) addJoint(js, nullptr);
     nextJointId_ = std::max(nextJointId_, s.nextJointId);
+    plans_ = s.plans;
+    nextPlanId_ = s.nextPlanId;
 }
 
 void World::pushUndo() {

@@ -1,0 +1,7 @@
+{
+  "id": "pillar",
+  "label": "Pfosten",
+  "pieces": [
+    { "from": [-0.1, 0, -0.1], "to": [0.1, 2.5, 0.1], "material": "wood" }
+  ]
+}

@@ -1011,11 +1011,16 @@ void App::drawStatusBar() {
     std::string left;
     if (!status_.empty() && time_ - statusTime_ < 6.0) {
         left = status_;
+    } else if (play_ && planMode_ && !planTemplates().empty()) {
+        const int n = (int)planTemplates().size(), k = std::clamp(planType_, 0, n - 1);
+        left = "BAUPLAN: " + planTemplates()[(size_t)k].label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) +
+               ") · Rad / 1-0 wechseln · R drehen · Maus links setzen · G " + (planFixed_ ? "fest (schwebt)" : "Physik") +
+               " · Alt ohne Einrasten · B / rechts fertig";
     } else if (play_ && axe_) {
         left = "AXT: Maus links hackt (auf Holz zielen, bis 2,6 m) · X Axt weglegen · WASD laufen · Tab Bauen";
     } else if (play_) {
         left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · F " +
-               std::string(heatTools()[heatTool_].label) + " · X Axt · Tab Bauen";
+               std::string(heatTools()[heatTool_].label) + " · X Axt · B Bauplan · Tab Bauen";
     } else if (Object* o = world_->find(hovered_)) {
         left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg";
         if (!o->heat.empty() && (std::abs(o->heatInfo.tMax - world_->ambient()) > 5 || o->heatInfo.tMin < world_->ambient() - 5))
@@ -1152,6 +1157,7 @@ void App::drawPlayHud() {
         if (std::abs(tc - world_->ambient()) > 15 || o->heatInfo.burning) info += "  " + fmtNum(tc, 0) + " °C" + (o->heatInfo.burning ? ", brennt" : "");
         if (heatActive_) info += "  [F: " + std::string(heatTools()[heatTool_].label) + "]";
     }
+    if (const std::string pl = planHudText(); !pl.empty()) info = info.empty() ? pl : info + "\n" + pl;
     if (!info.empty()) {
         ImVec2 ts = ImGui::CalcTextSize(info.c_str());
         dl->AddRectFilled(ImVec2(c.x - ts.x / 2 - 8, c.y + 22), ImVec2(c.x + ts.x / 2 + 8, c.y + 26 + ts.y), IM_COL32(0, 0, 0, 140), 4);

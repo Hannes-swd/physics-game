@@ -427,6 +427,10 @@ std::string commandHelp() {
         "  trees | tree plant <type> [form] [x z] [scale] | tree nearest [type] | scene trees (all types side by side)\n"
         "  chop <id> <x y z> [dx dz]                  axe: one blow cuts a notch into wood (play mode: X takes the axe, left mouse hits)\n"
         "  trees reload                               trees.json again (this world takes it over)\n"
+        "BLUEPRINTS (holograms you fill with real material; files in assets/blueprints and %APPDATA%\\Werkstatt\\blueprints)\n"
+        "  plan [list] | plan place <template> <x y z> [yaw] [fixed|physics] | plan info <plan> | plan remove <plan>\n"
+        "  plan fill <plan> <piece|auto> <part> | plan dismantle <part>   (play mode: B places, E inserts, hold Q dismantles)\n"
+        "  plan save <name> [label] | plan delete <name>   own template from the selected parts (build mode)\n"
         "  lan [status] | lan host | lan join <address> | lan leave       multiplayer in the local network\n"
         "  lan accept [name|all] | lan decline <name> | lan kick <name> | lan confirm on|off | lan name <text>\n"
         "  world | world save | world menu         the open world (from the world list): info, save now, back to the main menu\n"
@@ -1521,6 +1525,104 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         res.text = "air: density " + fmtNum(w.airDensity(), 3) + " kg/m3" + (w.airDensity() == 0 ? " (vacuum)" : "") + ", wind " +
                    fmtNum(w.wind().x, 2) + " " + fmtNum(w.wind().y, 2) + " " + fmtNum(w.wind().z, 2) + " m/s (" +
                    fmtNum(glm::length(w.wind()), 2) + " m/s = " + fmtNum(glm::length(w.wind()) * 3.6, 1) + " km/h)";
+    } else if (cmd == "plan" || cmd == "blueprint" || cmd == "bauplan" || cmd == "vorlage") {
+        // Bauvorlagen (docs/20-Bauvorlagen.md): Hologramme setzen, mit Teilen füllen, abbauen, eigene Vorlagen speichern
+        const std::string sub = word(1);
+        auto planText = [&](const BuildPlan& p) {
+            int built = 0;
+            for (const PlanPiece& c : p.pieces) built += c.built ? 1 : 0;
+            return "plan " + std::to_string(p.id) + ": " + p.type + " at " + v3(p.pos) + " cm, " + fmtNum(glm::degrees(p.yaw), 0) + " deg, " +
+                   (p.fixed ? "fixed" : "physics") + ", " + std::to_string(built) + "/" + std::to_string(p.pieces.size()) + " built";
+        };
+        if (sub.empty() || sub == "list") {
+            out << "templates:";
+            for (const PlanTemplate& t : planTemplates())
+                out << "\n  " << t.id << "  " << t.label << " (" << t.pieces.size() << " pieces" << (t.custom ? ", own" : "") << ")";
+            out << "\nplaced: " << w.plans().size();
+            for (const BuildPlan& p : w.plans()) out << "\n  " << planText(p);
+            res.text = out.str();
+        } else if (sub == "place" || sub == "set") {
+            double x, y, z, yaw = 0;
+            if (t.size() < 3 || !num(3, x) || !num(4, y) || !num(5, z))
+                return fail("plan place <template> <x y z cm> [yaw_deg] [fixed|physics]");
+            num(6, yaw);
+            const bool phys = word(6) == "physics" || word(7) == "physics" || word(6) == "physik" || word(7) == "physik";
+            w.pushUndo();
+            std::string err;
+            BuildPlan* p = w.addPlan(t[2], glm::dvec3(x, y, z) / 100.0, glm::radians(yaw), !phys, &err);
+            if (!p) {
+                w.dropUndo();
+                return fail(err);
+            }
+            res.text = planText(*p);
+        } else if (sub == "info") {
+            double id;
+            const BuildPlan* p = num(2, id) ? w.findPlan((uint32_t)id) : nullptr;
+            if (!p) return fail("plan info <plan>");
+            out << planText(*p);
+            for (size_t i = 0; i < p->pieces.size(); ++i) {
+                const PlanPiece& c = p->pieces[i];
+                out << "\n  " << i + 1 << ": " << planMatLabel((PlanMat)c.mat) << " " << fmtNum(c.half.x * 200, 0) << " x " << fmtNum(c.half.y * 200, 0)
+                    << " x " << fmtNum(c.half.z * 200, 0) << " cm, ";
+                if (c.built) out << "built (part " << c.built << ")";
+                else out << fmtNum(c.filled * 1000, 1) << " of " << fmtNum(c.volume() * 1000, 1) << " dm3";
+            }
+            res.text = out.str();
+        } else if (sub == "fill") {
+            // plan fill <plan> <piece|auto> <part>
+            double id, pi = 0;
+            BuildPlan* p = num(2, id) ? w.findPlan((uint32_t)id) : nullptr;
+            Object* o = obj(4);
+            if (!p || !o || (!num(3, pi) && word(3) != "auto")) return fail("plan fill <plan> <piece|auto> <part>");
+            int piece = (int)pi - 1;
+            if (word(3) == "auto")
+                for (size_t i = 0; i < p->pieces.size() && piece < 0; ++i)
+                    if (!p->pieces[i].built) piece = (int)i;
+            w.pushUndo();
+            std::string msg;
+            if (!w.fillPlan(p->id, piece, o->id, msg)) {
+                w.dropUndo();
+                return fail(msg);
+            }
+            res.text = msg;
+        } else if (sub == "dismantle" || sub == "abbauen") {
+            Object* o = obj(2);
+            if (!o) return fail("plan dismantle <part>");
+            w.pushUndo();
+            std::string err;
+            if (!w.dismantle(o->id, &err)) {
+                w.dropUndo();
+                return fail(err);
+            }
+            res.text = "dismantled: " + o->name + " is a loose part again";
+        } else if (sub == "remove" || sub == "delete" && t.size() > 2 && std::isdigit((unsigned char)t[2][0])) {
+            double id;
+            if (!num(2, id)) return fail("plan remove <plan>");
+            w.pushUndo();
+            if (!w.removePlan((uint32_t)id)) {
+                w.dropUndo();
+                return fail("no plan " + t[2]);
+            }
+            res.text = "plan " + t[2] + " removed (built pieces stay)";
+        } else if (sub == "save") {
+            // eigene Vorlage aus den ausgewählten Teilen: plan save <name> [label ...]
+            if (t.size() < 3) return fail("plan save <name> [label]   (select the parts first)");
+            PlanTemplate tp;
+            if (!templateFromParts(w, host.selectedIds(), tp)) return fail("select the parts first (build mode)");
+            tp.id = normalizeWord(t[2]);
+            tp.label = t[2];
+            for (size_t i = 3; i < t.size(); ++i) tp.label = (i == 3 ? "" : tp.label + " ") + t[i];
+            std::string info;
+            if (!savePlanTemplate(tp, &info)) return fail(info);
+            res.text = "template '" + tp.id + "' saved with " + std::to_string(tp.pieces.size()) + " pieces: " + info;
+        } else if (sub == "delete" || sub == "forget") {
+            std::string err;
+            if (!deletePlanTemplate(word(2), &err)) return fail(err);
+            res.text = "template '" + word(2) + "' deleted";
+        } else {
+            return fail("plan [list] | place <template> <x y z> [yaw] [fixed|physics] | info <plan> | fill <plan> <piece|auto> <part> | "
+                        "dismantle <part> | remove <plan> | save <name> [label] | delete <name>");
+        }
     } else if (cmd == "chop" || cmd == "axe") {
         // Axt: chop <id> <x y z> [dx dz]  Stelle des Hiebs (cm), Richtung zum Schlagenden (ohne: zur Kamera)
         Object* o = obj(1);
