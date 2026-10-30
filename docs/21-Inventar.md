@@ -45,5 +45,6 @@ und legt ab).
 | `inventory take <Nummer>` | herausnehmen (vor die Figur, in die Hand) |
 | `inventory shot <datei.png>` | Bild des Fensters |
 
-Das Fenster ist wie das Pausenfenster ein Rohbau in Qt Quick (`qml/InventoryWindow.qml`), ohne eigene Gestaltung.
+Das Inventar ist wie das Pausenmenü ein Rohbau in Qt Quick (`qml/InventoryWindow.qml`), ohne eigene Gestaltung: kein
+eigenes Fenster mit Rahmen, sondern fest in der Mitte über dem leicht grau abgedunkelten Spiel.
 Ohne Hauptmenü (`--world`, `--script`) erscheint ein einfaches Fenster im Spiel.

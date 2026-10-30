@@ -145,7 +145,7 @@ Die **Qualität** setzt alle Werte auf einmal; ändert man danach einen einzelne
 Im **Spiel-Modus** öffnet **Esc** das Pausenfenster: **Weiterspielen**, **Modus wechseln** (in den Bau-Modus),
 **Einstellungen** (dieselbe Seite wie im Hauptmenü, alles gilt sofort, auch die Grafik) und **Beenden** (zurück ins
 Hauptmenü oder das Programm beenden; die Welt wird dabei gespeichert). Es gehört zum Menü (`qml/PauseWindow.qml`, gleicher
-Rohbau-Stil) und steht als eigenes kleines Fenster mittig vor dem Spiel. Solange es offen ist, steht die Welt still (im
+Rohbau-Stil). Es ist kein eigenes Fenster mit Rahmen: es liegt über dem ganzen Spiel, das leicht grau abgedunkelt durchscheint, und steht fest in der Mitte. Solange es offen ist, steht die Welt still (im
 LAN läuft sie für die anderen weiter). Esc im Pausenfenster: eine Seite zurück, auf der ersten weiterspielen.
 
 Per Befehl: `pause [on|off|settings|quit]`, `pause set <key> <value>` (wie `menu set`, gilt sofort),

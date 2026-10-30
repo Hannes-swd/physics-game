@@ -5,12 +5,17 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Kein eigenes Fenster mit Rahmen: deckt das Spielfenster ganz ab (src/Menu.cpp setzt die Größe), das Spiel scheint
+// leicht grau abgedunkelt durch, das Menü steht fest in der Mitte
 ApplicationWindow {
     id: window
     width: 640
     height: 600
     visible: false
     title: "Pause"
+    flags: Qt.Tool | Qt.FramelessWindowHint
+    color: "transparent"
+    background: Rectangle { color: "#59000000" }
 
     onClosing: (close) => {  // Fenster schließen = weiterspielen
         close.accepted = false
@@ -38,40 +43,47 @@ ApplicationWindow {
         }
     }
 
-    StackView {
-        id: stack
-        anchors.fill: parent
-        initialItem: Page {
-            StackView.onActivated: menu.page = "pause"
+    Pane {
+        anchors.centerIn: parent
+        width: Math.min(640, parent.width)
+        height: Math.min(600, parent.height)
+        padding: 0
 
-            ColumnLayout {
-                anchors.centerIn: parent
-                width: 320
-                spacing: 10
+        StackView {
+            id: stack
+            anchors.fill: parent
+            initialItem: Page {
+                StackView.onActivated: menu.page = "pause"
 
-                Label {
-                    text: "Pause"
-                    Layout.alignment: Qt.AlignHCenter
-                }
-                Button {
-                    text: "Weiterspielen"
-                    Layout.fillWidth: true
-                    onClicked: pause.resume()
-                }
-                Button {
-                    text: "Modus wechseln"
-                    Layout.fillWidth: true
-                    onClicked: pause.switchMode()
-                }
-                Button {
-                    text: "Einstellungen"
-                    Layout.fillWidth: true
-                    onClicked: stack.push(settingsPage)
-                }
-                Button {
-                    text: "Beenden"
-                    Layout.fillWidth: true
-                    onClicked: stack.push(quitPage)
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: 320
+                    spacing: 10
+
+                    Label {
+                        text: "Pause"
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                    Button {
+                        text: "Weiterspielen"
+                        Layout.fillWidth: true
+                        onClicked: pause.resume()
+                    }
+                    Button {
+                        text: "Modus wechseln"
+                        Layout.fillWidth: true
+                        onClicked: pause.switchMode()
+                    }
+                    Button {
+                        text: "Einstellungen"
+                        Layout.fillWidth: true
+                        onClicked: stack.push(settingsPage)
+                    }
+                    Button {
+                        text: "Beenden"
+                        Layout.fillWidth: true
+                        onClicked: stack.push(quitPage)
+                    }
                 }
             }
         }

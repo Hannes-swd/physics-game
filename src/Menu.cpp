@@ -675,7 +675,7 @@ private:
     QString note_;
 };
 
-// Pausenfenster (PauseUi.h): eigenes Fenster mit qml/PauseWindow.qml, bleibt nach dem ersten Öffnen bis zum Ende der
+// Pausenfenster (PauseUi.h): rahmenlos über dem Spielfenster mit qml/PauseWindow.qml, bleibt nach dem ersten Öffnen bis zum Ende der
 // Sitzung geladen (nur versteckt). Die Einstellungsseite ist dieselbe wie im Hauptmenü (MenuBackend ohne Fernsteuerung:
 // die bedient im Spiel das Spiel)
 class QtPause : public PauseUi {
@@ -703,13 +703,13 @@ public:
         pause_->set(fromMenu, qs(note));
         pause_->action = Action::None;
         Q_EMIT backend_->pageRequested(QStringLiteral("pause"));
-        // vor dem Spielfenster (gehört zu ihm: kein eigener Knopf in der Taskleiste), mittig darüber
+        // vor dem Spielfenster (gehört zu ihm: kein eigener Knopf in der Taskleiste), rahmenlos genau darüber
         window_->setTransientParent(nullptr);
         foreign_.reset(gameWindow ? QWindow::fromWinId((WId)gameWindow) : nullptr);
         if (foreign_) {
             window_->setTransientParent(foreign_.get());
             const QRect g = foreign_->geometry();
-            if (g.isValid()) window_->setPosition(g.center() - QPoint(window_->width() / 2, window_->height() / 2));
+            if (g.isValid()) window_->setGeometry(g);  // deckt das Spielfenster ganz ab, das Menü steht in der QML mittig
         }
         window_->show();
         window_->raise();
@@ -820,7 +820,7 @@ private:
     QString summary_;
 };
 
-// Inventarfenster (InventoryUi.h): wie das Pausenfenster ein eigenes Fenster, nach dem ersten Öffnen nur versteckt
+// Inventarfenster (InventoryUi.h): wie das Pausenfenster rahmenlos über dem Spielfenster, nach dem ersten Öffnen nur versteckt
 class QtInventory : public InventoryUi {
 public:
     ~QtInventory() override { reset(); }
@@ -845,7 +845,7 @@ public:
         if (foreign_) {
             window_->setTransientParent(foreign_.get());
             const QRect g = foreign_->geometry();
-            if (g.isValid()) window_->setPosition(g.center() - QPoint(window_->width() / 2, window_->height() / 2));
+            if (g.isValid()) window_->setGeometry(g);  // deckt das Spielfenster ganz ab, das Menü steht in der QML mittig
         }
         window_->show();
         window_->raise();
@@ -921,6 +921,8 @@ InventoryUi* MainMenu::inventoryUi() {
 MainMenu::MainMenu(int& argc, char** argv) {
     // "Basic": schlichte Grundform der Qt Quick Controls, lässt sich später vollständig selbst gestalten
     QQuickStyle::setStyle("Basic");
+    // Pause und Inventar liegen durchsichtig über dem Spiel (grau abgedunkelt): dafür brauchen die Fenster Alpha
+    QQuickWindow::setDefaultAlphaBuffer(true);
     impl_ = std::make_unique<Impl>(argc, argv);
     QGuiApplication::setApplicationName("Werkstatt");
     // Das Menüfenster wird zwischendurch geschlossen (das Spiel läuft): das darf Qt nicht als "Programm beenden" werten.
