@@ -1,0 +1,11 @@
+{
+  "id": "ramp",
+  "label": "Rampe (1 m hoch)",
+  "order": 32,
+  "pieces": [
+    { "center": [-0.75, 0.53, 0], "size": [0.5, 0.05, 3.1623], "pitch": 18.4349, "material": "wood" },
+    { "center": [-0.25, 0.53, 0], "size": [0.5, 0.05, 3.1623], "pitch": 18.4349, "material": "wood" },
+    { "center": [0.25, 0.53, 0], "size": [0.5, 0.05, 3.1623], "pitch": 18.4349, "material": "wood" },
+    { "center": [0.75, 0.53, 0], "size": [0.5, 0.05, 3.1623], "pitch": 18.4349, "material": "wood" }
+  ]
+}

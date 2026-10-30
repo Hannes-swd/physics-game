@@ -1,0 +1,11 @@
+{
+  "id": "chimney",
+  "label": "Kamin (Schornstein)",
+  "order": 75,
+  "pieces": [
+    { "from": [-0.4, 0, -0.4], "to": [-0.2, 2.5, 0.4], "material": "stone" },
+    { "from": [0.2, 0, -0.4], "to": [0.4, 2.5, 0.4], "material": "stone" },
+    { "from": [-0.2, 0, -0.4], "to": [0.2, 2.5, -0.2], "material": "stone" },
+    { "from": [-0.2, 0, 0.2], "to": [0.2, 2.5, 0.4], "material": "stone" }
+  ]
+}

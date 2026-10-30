@@ -25,7 +25,7 @@ Wände (zweites Stockwerk). Eingerastet ist die Vorschau türkis.
 
 ## Material einsetzen
 
-- Das Hologramm zeigt, was es braucht: **Holz** (Fichte, Eiche, …), **Stein** (Feldstein, Granit, Ziegel, …) oder beliebig.
+- Das Hologramm zeigt, was es braucht: **Holz** (Fichte, Eiche, …), **Stein** (Feldstein, Granit, Ziegel, …), **Metall** (Stahl, Kupfer, …) oder beliebig.
   Grün = das getragene Teil passt, rot = passt nicht.
 - Es zählt das **Volumen**: Kleinere Stücke (Stöcke, Steine) füllen das Bauteil nach und nach, man sieht es von unten
   volllaufen. Ein zu großes Stück (Stamm, Balken) wird beim Einsetzen passend **abgesägt**, der Rest bleibt in der Hand.
@@ -41,18 +41,24 @@ Wände (zweites Stockwerk). Eingerastet ist die Vorschau türkis.
 
 ## Mitgelieferte Vorlagen
 
-| Name | Vorlage | Bauteile |
-|---|---|---|
-| `wall` | Holzwand 2 × 2,5 m | 4 Bretter 50 × 250 × 10 cm |
-| `window` | Fensterwand, Öffnung 1 × 1 m | 4 Holzteile |
-| `door` | Türwand, Öffnung 1 × 2,1 m | 3 Holzteile |
-| `stonewall` | Steinwand 2 × 2,5 m, 20 cm dick | 22 Steine im Verband |
-| `floor` | Boden (dünn) 2 × 2 m, 10 cm, Oberseite auf der Höhe des Zielpunkts; auch fürs zweite Stockwerk | 4 Bretter |
-| `foundation` | Fundament 2 × 2 m, reicht bis in den Boden (am Hang unterschiedlich tief) | 4 Steinblöcke |
-| `stairs` | Treppe, ein Geschoss (2,5 m) auf 3 m, 1 m breit | 2 Wangen, 10 Stufen |
-| `pillar` | Pfosten 20 × 20 cm, 2,5 m | 1 |
-| `railing` | Geländer 2 m, 1 m hoch | 3 Pfosten, Handlauf |
-| `roof` | Dach 2 × 2 m, 30° | 4 Bretter |
+Durchgeblättert in dieser Reihenfolge (`order` in der Datei):
+
+| Gruppe | Vorlagen (Name in Befehlen) |
+|---|---|
+| Wände | Holzwand `wall`, Fensterwand `window`, Türwand `door`, Brüstung 1 m `halfwall`, Steinwand `stonewall`, Steinwand mit Fenster `stonewindow`, Mauer 1 m `lowwall`, Stahlgitter `grate` |
+| Böden | Boden dünn `floor` (auch 2. Stock), Fundament bis zum Boden `foundation`, Steinplatten `stonefloor`, Stahlblech `steelfloor`, Brücke 4 m `bridge` |
+| Treppen | Holztreppe `stairs` und Steintreppe `stonestairs` (je ein Geschoss), Rampe 1 m hoch `ramp` |
+| Stützen | Pfosten `pillar`, Steinsäule `stonepillar`, Balken `beam` und Stahlträger `steelbeam` (oben zwischen zwei Stützen), Steintor `stonegate` |
+| Zäune | Geländer `railing`, Zaun `fence` |
+| Dach | Dach 30° `roof`, Giebel 4 m `gable` (zwei Dächer gegeneinander gedreht darauf) |
+| Feuer | Steinofen mit Brennkammer und Kamin `oven`, Feuerstelle `fireplace`, Grill mit Stahlrost `grill`, Esse (Feuer in Arbeitshöhe) `forge`, Amboss `anvil`, Schornstein `chimney` |
+| Möbel | Tisch `table`, Bank `bench`, Stuhl `chair`, Bett `bed`, Regal `shelf`, Kiste (offen) `chest`, Werkbank `workbench` |
+| Draußen | Brunnen `well` |
+
+Die Feuer-Vorlagen sind echte Stein- und Stahlteile: Wärme und Feuer laufen darin wie überall ([12](12-Waerme-und-Feuer.md)).
+Holz in die Brennkammer des Ofens legen und anzünden (Bau-Modus H oder `ignite`): Der Kammerboden wird über 700 °C heiß,
+Wände und Decke speichern die Wärme. Mit Holz wird es aber nicht viel heißer als etwa 750 °C, zum Schmelzen von Metall
+reicht das nicht.
 
 ## Eigene Vorlagen
 
@@ -63,7 +69,7 @@ plan save gartenhaus Mein Gartenhaus
 ```
 
 Jedes ausgewählte Teil wird ein Bauteil in der Größe seines Hüllquaders (runde Formen werden Quader), Holzteile brauchen
-Holz, Steinteile Stein, alles andere beliebiges Material. Der Ursprung ist die Mitte unten aller Teile.
+Holz, Steinteile Stein, Metallteile Metall, alles andere beliebiges Material. Der Ursprung ist die Mitte unten aller Teile.
 `plan delete gartenhaus` löscht sie wieder.
 
 ## Dateien
@@ -96,7 +102,8 @@ Gelesen werden sie beim ersten Gebrauch (nach Änderungen das Spiel neu starten)
 | `center` / `size` | Mitte und Kantenlängen (m) |
 | `pitch` | gekippt um die Querachse (°), positiv: steigt nach −z (vom Setzenden weg) |
 | `rotation` | weitere Drehung als Quaternion `[w, x, y, z]` (eigene Vorlagen) |
-| `material` | `wood`, `stone` oder `any` |
+| `material` | `wood`, `stone`, `metal` oder `any` |
+| `order` | Reihenfolge beim Durchblättern (kleiner = früher; eigene ohne Angabe: 1000, ans Ende) |
 
 Koordinaten: x nach rechts, y nach oben, −z vom Setzenden weg; Ursprung = Zielpunkt beim Setzen. Die mitgelieferten
 benutzen ein Raster von 2 m Breite und 2,5 m Geschosshöhe (Wände mittig auf ihrer Linie, Böden mit der Oberseite auf 0).

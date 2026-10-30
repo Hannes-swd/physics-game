@@ -1,6 +1,7 @@
 {
   "id": "stairs",
   "label": "Treppe",
+  "order": 30,
   "pieces": [
     { "center": [-0.55, 1.36, 0], "size": [0.1, 0.28, 3.9051], "pitch": 39.8056, "material": "wood" },
     { "center": [0.55, 1.36, 0], "size": [0.1, 0.28, 3.9051], "pitch": 39.8056, "material": "wood" },

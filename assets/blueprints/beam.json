@@ -1,0 +1,8 @@
+{
+  "id": "beam",
+  "label": "Balken (oben, 2 m)",
+  "order": 42,
+  "pieces": [
+    { "from": [-1, 2.3, -0.1], "to": [1, 2.5, 0.1], "material": "wood" }
+  ]
+}

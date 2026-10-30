@@ -1,6 +1,7 @@
 {
   "id": "floor",
   "label": "Boden (dünn)",
+  "order": 20,
   "pieces": [
     { "from": [-1, -0.1, -1], "to": [-0.5, 0, 1], "material": "wood" },
     { "from": [-0.5, -0.1, -1], "to": [0, 0, 1], "material": "wood" },

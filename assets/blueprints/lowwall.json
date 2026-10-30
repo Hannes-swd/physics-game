@@ -1,0 +1,16 @@
+{
+  "id": "lowwall",
+  "label": "Mauer (1 m, Feldstein)",
+  "order": 16,
+  "pieces": [
+    { "from": [-1, 0, -0.15], "to": [-0.5, 0.5, 0.15], "material": "stone" },
+    { "from": [-0.5, 0, -0.15], "to": [0, 0.5, 0.15], "material": "stone" },
+    { "from": [0, 0, -0.15], "to": [0.5, 0.5, 0.15], "material": "stone" },
+    { "from": [0.5, 0, -0.15], "to": [1, 0.5, 0.15], "material": "stone" },
+    { "from": [-1, 0.5, -0.15], "to": [-0.75, 1, 0.15], "material": "stone" },
+    { "from": [-0.75, 0.5, -0.15], "to": [-0.25, 1, 0.15], "material": "stone" },
+    { "from": [-0.25, 0.5, -0.15], "to": [0.25, 1, 0.15], "material": "stone" },
+    { "from": [0.25, 0.5, -0.15], "to": [0.75, 1, 0.15], "material": "stone" },
+    { "from": [0.75, 0.5, -0.15], "to": [1, 1, 0.15], "material": "stone" }
+  ]
+}

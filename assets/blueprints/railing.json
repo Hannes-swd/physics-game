@@ -1,6 +1,7 @@
 {
   "id": "railing",
   "label": "Geländer",
+  "order": 50,
   "pieces": [
     { "from": [-1, 0, -0.04], "to": [-0.92, 1, 0.04], "material": "wood" },
     { "from": [-0.04, 0, -0.04], "to": [0.04, 1, 0.04], "material": "wood" },

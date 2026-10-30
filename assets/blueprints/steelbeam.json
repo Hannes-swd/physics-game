@@ -1,0 +1,10 @@
+{
+  "id": "steelbeam",
+  "label": "Stahlträger (oben, 2 m)",
+  "order": 43,
+  "pieces": [
+    { "from": [-1, 2.3, -0.075], "to": [1, 2.32, 0.075], "material": "metal" },
+    { "from": [-1, 2.48, -0.075], "to": [1, 2.5, 0.075], "material": "metal" },
+    { "from": [-1, 2.32, -0.005], "to": [1, 2.48, 0.005], "material": "metal" }
+  ]
+}

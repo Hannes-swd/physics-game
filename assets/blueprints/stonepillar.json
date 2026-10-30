@@ -1,0 +1,12 @@
+{
+  "id": "stonepillar",
+  "label": "Steinsäule",
+  "order": 41,
+  "pieces": [
+    { "from": [-0.2, 0, -0.2], "to": [0.2, 0.5, 0.2], "material": "stone" },
+    { "from": [-0.2, 0.5, -0.2], "to": [0.2, 1, 0.2], "material": "stone" },
+    { "from": [-0.2, 1, -0.2], "to": [0.2, 1.5, 0.2], "material": "stone" },
+    { "from": [-0.2, 1.5, -0.2], "to": [0.2, 2, 0.2], "material": "stone" },
+    { "from": [-0.2, 2, -0.2], "to": [0.2, 2.5, 0.2], "material": "stone" }
+  ]
+}

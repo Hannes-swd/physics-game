@@ -11,7 +11,7 @@
 class World;
 
 // Welches Material ein Bauteil annimmt
-enum class PlanMat : int { Wood = 0, Stone = 1, Any = 2 };
+enum class PlanMat : int { Wood = 0, Stone = 1, Any = 2, Metal = 3 };
 
 // Ein Bauteil der Vorlage (lokal zur Vorlage: Ursprung = Mitte unten, y oben, Breite entlang x)
 struct PlanPieceDef {
@@ -26,6 +26,7 @@ struct PlanTemplate {
     std::string label;           // Anzeige
     std::vector<PlanPieceDef> pieces;
     bool toGround = false;       // Fundament: Bauteile reichen von oben (y = 0) bis in den Boden
+    int order = 1000;            // Reihenfolge beim Durchblättern (kleiner = früher), dann nach Name
     bool custom = false;         // selbst erstellt (gespeichert in %APPDATA%\Werkstatt\blueprints.txt)
 };
 
@@ -36,6 +37,7 @@ bool savePlanTemplate(const PlanTemplate& t, std::string* err);
 bool deletePlanTemplate(const std::string& id, std::string* err);
 int findPlanTemplate(const std::string& name);  // -1: unbekannt
 const char* planMatLabel(PlanMat m);
+bool planMatFits(PlanMat m, int material);  // passt das Material (Index in materials()) zu dieser Art?
 
 // Ein Bauteil einer gesetzten Vorlage
 struct PlanPiece {

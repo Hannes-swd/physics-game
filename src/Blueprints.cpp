@@ -42,8 +42,12 @@ bool vec3(const Json& j, glm::dvec3& v) {
     return true;
 }
 
-PlanMat matOf(const std::string& s) { return s == "stone" ? PlanMat::Stone : (s == "any" ? PlanMat::Any : PlanMat::Wood); }
-const char* matKey(PlanMat m) { return m == PlanMat::Stone ? "stone" : (m == PlanMat::Any ? "any" : "wood"); }
+PlanMat matOf(const std::string& s) {
+    return s == "stone" ? PlanMat::Stone : s == "metal" ? PlanMat::Metal : s == "any" ? PlanMat::Any : PlanMat::Wood;
+}
+const char* matKey(PlanMat m) {
+    return m == PlanMat::Stone ? "stone" : m == PlanMat::Metal ? "metal" : m == PlanMat::Any ? "any" : "wood";
+}
 
 bool readTemplate(const std::filesystem::path& file, PlanTemplate& t, std::string& err) {
     std::ifstream in(file, std::ios::binary);
@@ -55,6 +59,7 @@ bool readTemplate(const std::filesystem::path& file, PlanTemplate& t, std::strin
     t.id = j["id"].type == Json::String ? j["id"].str : file.stem().u8string();
     t.label = j["label"].type == Json::String ? j["label"].str : t.id;
     t.toGround = j["to_ground"].type == Json::Bool && j["to_ground"].num != 0;
+    t.order = j["order"].integer(1000);
     const Json& ps = j["pieces"];
     for (size_t i = 0; i < ps.size(); ++i) {
         const Json& p = ps[i];
@@ -109,14 +114,8 @@ std::vector<PlanTemplate>& templates() {
             else t.push_back(p);
         }
     }
-    // mitgelieferte in fester Reihenfolge zuerst (wie im Spiel durchgeblättert), dann alles andere nach Name
-    static const char* order[] = {"wall", "window", "door", "stonewall", "floor", "foundation", "stairs", "pillar", "railing", "roof"};
-    auto rank = [&](const PlanTemplate& p) {
-        for (size_t i = 0; i < std::size(order); ++i)
-            if (p.id == order[i]) return (int)i;
-        return 100;
-    };
-    std::stable_sort(t.begin(), t.end(), [&](const PlanTemplate& a, const PlanTemplate& b) { return rank(a) < rank(b); });
+    // Reihenfolge beim Durchblättern: "order" aus der Datei, dann nach Name
+    std::stable_sort(t.begin(), t.end(), [](const PlanTemplate& a, const PlanTemplate& b) { return a.order != b.order ? a.order < b.order : a.id < b.id; });
     return t;
 }
 
@@ -141,11 +140,12 @@ bool rayBox(const glm::dvec3& o, const glm::dvec3& d, const glm::dvec3& c, const
     return true;
 }
 
-bool fits(PlanMat m, int material) {
+bool fitsMat(PlanMat m, int material) {
     const MaterialClass c = materialClass(material);
     switch (m) {
     case PlanMat::Wood: return c == MaterialClass::Wood;
     case PlanMat::Stone: return c == MaterialClass::Stone;
+    case PlanMat::Metal: return c == MaterialClass::Metal;
     default: return true;
     }
 }
@@ -168,6 +168,7 @@ bool savePlanTemplate(const PlanTemplate& t, std::string* err) {
     Json j = Json::makeObject();
     j.set("id", Json::makeString(t.id));
     j.set("label", Json::makeString(t.label));
+    j.set("order", Json::makeNumber(t.order));
     if (t.toGround) {
         Json b;
         b.type = Json::Bool;
@@ -230,6 +231,7 @@ const char* planMatLabel(PlanMat m) {
     switch (m) {
     case PlanMat::Wood: return "Holz";
     case PlanMat::Stone: return "Stein";
+    case PlanMat::Metal: return "Metall";
     default: return "Material";
     }
 }
@@ -359,7 +361,7 @@ bool World::fillPlan(uint32_t planId, int pieceIdx, uint32_t objId, std::string&
         text = "this part is fixed in place";
         return false;
     }
-    if (!fits(want, o->material) || (pc.material >= 0 && materialClass(pc.material) != materialClass(o->material))) {
+    if (!fitsMat(want, o->material) || (pc.material >= 0 && materialClass(pc.material) != materialClass(o->material))) {
         text = std::string("needs ") + (pc.material >= 0 ? materials()[(size_t)pc.material].label : planMatLabel(want)) + ", this is " +
                materials()[(size_t)o->material].label;
         return false;
@@ -497,8 +499,10 @@ bool templateFromParts(World& w, const std::vector<uint32_t>& ids, PlanTemplate&
         d.half = (o->bbMax - o->bbMin) * 0.5;
         d.rot = o->rot;
         const MaterialClass c = materialClass(o->material);
-        d.mat = c == MaterialClass::Wood ? PlanMat::Wood : (c == MaterialClass::Stone ? PlanMat::Stone : PlanMat::Any);
+        d.mat = c == MaterialClass::Wood ? PlanMat::Wood : c == MaterialClass::Stone ? PlanMat::Stone : c == MaterialClass::Metal ? PlanMat::Metal : PlanMat::Any;
         out.pieces.push_back(d);
     }
     return true;
 }
+
+bool planMatFits(PlanMat m, int material) { return fitsMat(m, material); }

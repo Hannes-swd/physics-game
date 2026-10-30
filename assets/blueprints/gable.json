@@ -1,0 +1,15 @@
+{
+  "id": "gable",
+  "label": "Giebel (4 m, für zwei Dächer)",
+  "order": 61,
+  "pieces": [
+    { "from": [-2, 0, -0.05], "to": [-1.5, 0.1443, 0.05], "material": "wood" },
+    { "from": [-1.5, 0, -0.05], "to": [-1, 0.433, 0.05], "material": "wood" },
+    { "from": [-1, 0, -0.05], "to": [-0.5, 0.7217, 0.05], "material": "wood" },
+    { "from": [-0.5, 0, -0.05], "to": [0, 1.0104, 0.05], "material": "wood" },
+    { "from": [0, 0, -0.05], "to": [0.5, 1.0104, 0.05], "material": "wood" },
+    { "from": [0.5, 0, -0.05], "to": [1, 0.7217, 0.05], "material": "wood" },
+    { "from": [1, 0, -0.05], "to": [1.5, 0.433, 0.05], "material": "wood" },
+    { "from": [1.5, 0, -0.05], "to": [2, 0.1443, 0.05], "material": "wood" }
+  ]
+}

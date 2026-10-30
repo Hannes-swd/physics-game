@@ -29,12 +29,20 @@ void holoBox(FrameDesc& fd, const glm::dvec3& O, const glm::dvec3& c, const glm:
     for (auto& k : e) line(overlay ? fd.overlayLines : fd.lines, p[k[0]], p[k[1]], edge);
 }
 
+// Weltbegrenzung (achsparallel) eines Bauteils
+void pieceBounds(const BuildPlan& bp, const PlanPiece& p, glm::dvec3& mn, glm::dvec3& mx) {
+    const glm::dmat3 m = glm::mat3_cast(bp.pieceRot(p));
+    glm::dvec3 ext(0);
+    for (int k = 0; k < 3; ++k) ext += glm::abs(m[k]) * p.half[k];
+    const glm::dvec3 c = bp.pieceCenter(p);
+    mn = c - ext;
+    mx = c + ext;
+}
+
 bool fitsPiece(const PlanPiece& pc, int material) {
     const MaterialClass c = materialClass(material);
     if (pc.material >= 0) return c == materialClass(pc.material);
-    if ((PlanMat)pc.mat == PlanMat::Wood) return c == MaterialClass::Wood;
-    if ((PlanMat)pc.mat == PlanMat::Stone) return c == MaterialClass::Stone;
-    return true;
+    return planMatFits((PlanMat)pc.mat, material);
 }
 
 } // namespace
@@ -72,13 +80,48 @@ bool App::planPlacement(const glm::dvec3& eye, const glm::dvec3& fwd, BuildPlan&
     if (near) {
         const glm::dquat r = near->rot();
         glm::dvec3 rel = glm::conjugate(r) * (at - near->pos);
-        rel.x = std::round(rel.x);
-        rel.z = std::round(rel.z);
         rel.y = std::round(rel.y / 2.5) * 2.5;
-        pos = near->pos + r * rel;
         const double q = glm::half_pi<double>();
         yaw = near->yaw + std::round((yaw - near->yaw) / q) * q;
         snapped = true;
+        // Rasterplätze rund um die Zielstelle: die Vorlage reicht von der Zielstelle zum Spieler hin (zielt man auf eine
+        // Wandkrone, liegt der Boden auf der eigenen Seite, nicht halb in der Wand). Plätze, an denen ein Bauteil zu einem
+        // guten Teil in einem anderen steckt, verlieren
+        glm::dvec3 toEye = eye - at;
+        toEye.y = 0;
+        toEye = glm::length(toEye) > 1e-6 ? glm::normalize(toEye) : glm::dvec3(0);
+        double bestScore = 1e30;
+        const double rx = std::round(rel.x), rz = std::round(rel.z);
+        for (int dx = -1; dx <= 1; ++dx)
+            for (int dz = -1; dz <= 1; ++dz) {
+                const glm::dvec3 p = near->pos + r * glm::dvec3(rx + dx, rel.y, rz + dz);
+                BuildPlan cand;
+                if (!world_->makePlan(tp.id, p, yaw, planFixed_, cand)) continue;
+                glm::dvec3 cMin(1e30), cMax(-1e30);
+                double overlap = 0;
+                for (const PlanPiece& a : cand.pieces) {
+                    glm::dvec3 aMin, aMax;
+                    pieceBounds(cand, a, aMin, aMax);
+                    cMin = glm::min(cMin, aMin);
+                    cMax = glm::max(cMax, aMax);
+                    for (const BuildPlan& other : world_->plans())
+                        for (const PlanPiece& b : other.pieces) {
+                            glm::dvec3 bMin, bMax;
+                            pieceBounds(other, b, bMin, bMax);
+                            const glm::dvec3 e = glm::min(aMax, bMax) - glm::max(aMin, bMin) - 0.02;  // 1 cm Spiel je Seite
+                            // nur echtes Ineinanderstecken zählt (über 30 % des kleineren), nicht ein Rand auf einer Wandkrone
+                            if (e.x > 0 && e.y > 0 && e.z > 0 && e.x * e.y * e.z > 0.3 * std::min(a.volume(), b.volume())) overlap += 1;
+                        }
+                }
+                const glm::dvec3 c = (cMin + cMax) * 0.5, half = (cMax - cMin) * 0.5;
+                // gewünschte Mitte: von der Zielstelle um die halbe Ausdehnung der Vorlage zum Spieler hin
+                const glm::dvec3 want = at + toEye * (std::abs(toEye.x) * half.x + std::abs(toEye.z) * half.z);
+                const double score = overlap * 100 + glm::length(glm::dvec2(c.x - want.x, c.z - want.z)) + 0.5 * std::abs(c.y - want.y);
+                if (score < bestScore) {
+                    bestScore = score;
+                    pos = p;
+                }
+            }
     } else if (tp.toGround) {  // Fundament ohne Nachbarn: Oberseite auf den höchsten Punkt des Geländes darunter
         const glm::dquat r = glm::angleAxis(yaw, glm::dvec3(0, 1, 0));
         double top = -1e30;

@@ -1,6 +1,7 @@
 {
   "id": "window",
   "label": "Fensterwand",
+  "order": 11,
   "pieces": [
     { "from": [-1, 0, -0.05], "to": [-0.5, 2.5, 0.05], "material": "wood" },
     { "from": [0.5, 0, -0.05], "to": [1, 2.5, 0.05], "material": "wood" },

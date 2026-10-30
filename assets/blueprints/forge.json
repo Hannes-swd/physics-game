@@ -1,0 +1,15 @@
+{
+  "id": "forge",
+  "label": "Esse (Schmiedefeuer)",
+  "order": 73,
+  "pieces": [
+    { "from": [-0.5, 0, -0.5], "to": [0, 0.5, 0], "material": "stone" },
+    { "from": [0, 0, -0.5], "to": [0.5, 0.5, 0], "material": "stone" },
+    { "from": [-0.5, 0, 0], "to": [0, 0.5, 0.5], "material": "stone" },
+    { "from": [0, 0, 0], "to": [0.5, 0.5, 0.5], "material": "stone" },
+    { "from": [-0.5, 0.5, -0.5], "to": [-0.3, 0.75, 0.5], "material": "stone" },
+    { "from": [0.3, 0.5, -0.5], "to": [0.5, 0.75, 0.5], "material": "stone" },
+    { "from": [-0.3, 0.5, -0.5], "to": [0.3, 0.75, -0.3], "material": "stone" },
+    { "from": [-0.3, 0.5, 0.3], "to": [0.3, 0.75, 0.5], "material": "stone" }
+  ]
+}

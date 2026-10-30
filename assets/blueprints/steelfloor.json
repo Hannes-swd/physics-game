@@ -1,0 +1,9 @@
+{
+  "id": "steelfloor",
+  "label": "Stahlboden (Blech)",
+  "order": 23,
+  "pieces": [
+    { "from": [-1, -0.01, -1], "to": [1, 0, 0], "material": "metal" },
+    { "from": [-1, -0.01, 0], "to": [1, 0, 1], "material": "metal" }
+  ]
+}

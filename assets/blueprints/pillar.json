@@ -1,6 +1,7 @@
 {
   "id": "pillar",
   "label": "Pfosten",
+  "order": 40,
   "pieces": [
     { "from": [-0.1, 0, -0.1], "to": [0.1, 2.5, 0.1], "material": "wood" }
   ]

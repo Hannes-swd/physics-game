@@ -1,0 +1,10 @@
+{
+  "id": "anvil",
+  "label": "Amboss (Stahl)",
+  "order": 74,
+  "pieces": [
+    { "from": [-0.15, 0, -0.12], "to": [0.15, 0.15, 0.12], "material": "metal" },
+    { "from": [-0.08, 0.15, -0.07], "to": [0.08, 0.3, 0.07], "material": "metal" },
+    { "from": [-0.3, 0.3, -0.08], "to": [0.25, 0.42, 0.08], "material": "metal" }
+  ]
+}

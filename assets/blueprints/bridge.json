@@ -1,0 +1,17 @@
+{
+  "id": "bridge",
+  "label": "Brücke (4 m)",
+  "order": 24,
+  "pieces": [
+    { "from": [-1, -0.05, 1], "to": [1, 0, 1.5], "material": "wood" },
+    { "from": [-1, -0.05, 0.5], "to": [1, 0, 1], "material": "wood" },
+    { "from": [-1, -0.05, 0], "to": [1, 0, 0.5], "material": "wood" },
+    { "from": [-1, -0.05, -0.5], "to": [1, 0, 0], "material": "wood" },
+    { "from": [-1, -0.05, -1], "to": [1, 0, -0.5], "material": "wood" },
+    { "from": [-1, -0.05, -1.5], "to": [1, 0, -1], "material": "wood" },
+    { "from": [-1, -0.05, -2], "to": [1, 0, -1.5], "material": "wood" },
+    { "from": [-1, -0.05, -2.5], "to": [1, 0, -2], "material": "wood" },
+    { "from": [-0.9, -0.25, -2.5], "to": [-0.7, -0.05, 1.5], "material": "wood" },
+    { "from": [0.7, -0.25, -2.5], "to": [0.9, -0.05, 1.5], "material": "wood" }
+  ]
+}
