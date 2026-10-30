@@ -215,6 +215,7 @@ bool App::openWorld(std::string* err) {
     worldInfo_ = w;
     haveWorld_ = true;
     worldReadOnly_ = false;
+    invLoad();  // Inventar der Figur (inventory.bin)
 
     // Szene: die Datei, sonst die Sicherung vom vorletzten Speichern. Fehlen beide, ist die Welt neu (flach und leer,
     // bis es einen Generator gibt)
@@ -348,7 +349,7 @@ bool App::saveWorld(bool quiet, bool evenAsClient) {
     std::string err;
     // Gelände: nur die geänderten Chunks (Regionsdateien), der Rest entsteht beim Laden wieder aus dem Seed
     const bool ok = world_->saveBinary(tmp, &err) && worlds::replaceFile(tmp, scene, &err) &&
-                    (!world_->terrain() || world_->terrain()->save(&err)) && worlds::writeInfo(w, &err);
+                    (!world_->terrain() || world_->terrain()->save(&err)) && invSave(&err) && worlds::writeInfo(w, &err);
     autosaveAccum_ = 0;
     if (!ok) {
         log("Saving the world failed: " + err, 2);

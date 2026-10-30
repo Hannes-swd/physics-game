@@ -143,6 +143,7 @@ void App::drawUI() {
         if (showSettings_) drawSettingsWindow();
         else if (pause_ != Pause::None) drawPauseMenu();
     }
+    if (invOpen_ && !opt_.inventoryUi) drawInventoryWindow();
     drawLoading();  // Ladebildschirm über allem (AppWorld.cpp)
 }
 

@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "InventoryUi.h"
 #include "PauseUi.h"
 
 class RemoteServer;
@@ -30,6 +31,7 @@ public:
     void hide();
     // Pausenfenster fürs Spiel (siehe PauseUi.h), gleiche Oberfläche wie das Menü. Gehört dem Menü
     PauseUi* pauseUi();
+    InventoryUi* inventoryUi();  // Inventarfenster fürs Spiel (InventoryUi.h)
     // --menu-shot: Seite öffnen (main, worlds, multiplayer, settings), Bild des Fensters speichern, beenden
     void setScreenshot(const std::string& file, const std::string& page) {
         shotFile_ = file;

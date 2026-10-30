@@ -29,6 +29,7 @@ Anleitung sind deutsch.
 | [18-Bewuchs.md](18-Bewuchs.md) | **Gras, Blumen, Büsche** je Biom (`biomes.json`: Dichte, Höhe, Flecken, Farben), nur Bild, Wind, Leistung, Befehl `terrain flora` |
 | [19-Steine-und-Holz.md](19-Steine-und-Holz.md) | **Steine, Stöcke, umgefallene Stämme, Baumstümpfe** je Biom (`biomes.json`): nur Bild, bis man sie anfasst; Kleines aufheben, Großes ist in der Nähe fest und wird beim Anfassen beweglich (Stümpfe wurzeln); Speichern wie bei Bäumen; `tp stone`, `tp stick`, `tp log`, `tp stump` |
 | [20-Bauvorlagen.md](20-Bauvorlagen.md) | **Bauvorlagen**: Wand, Fenster, Tür, Steinwand, Boden, Fundament, Treppe, Pfosten, Geländer, Dach als blaues Hologramm setzen (B), mit echtem Material füllen (E), abbauen (Q halten); fest schwebend oder mit Physik; eigene Vorlagen aus gebauten Teilen (`plan save`), alles als JSON-Dateien |
+| [21-Inventar.md](21-Inventar.md) | **Inventar**: E öffnet es, Teile bis 30 kg einstecken (E mit Teil in der Hand, F), Kästchen so groß wie ihr Gewicht, Rechtsklick nimmt heraus, drehen und mit Linksklick setzen; Befehl `inventory` |
 
 ## Schnellstart
 

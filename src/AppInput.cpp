@@ -121,8 +121,12 @@ void App::handleInput(float dt) {
     const bool typing = io.WantTextInput;
     escTaken_ = false;
     if (!typing) {
+        if (invOpen_ && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {  // offenes Inventar (Fenster im Spiel): zu
+            invOpen(false);
+            escTaken_ = true;
+        }
         // ESC: offene Einstellungen schließen; im Spiel-Modus sonst das Pausenfenster auf bzw. zu
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && (showSettings_ || play_)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !escTaken_ && (showSettings_ || play_)) {
             if (showSettings_) showSettings_ = false;
             else setPause(pause_ == Pause::None ? Pause::Menu : Pause::None);
             escTaken_ = true;
@@ -535,6 +539,7 @@ void App::enterPlay() {
 
 void App::leavePlay() {
     if (!play_) return;
+    invOpen(false);
     if (pause_ != Pause::None && opt_.pauseUi) {  // das Pausenfenster gehört zum Spiel-Modus
         opt_.pauseUi->close();
         glfwFocusWindow(window_);
@@ -567,6 +572,10 @@ void App::playInput(float dt) {
     cursorY_ = cy;
 
     if (pause_ != Pause::None || showSettings_) return;  // Pausenfenster oder Einstellungen offen: keine Spielsteuerung
+    if (invOpen_) {  // Inventar offen: E schließt es (Fenster im Spiel; das Qt-Fenster fängt E selbst ab)
+        if (!opt_.inventoryUi && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false)) invOpen(false);
+        return;
+    }
     if (!cursorCaptured_) {
         if (glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !io.WantCaptureMouse) setCursorCaptured(true);
         return;
@@ -591,6 +600,19 @@ void App::playInput(float dt) {
         axe_ = !axe_;
         if (axe_) planMode_ = false;
         toast(axe_ ? "Axt in der Hand: Linksklick auf Holz hackt (X legt sie weg)" : "Axt weggelegt");
+    }
+    // F: das Teil, auf das man schaut (auch Zeug am Boden), direkt ins Inventar
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false) && !planMode_ && !netClient()) {
+        RayHit h;
+        const bool hitPart = world_->raycast(eye, fwd, h, 0) && h.obj && h.t <= 3.5;
+        ScatterSpot spot;
+        double ts = 0;
+        Object* o = nullptr;
+        if (world_->pickScatter(eye, fwd, hitPart ? h.t : 3.5, spot, ts)) o = world_->takeScatter(spot);
+        else if (hitPart) o = h.obj;
+        if (o && o->fixed) world_->wakeScatter(*o);
+        if (o && !o->fixed) invStore(o->id);
+        else if (o) toast(o->name + " ist fest und lässt sich nicht einstecken", false);
     }
     // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
     planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
@@ -679,14 +701,24 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
         }
         return true;
     };
+    // Eigene Figur: E mit einem Teil in der Hand steckt es ins Inventar (außer auf ein Hologramm), ohne öffnet E das
+    // Inventar. Mitspieler (kein Inventar): E nimmt auf und legt ab wie bisher
+    const bool own = &hand == &hand_;
     for (int i = 0; i < in.ePresses; ++i) {
         if (hand.grabbed) {
-            if (!tryInsert()) hand.grabbed = 0;
+            if (!tryInsert() && !(own && invStore(hand.grabbed)) && !own) hand.grabbed = 0;
+        } else if (own) {
+            invOpen(true);
         } else {
             tryGrab(false);
         }
     }
-    if (in.ePresses == 0 && in.lmbPresses > 0 && !hand.grabbed) tryGrab(true);
+    if (in.ePresses == 0 && in.lmbPresses > 0 && hand.grabbed && !hand.heldByMouse) {  // ohne Halten getragen: hier absetzen
+        if (Object* o = world_->find(hand.grabbed)) physics_.setVelocity(o->body, glm::vec3(0), glm::vec3(0));
+        hand.grabbed = 0;
+    } else if (in.ePresses == 0 && in.lmbPresses > 0 && !hand.grabbed) {
+        tryGrab(true);
+    }
     if (hand.grabbed && hand.heldByMouse && !in.lmbDown) hand.grabbed = 0;
     if (in.rmbPresses > 0 && hand.grabbed) {  // werfen
         if (Object* o = world_->find(hand.grabbed)) {

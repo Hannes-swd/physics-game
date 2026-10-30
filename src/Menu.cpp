@@ -774,18 +774,148 @@ private:
     bool open_ = false, settingsChanged_ = false;
 };
 
+// Das Objekt "inventory" in qml/InventoryWindow.qml: Raster, Teile (Liste von Maps: key, x, y, w, h, name, info),
+// Gewichtszeile. Was man darin tut, holt das Spiel mit InventoryUi::poll() ab
+class InventoryBackend : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(int cols READ cols NOTIFY changed)
+    Q_PROPERTY(int rows READ rows NOTIFY changed)
+    Q_PROPERTY(QVariantList items READ items NOTIFY changed)
+    Q_PROPERTY(QString summary READ summary NOTIFY changed)
+
+public:
+    int cols() const { return cols_; }
+    int rows() const { return rows_; }
+    QVariantList items() const { return items_; }
+    QString summary() const { return summary_; }
+    void set(int cols, int rows, const std::vector<InventoryUi::Item>& items, const std::string& summary) {
+        cols_ = cols;
+        rows_ = rows;
+        items_.clear();
+        for (const InventoryUi::Item& it : items) {
+            QVariantMap m;
+            m["key"] = (double)it.key;
+            m["x"] = it.x;
+            m["y"] = it.y;
+            m["w"] = it.w;
+            m["h"] = it.h;
+            m["name"] = qs(it.name);
+            m["info"] = qs(it.info);
+            items_.push_back(m);
+        }
+        summary_ = qs(summary);
+        Q_EMIT changed();
+    }
+    Q_INVOKABLE void close() { events.push_back({InventoryUi::Event::Close, 0}); }
+    Q_INVOKABLE void takeOut(double key) { events.push_back({InventoryUi::Event::TakeOut, (uint32_t)key}); }
+
+    std::vector<InventoryUi::Event> events;
+
+Q_SIGNALS:
+    void changed();
+
+private:
+    int cols_ = 1, rows_ = 1;
+    QVariantList items_;
+    QString summary_;
+};
+
+// Inventarfenster (InventoryUi.h): wie das Pausenfenster ein eigenes Fenster, nach dem ersten Öffnen nur versteckt
+class QtInventory : public InventoryUi {
+public:
+    ~QtInventory() override { reset(); }
+
+    void open(void* gameWindow) override {
+        if (!engine_) {
+            backend_ = std::make_unique<InventoryBackend>();
+            engine_ = std::make_unique<QQmlApplicationEngine>();
+            engine_->rootContext()->setContextProperty("inventory", backend_.get());
+            backend_->set(cols_, rows_, items_, summary_);
+            engine_->load(QUrl(QStringLiteral("qrc:/menu/InventoryWindow.qml")));
+            if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
+                reset();
+                return;
+            }
+            window_ = qobject_cast<QQuickWindow*>(engine_->rootObjects().first());
+        }
+        if (!window_) return;
+        backend_->events.clear();
+        window_->setTransientParent(nullptr);
+        foreign_.reset(gameWindow ? QWindow::fromWinId((WId)gameWindow) : nullptr);
+        if (foreign_) {
+            window_->setTransientParent(foreign_.get());
+            const QRect g = foreign_->geometry();
+            if (g.isValid()) window_->setPosition(g.center() - QPoint(window_->width() / 2, window_->height() / 2));
+        }
+        window_->show();
+        window_->raise();
+        window_->requestActivate();
+        open_ = true;
+        QCoreApplication::processEvents();
+    }
+    void close() override {
+        if (window_) window_->hide();
+        open_ = false;
+        QCoreApplication::processEvents();
+    }
+    bool isOpen() const override { return open_; }
+    void setContents(int cols, int rows, const std::vector<Item>& items, const std::string& summary) override {
+        cols_ = cols;
+        rows_ = rows;
+        items_ = items;
+        summary_ = summary;
+        if (backend_) backend_->set(cols, rows, items, summary);
+    }
+    Event poll() override {
+        if (!open_ || !backend_) return {};
+        QCoreApplication::processEvents();
+        if (backend_->events.empty()) return {};
+        const Event e = backend_->events.front();
+        backend_->events.erase(backend_->events.begin());
+        return e;
+    }
+    bool grab(const std::string& file) override {
+        if (!window_ || !open_) return false;
+        QCoreApplication::processEvents();
+        return window_->grabWindow().save(qs(file));
+    }
+    void reset() {
+        window_ = nullptr;
+        engine_.reset();
+        foreign_.reset();
+        backend_.reset();
+        open_ = false;
+    }
+
+private:
+    std::unique_ptr<InventoryBackend> backend_;
+    std::unique_ptr<QQmlApplicationEngine> engine_;
+    std::unique_ptr<QWindow> foreign_;
+    QQuickWindow* window_ = nullptr;
+    bool open_ = false;
+    int cols_ = 1, rows_ = 1;
+    std::vector<Item> items_;
+    std::string summary_;
+};
+
 struct MainMenu::Impl {
     QGuiApplication app;
     // Das Fenster bleibt nach show() noch offen (Ladeseite), bis hide() kommt: dann ist das Spielfenster schon da
     std::unique_ptr<MenuBackend> backend;
     std::unique_ptr<QQmlApplicationEngine> engine;
     std::unique_ptr<QtPause> pause;  // Pausenfenster im Spiel (vor app abgebaut)
+    std::unique_ptr<QtInventory> inventory;  // Inventarfenster im Spiel
     Impl(int& argc, char** argv) : app(argc, argv) {}
 };
 
 PauseUi* MainMenu::pauseUi() {
     if (!impl_->pause) impl_->pause = std::make_unique<QtPause>();
     return impl_->pause.get();
+}
+
+InventoryUi* MainMenu::inventoryUi() {
+    if (!impl_->inventory) impl_->inventory = std::make_unique<QtInventory>();
+    return impl_->inventory.get();
 }
 
 MainMenu::MainMenu(int& argc, char** argv) {
@@ -808,6 +938,7 @@ void MainMenu::hide() {
 MenuChoice MainMenu::show(const std::string& message, RemoteServer* remote, const std::string& command) {
     hide();
     if (impl_->pause) impl_->pause->reset();  // das Pausenfenster der letzten Sitzung
+    if (impl_->inventory) impl_->inventory->reset();
     impl_->backend = std::make_unique<MenuBackend>(message, remote);
     impl_->engine = std::make_unique<QQmlApplicationEngine>();
     MenuBackend& backend = *impl_->backend;

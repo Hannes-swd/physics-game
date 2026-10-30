@@ -725,6 +725,40 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
                    (pauseStopped_ ? ", world paused" : "");
         return true;
     }
+    if (cmd == "inventory") {  // Inventar des Spiel-Modus (E), siehe docs/21
+        const std::string v = t.size() > 1 ? t[1] : "";
+        if (!play_) {
+            out = "Error: the inventory belongs to play mode ('mode play')";
+            return true;
+        }
+        if (v == "open" || v == "close") {
+            invOpen(v == "open");
+        } else if (v == "store" && t.size() > 2) {
+            const uint32_t id = (uint32_t)std::strtoul(t[2].c_str(), nullptr, 10);
+            if (!invStore(id, true)) {
+                out = "Error: part " + t[2] + " not stored (unknown, fixed, too heavy or no room)";
+                return true;
+            }
+        } else if (v == "take" && t.size() > 2) {
+            const uint32_t key = (uint32_t)std::strtoul(t[2].c_str(), nullptr, 10);
+            if (!invTakeOut(key)) {
+                out = "Error: no item " + t[2] + " in the inventory";
+                return true;
+            }
+        } else if (v == "shot" && t.size() > 2 && opt_.inventoryUi) {
+            invOpen(true);
+            out = opt_.inventoryUi->grab(t[2]) ? "inventory window saved: " + t[2] : "Error: could not save " + t[2];
+            return true;
+        } else if (!v.empty() && v != "list") {
+            out = "Error: inventory [list|open|close] | inventory store <part id> | inventory take <item> | inventory shot <file.png>";
+            return true;
+        }
+        out = "inventory " + std::string(invOpen_ ? "open" : "closed") + ", " + fmtNum(invMass(), 2) + " kg";
+        for (const InvItem& it : inv_)
+            out += "\n  item " + std::to_string(it.key) + ": " + it.state.name + ", " + fmtNum(it.mass, 2) + " kg, cells " +
+                   std::to_string(it.x) + "," + std::to_string(it.y) + " " + std::to_string(it.w) + "x" + std::to_string(it.h);
+        return true;
+    }
     if (cmd == "menu") {
         out = menuCommandInGame(t);
         return true;

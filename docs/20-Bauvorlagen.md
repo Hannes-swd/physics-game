@@ -15,7 +15,7 @@ genug passendes Material drin ist.
 | **G** | neue Vorlagen *fest* (schweben, zerbrechen nicht) oder mit *Physik* |
 | **Alt** halten | ohne Einrasten |
 | Rechte Maustaste / **B** | Bauplan-Modus beenden |
-| **E** (mit einem Teil in der Hand, auf ein Hologramm schauen) | Teil einsetzen |
+| **E** (mit einem Teil in der Hand, auf ein Hologramm schauen) | Teil einsetzen (sonst steckt E es ins [Inventar](21-Inventar.md)) |
 | **Q** halten (0,8 s) auf ein fertiges Bauteil | abbauen: es wird wieder ein loses Teil, das Hologramm ist wieder leer |
 | **Q** halten auf ein Hologramm | die ganze Vorlage entfernen (fertige Bauteile bleiben stehen) |
 

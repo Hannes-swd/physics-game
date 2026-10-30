@@ -16,6 +16,7 @@
 #include "Drawing.h"
 #include "Flora.h"
 #include "Net.h"
+#include "InventoryUi.h"
 #include "PauseUi.h"
 #include "Physics.h"
 #include "Remote.h"
@@ -120,6 +121,7 @@ struct AppOptions {
     RemoteServer* remote = nullptr;  // Fernsteuerung des Hauptmenüs (bleibt zwischen Menü und Spiel offen); sonst eine eigene
     std::function<void()> onFirstFrame;  // nach dem ersten Bild des Spielfensters (Hauptmenü: sein Ladebild schließen)
     PauseUi* pauseUi = nullptr;          // Hauptmenü: Pausenfenster mit seiner Oberfläche (sonst ein einfaches im Spiel)
+    InventoryUi* inventoryUi = nullptr;  // Hauptmenü: Inventarfenster (sonst ein einfaches im Spiel)
 };
 
 class App : public CommandHost {
@@ -249,6 +251,25 @@ private:
     void planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbPress, bool rmbPress);
     bool planPlacement(const glm::dvec3& eye, const glm::dvec3& fwd, BuildPlan& out, bool& snapped);
     std::string planHudText();
+    // AppInventory.cpp: Inventar (E). Teile darin sind nicht mehr in der Welt; begrenzt durch das Gewicht, das die
+    // Figur tragen kann. Jedes Teil belegt im Raster so viele Zellen, wie es wiegt (Form etwa wie das Teil)
+    struct InvItem {
+        uint32_t key = 0;
+        ObjectState state;  // das Teil, wie es aus der Welt kam (Lage egal)
+        double mass = 0;
+        int x = 0, y = 0, w = 1, h = 1;  // im Raster
+        glm::dvec2 ext{1};  // längste und zweitlängste Seite (m): Form des Kästchens
+    };
+    bool invStore(uint32_t id, bool quiet = false);  // Teil aus der Welt ins Inventar (false: zu schwer, kein Platz)
+    bool invTakeOut(uint32_t key);  // aus dem Inventar vor die Figur, in die Hand (Linksklick setzt es)
+    void invOpen(bool on);
+    void updateInventory();          // Fenster: Ereignisse abholen (jedes Bild)
+    void drawInventoryWindow();      // ohne Hauptmenü: einfaches Fenster im Spiel
+    void invPushContents();
+    double invMass() const;
+    bool invPack(std::vector<InvItem>& items, bool keepPlaced) const;
+    bool invSave(std::string* err) const;
+    void invLoad();
     // AppUI.cpp: Pausenfenster im Spiel-Modus (ESC) und Einstellungen im Spiel (Grafik wirkt sofort)
     enum class Pause { None, Menu, Quit };
     void setPause(Pause p);
@@ -435,6 +456,9 @@ private:
     glm::dvec2 autoMove_{0};      // per Befehl: x = vorwärts, y = rechts
     double autoMoveTime_ = 0;
     bool axe_ = false;            // Spiel-Modus: Axt in der Hand (X), Linksklick hackt
+    std::vector<InvItem> inv_;
+    uint32_t invNextKey_ = 1;
+    bool invOpen_ = false;
     // Bauvorlagen (AppPlans.cpp): B = Vorlage setzen, E = getragenes Teil einsetzen, Q halten = abbauen
     bool planMode_ = false;
     int planType_ = 0;            // Index in planTemplates()

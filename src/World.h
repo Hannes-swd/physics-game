@@ -296,6 +296,8 @@ public:
     void remove(uint32_t id);
     void clear();
     Object* duplicate(uint32_t id, const glm::dvec3& offset);
+    // Teil wieder in die Welt (z.B. aus dem Inventar): neue Nummer, an dieser Lage
+    Object* putBack(ObjectState s, const glm::dvec3& pos, const glm::dquat& rot);
     void setTransform(Object& o, const glm::dvec3& pos, const glm::dquat& rot);
     void setMaterial(Object& o, int material);
     void setFixed(Object& o, bool fixed);

@@ -737,6 +737,18 @@ Object* World::duplicate(uint32_t id, const glm::dvec3& offset) {
     return insert(std::move(o));
 }
 
+Object* World::putBack(ObjectState s, const glm::dvec3& pos, const glm::dquat& rot) {
+    auto o = std::make_unique<Object>();
+    static_cast<ObjectState&>(*o) = std::move(s);
+    o->id = nextId_++;
+    o->pos = pos;
+    o->rot = glm::normalize(rot);
+    o->fixed = false;
+    o->treeKey = 0;
+    lastCreated_ = o->id;
+    return insert(std::move(o));
+}
+
 void World::setTransform(Object& o, const glm::dvec3& pos, const glm::dquat& rot) {
     o.pos = pos;
     o.rot = glm::normalize(rot);
