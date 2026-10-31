@@ -774,8 +774,22 @@ private:
     bool open_ = false, settingsChanged_ = false;
 };
 
-// Das Objekt "inventory" in qml/InventoryWindow.qml: Raster, Teile (Liste von Maps: key, x, y, w, h, name, info),
-// Gewichtszeile. Was man darin tut, holt das Spiel mit InventoryUi::poll() ab
+// Zeichnung für QML (Inventar, Auswahl): Liste von Maps mit pts (x0 y0 x1 y1 … in 0 … 1) und color
+static QVariantList polyList(const std::vector<CatalogUi::Poly>& polys) {
+    QVariantList out;
+    for (const CatalogUi::Poly& p : polys) {
+        QVariantList pts;
+        for (float f : p.pts) pts.push_back((double)f);
+        QVariantMap m;
+        m["pts"] = pts;
+        m["color"] = qs(p.color);
+        out.push_back(m);
+    }
+    return out;
+}
+
+// Das Objekt "inventory" in qml/InventoryWindow.qml: Raster, Teile (Liste von Maps: key, x, y, w, h, name, info,
+// polys = Zeichnung), Gewichtszeile. Was man darin tut, holt das Spiel mit InventoryUi::poll() ab
 class InventoryBackend : public QObject {
     Q_OBJECT
     Q_PROPERTY(int cols READ cols NOTIFY changed)
@@ -801,6 +815,7 @@ public:
             m["h"] = it.h;
             m["name"] = qs(it.name);
             m["info"] = qs(it.info);
+            m["polys"] = polyList(it.polys);
             items_.push_back(m);
         }
         summary_ = qs(summary);
@@ -898,6 +913,118 @@ private:
     std::string summary_;
 };
 
+// Das Objekt "catalog" in qml/CatalogWindow.qml: Überschrift, Kästen (Liste von Maps: label, info, polys mit pts und
+// color), gewählter Kasten. Die Wahl holt das Spiel mit CatalogUi::poll() ab
+class CatalogBackend : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString title READ title NOTIFY changed)
+    Q_PROPERTY(QString closeKey READ closeKey NOTIFY changed)
+    Q_PROPERTY(QVariantList items READ items NOTIFY changed)
+    Q_PROPERTY(int current READ current NOTIFY changed)
+
+public:
+    QString title() const { return title_; }
+    QString closeKey() const { return closeKey_; }
+    QVariantList items() const { return items_; }
+    int current() const { return current_; }
+    void set(const std::string& title, const std::string& closeKey, const std::vector<CatalogUi::Item>& items, int current) {
+        title_ = qs(title);
+        closeKey_ = qs(closeKey);
+        current_ = current;
+        items_.clear();
+        for (const CatalogUi::Item& it : items) {
+            QVariantMap m;
+            m["label"] = qs(it.label);
+            m["info"] = qs(it.info);
+            m["polys"] = polyList(it.polys);
+            items_.push_back(m);
+        }
+        Q_EMIT changed();
+    }
+    Q_INVOKABLE void close() { events.push_back({CatalogUi::Event::Close, -1}); }
+    Q_INVOKABLE void choose(int index) { events.push_back({CatalogUi::Event::Choose, index}); }
+
+    std::vector<CatalogUi::Event> events;
+
+Q_SIGNALS:
+    void changed();
+
+private:
+    QString title_, closeKey_;
+    QVariantList items_;
+    int current_ = -1;
+};
+
+// Auswahlfenster (CatalogUi.h): wie das Inventar rahmenlos über dem Spielfenster, nach dem ersten Öffnen nur versteckt
+class QtCatalog : public CatalogUi {
+public:
+    ~QtCatalog() override { reset(); }
+
+    void open(void* gameWindow, const std::string& title, const std::string& closeKey, const std::vector<Item>& items,
+              int current) override {
+        if (!engine_) {
+            backend_ = std::make_unique<CatalogBackend>();
+            engine_ = std::make_unique<QQmlApplicationEngine>();
+            engine_->rootContext()->setContextProperty("catalog", backend_.get());
+            backend_->set(title, closeKey, items, current);
+            engine_->load(QUrl(QStringLiteral("qrc:/menu/CatalogWindow.qml")));
+            if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
+                reset();
+                return;
+            }
+            window_ = qobject_cast<QQuickWindow*>(engine_->rootObjects().first());
+        }
+        if (!window_) return;
+        backend_->set(title, closeKey, items, current);
+        backend_->events.clear();
+        window_->setTransientParent(nullptr);
+        foreign_.reset(gameWindow ? QWindow::fromWinId((WId)gameWindow) : nullptr);
+        if (foreign_) {
+            window_->setTransientParent(foreign_.get());
+            const QRect g = foreign_->geometry();
+            if (g.isValid()) window_->setGeometry(g);  // deckt das Spielfenster ganz ab, die Auswahl steht in der QML mittig
+        }
+        window_->show();
+        window_->raise();
+        window_->requestActivate();
+        open_ = true;
+        QCoreApplication::processEvents();
+    }
+    void close() override {
+        if (window_) window_->hide();
+        open_ = false;
+        QCoreApplication::processEvents();
+    }
+    bool isOpen() const override { return open_; }
+    Event poll() override {
+        if (!open_ || !backend_) return {};
+        QCoreApplication::processEvents();
+        if (backend_->events.empty()) return {};
+        const Event e = backend_->events.front();
+        backend_->events.erase(backend_->events.begin());
+        return e;
+    }
+    bool grab(const std::string& file) override {
+        if (!window_ || !open_) return false;
+        QCoreApplication::processEvents();
+        return window_->grabWindow().save(qs(file));
+    }
+    void reset() {
+        window_ = nullptr;
+        engine_.reset();
+        foreign_.reset();
+        backend_.reset();
+        open_ = false;
+    }
+
+private:
+    std::unique_ptr<CatalogBackend> backend_;
+    std::unique_ptr<QQmlApplicationEngine> engine_;
+    std::unique_ptr<QWindow> foreign_;
+    QQuickWindow* window_ = nullptr;
+    bool open_ = false;
+};
+
 struct MainMenu::Impl {
     QGuiApplication app;
     // Das Fenster bleibt nach show() noch offen (Ladeseite), bis hide() kommt: dann ist das Spielfenster schon da
@@ -905,8 +1032,14 @@ struct MainMenu::Impl {
     std::unique_ptr<QQmlApplicationEngine> engine;
     std::unique_ptr<QtPause> pause;  // Pausenfenster im Spiel (vor app abgebaut)
     std::unique_ptr<QtInventory> inventory;  // Inventarfenster im Spiel
+    std::unique_ptr<QtCatalog> catalog;      // Auswahl der Bauvorlagen und Rezepte im Spiel
     Impl(int& argc, char** argv) : app(argc, argv) {}
 };
+
+CatalogUi* MainMenu::catalogUi() {
+    if (!impl_->catalog) impl_->catalog = std::make_unique<QtCatalog>();
+    return impl_->catalog.get();
+}
 
 PauseUi* MainMenu::pauseUi() {
     if (!impl_->pause) impl_->pause = std::make_unique<QtPause>();

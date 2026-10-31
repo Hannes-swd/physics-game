@@ -576,6 +576,7 @@ void App::playInput(float dt) {
         if (!opt_.inventoryUi && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false)) invOpen(false);
         return;
     }
+    if (catalogOpen_) return;  // Auswahl der Bauvorlagen / Rezepte offen (Qt-Fenster, fängt B, C und Esc selbst ab)
     if (!cursorCaptured_) {
         if (glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !io.WantCaptureMouse) setCursorCaptured(true);
         return;

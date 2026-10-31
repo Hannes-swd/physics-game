@@ -189,13 +189,19 @@ void App::invOpen(bool on) {
 void App::invPushContents() {
     if (!opt_.inventoryUi) return;
     std::vector<InventoryUi::Item> items;
-    for (const InvItem& it : inv_) {
+    for (InvItem& it : inv_) {
         InventoryUi::Item v;
         v.key = it.key;
         v.x = it.x, v.y = it.y, v.w = it.w, v.h = it.h;
         v.name = it.state.name;
         const int mat = std::clamp(it.state.material, 0, (int)materials().size() - 1);
         v.info = std::string(materials()[mat].label) + ", " + kg(it.mass);
+        if (it.picW != it.w || it.picH != it.h) {  // Zeichnung nur neu, wenn das Kästchen eine andere Form hat
+            it.pic = objectPicture(it.state, (double)it.w / it.h);
+            it.picW = it.w;
+            it.picH = it.h;
+        }
+        v.polys = it.pic;
         items.push_back(v);
     }
     const double m = invMass();

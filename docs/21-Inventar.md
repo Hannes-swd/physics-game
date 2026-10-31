@@ -46,5 +46,6 @@ und legt ab).
 | `inventory shot <datei.png>` | Bild des Fensters |
 
 Das Inventar ist wie das Pausenmenü ein Rohbau in Qt Quick (`qml/InventoryWindow.qml`), ohne eigene Gestaltung: kein
-eigenes Fenster mit Rahmen, sondern fest in der Mitte über dem leicht grau abgedunkelten Spiel.
+eigenes Fenster mit Rahmen, sondern fest in der Mitte über dem leicht grau abgedunkelten Spiel. Jedes Kästchen zeigt eine
+kleine Zeichnung des Teils (schräg von oben, in Materialfarbe), darunter den Namen; Material und Gewicht im Tooltip.
 Ohne Hauptmenü (`--world`, `--script`) erscheint ein einfaches Fenster im Spiel.

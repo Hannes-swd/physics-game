@@ -8,7 +8,7 @@ zusammen **ein einziges Teil**, das direkt ins [Inventar](21-Inventar.md) kommt.
 
 | Eingabe | Wirkung |
 |---|---|
-| **C** | Herstellen an/aus. Das gewählte Rezept hängt als Hologramm dort, wo man hinschaut (bis 4 m) |
+| **C** | Herstellbuch: ein Kasten je Rezept mit Zeichnung und was es braucht (und ob es im Inventar ist), Klick wählt; dann hängt das Rezept als Hologramm dort, wo man hinschaut (bis 4 m) |
 | Mausrad / **1 … 0** | Rezept wechseln. Unten steht, was es braucht und ob es im Inventar ist |
 | **R** (Shift+R) | um 90° drehen |
 | Linke Maustaste | Rezept hierhin legen (danach ist man wieder im normalen Spiel) |

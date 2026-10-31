@@ -759,6 +759,30 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
                    std::to_string(it.x) + "," + std::to_string(it.y) + " " + std::to_string(it.w) + "x" + std::to_string(it.h);
         return true;
     }
+    if (cmd == "catalog") {  // Auswahlfenster für Bauvorlagen (B) und Rezepte (C), siehe docs/20 und docs/22
+        const std::string v = t.size() > 1 ? t[1] : "";
+        if (!opt_.catalogUi) {
+            out = "Error: the selection window needs the main menu (without it: B / C, mouse wheel, 1 ... 0)";
+        } else if (!play_) {
+            out = "Error: the selection window belongs to play mode ('mode play')";
+        } else if (v == "plans" || v == "blueprints" || v == "recipes" || v == "craft") {
+            catalogOpen(true, v == "recipes" || v == "craft");
+            out = std::string("selection open: ") + (catalogCraft_ ? "recipes" : "blueprints");
+        } else if (v == "close") {
+            catalogOpen(false);
+            out = "selection closed";
+        } else if (v == "choose" && t.size() > 2 && catalogOpen_) {
+            const bool craft = catalogCraft_;
+            out = catalogChoose(std::atoi(t[2].c_str()) - 1) ? std::string("chosen: ") + planList()[(size_t)planIndex()].label + ", " +
+                                                                 (craft ? "recipe" : "blueprint") + " hologram in front of the player"
+                                                           : "Error: no item " + t[2];
+        } else if (v == "shot" && t.size() > 2 && catalogOpen_) {
+            out = opt_.catalogUi->grab(t[2]) ? "selection window saved: " + t[2] : "Error: could not save " + t[2];
+        } else {
+            out = "Error: catalog plans|recipes | catalog choose <n> | catalog close | catalog shot <file.png>";
+        }
+        return true;
+    }
     if (cmd == "craft" || cmd == "herstellen") {  // Herstellen (C), siehe docs/22; setzen: plan place craft:<rezept> ...
         const std::string v = t.size() > 1 ? t[1] : "";
         if (v.empty() || v == "list") {

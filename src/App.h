@@ -16,6 +16,7 @@
 #include "Drawing.h"
 #include "Flora.h"
 #include "Net.h"
+#include "CatalogUi.h"
 #include "InventoryUi.h"
 #include "PauseUi.h"
 #include "Physics.h"
@@ -122,6 +123,7 @@ struct AppOptions {
     std::function<void()> onFirstFrame;  // nach dem ersten Bild des Spielfensters (Hauptmenü: sein Ladebild schließen)
     PauseUi* pauseUi = nullptr;          // Hauptmenü: Pausenfenster mit seiner Oberfläche (sonst ein einfaches im Spiel)
     InventoryUi* inventoryUi = nullptr;  // Hauptmenü: Inventarfenster (sonst ein einfaches im Spiel)
+    CatalogUi* catalogUi = nullptr;      // Hauptmenü: Auswahl der Bauvorlagen und Rezepte (sonst Mausrad, 1 … 0)
 };
 
 class App : public CommandHost {
@@ -258,6 +260,12 @@ private:
     bool craftFill(uint32_t plan);                  // false: kein Rezept-Hologramm
     void craftDone(uint32_t crafted, const std::string& text);  // hergestelltes Teil ins Inventar (sonst bleibt es liegen)
     std::string craftNeeds(const PlanTemplate& recipe) const;    // "Holz 180 cm³ (da) + Stein 300 cm³ (im Inventar 40)"
+    // AppCatalog.cpp: B / C öffnen mit Hauptmenü ein Auswahlfenster (Kasten mit Zeichnung je Vorlage, CatalogUi.h)
+    void catalogOpen(bool on, bool craft = false);
+    bool catalogChoose(int index);  // Kasten gewählt: Bauplan-Modus mit dieser Vorlage
+    void updateCatalog();           // Fenster: Ereignisse abholen (jedes Bild)
+    // Zeichnung eines Teils für einen Kasten mit Seitenverhältnis aspect (Breite / Höhe), längste Seite quer
+    static std::vector<CatalogUi::Poly> objectPicture(const ObjectState& s, double aspect);
     // AppInventory.cpp: Inventar (E). Teile darin sind nicht mehr in der Welt; begrenzt durch das Gewicht, das die
     // Figur tragen kann. Jedes Teil belegt im Raster so viele Zellen, wie es wiegt (Form etwa wie das Teil)
     struct InvItem {
@@ -266,6 +274,8 @@ private:
         double mass = 0;
         int x = 0, y = 0, w = 1, h = 1;  // im Raster
         glm::dvec2 ext{1};  // längste und zweitlängste Seite (m): Form des Kästchens
+        std::vector<CatalogUi::Poly> pic;  // Zeichnung fürs Kästchen (für picW x picH Zellen gerechnet)
+        int picW = 0, picH = 0;
     };
     bool invStore(uint32_t id, bool quiet = false);  // Teil aus der Welt ins Inventar (false: zu schwer, kein Platz)
     bool invTakeOut(uint32_t key);  // aus dem Inventar vor die Figur, in die Hand (Linksklick setzt es)
@@ -471,6 +481,8 @@ private:
     bool planCraft_ = false;      // C: Bauplan-Modus zeigt Rezepte zum Herstellen statt Bauvorlagen
     int planType_ = 0;            // Index in planTemplates()
     int craftType_ = 0;           // Index in craftRecipes()
+    bool catalogOpen_ = false;    // Auswahlfenster (B / C) offen
+    bool catalogCraft_ = false;   // es zeigt Rezepte statt Bauvorlagen
     int planTurns_ = 0;           // R: je 90°
     bool planFixed_ = true;       // G: fertige Bauteile schweben fest (true) oder echte Physik
     bool planPreviewOk_ = false;

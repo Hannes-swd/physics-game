@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "CatalogUi.h"
+
 class InventoryUi {
 public:
     // Ein Teil im Inventar: Rechteck im Raster (Zellen), Beschriftung
@@ -13,6 +15,7 @@ public:
         uint32_t key = 0;
         int x = 0, y = 0, w = 1, h = 1;
         std::string name, info;  // info: Material und Gewicht
+        std::vector<CatalogUi::Poly> polys;  // Zeichnung des Teils im Kästchen (0 … 1, von hinten nach vorne)
     };
     struct Event {
         enum Kind { None, Close, TakeOut } kind = None;

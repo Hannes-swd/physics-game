@@ -243,6 +243,7 @@ int App::run(const AppOptions& opt) {
             PROFILE("app.input");
             updatePause();  // Pausenfenster des Hauptmenüs (eigenes Qt-Fenster)
             updateInventory();  // Inventarfenster (eigenes Qt-Fenster)
+            updateCatalog();    // Auswahl der Bauvorlagen und Rezepte (eigenes Qt-Fenster)
             handleInput(dt);
             heatToolInput(dt);
         }
@@ -289,6 +290,7 @@ int App::run(const AppOptions& opt) {
     }
     if (opt_.pauseUi) opt_.pauseUi->close();
     if (opt_.inventoryUi) opt_.inventoryUi->close();
+    if (opt_.catalogUi) opt_.catalogUi->close();
     endWorldSession();  // Welt speichern (auch beim Schließen des Fensters), Einstellungen zurückschreiben
     shutdown();
     return 0;

@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "CatalogUi.h"
 #include "InventoryUi.h"
 #include "PauseUi.h"
 
@@ -32,6 +33,7 @@ public:
     // Pausenfenster fürs Spiel (siehe PauseUi.h), gleiche Oberfläche wie das Menü. Gehört dem Menü
     PauseUi* pauseUi();
     InventoryUi* inventoryUi();  // Inventarfenster fürs Spiel (InventoryUi.h)
+    CatalogUi* catalogUi();      // Auswahl der Bauvorlagen und Rezepte fürs Spiel (CatalogUi.h)
     // --menu-shot: Seite öffnen (main, worlds, multiplayer, settings), Bild des Fensters speichern, beenden
     void setScreenshot(const std::string& file, const std::string& page) {
         shotFile_ = file;

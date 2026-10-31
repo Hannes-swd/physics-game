@@ -197,9 +197,15 @@ void App::planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool
         dismantleId_ = 0;
     }
 
-    // B: Bauvorlagen, C: Rezepte zum Herstellen (dieselbe Bedienung); dieselbe Taste nochmal beendet
+    // B: Bauvorlagen, C: Rezepte zum Herstellen (dieselbe Bedienung); dieselbe Taste nochmal beendet. Mit Hauptmenü
+    // öffnet die Taste erst die Auswahl (Kasten je Vorlage, AppCatalog.cpp), ohne geht es gleich mit der letzten los
     for (const bool craft : {false, true}) {
         if (io.WantTextInput || !ImGui::IsKeyPressed(craft ? ImGuiKey_C : ImGuiKey_B, false)) continue;
+        if (opt_.catalogUi && !(planMode_ && planCraft_ == craft)) {
+            planMode_ = false;
+            catalogOpen(true, craft);
+            continue;
+        }
         planMode_ = !(planMode_ && planCraft_ == craft);
         planCraft_ = craft;
         if (planMode_ && planList().empty()) {

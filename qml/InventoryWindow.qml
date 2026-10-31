@@ -70,23 +70,50 @@ ApplicationWindow {
                             border.color: palette.dark
                             clip: true
 
-                            Column {
-                                anchors.centerIn: parent
-                                width: parent.width - 6
-                                Label {
-                                    width: parent.width
-                                    text: modelData.name
-                                    elide: Text.ElideRight
-                                    horizontalAlignment: Text.AlignHCenter
+                            id: box
+                            readonly property bool showName: height > 40
+
+                            // Zeichnung des Teils (vom Spiel ausgerechnet, Flächen von hinten nach vorne)
+                            Canvas {
+                                id: picture
+                                anchors.fill: parent
+                                anchors.margins: 3
+                                anchors.bottomMargin: box.showName ? 16 : 3
+                                onWidthChanged: requestPaint()
+                                onHeightChanged: requestPaint()
+                                onPaint: {
+                                    const ctx = getContext("2d")
+                                    ctx.reset()
+                                    ctx.lineWidth = 0.6
+                                    ctx.lineJoin = "round"
+                                    for (const p of box.modelData.polys) {
+                                        const pts = p.pts
+                                        ctx.beginPath()
+                                        ctx.moveTo(pts[0] * width, pts[1] * height)
+                                        for (let k = 2; k < pts.length; k += 2) ctx.lineTo(pts[k] * width, pts[k + 1] * height)
+                                        ctx.closePath()
+                                        ctx.fillStyle = p.color
+                                        ctx.fill()
+                                        ctx.strokeStyle = Qt.darker(p.color, 1.6)
+                                        ctx.stroke()
+                                    }
                                 }
-                                Label {
-                                    width: parent.width
-                                    text: modelData.info
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                    horizontalAlignment: Text.AlignHCenter
-                                    visible: parent.parent.height > 36
+                                Connections {
+                                    target: inventory
+                                    function onChanged() { picture.requestPaint() }
                                 }
+                            }
+
+                            Label {
+                                visible: box.showName
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.margins: 3
+                                text: modelData.name
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                horizontalAlignment: Text.AlignHCenter
                             }
 
                             MouseArea {

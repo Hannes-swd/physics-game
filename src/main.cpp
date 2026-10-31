@@ -121,6 +121,7 @@ int runWithMenu(int& argc, char** argv, const AppOptions& base) {
         opt.joinAddress = c.kind == MenuChoice::Join ? c.address : "";
         opt.onFirstFrame = [&menu] { menu.hide(); };  // das Menü zeigt seine Ladeseite, bis das Spielfenster da ist
         opt.inventoryUi = menu.inventoryUi();  // E im Spiel-Modus: Inventarfenster
+        opt.catalogUi = menu.catalogUi();      // B / C im Spiel-Modus: Bauvorlagen und Rezepte auswählen
         opt.pauseUi = menu.pauseUi();  // ESC im Spiel-Modus: Pausenfenster mit derselben Oberfläche wie das Menü
         auto app = std::make_unique<App>();
         const int code = app->run(opt);

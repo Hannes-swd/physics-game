@@ -8,7 +8,7 @@ genug passendes Material drin ist.
 
 | Eingabe | Wirkung |
 |---|---|
-| **B** | Bauplan-Modus an/aus. Die gewählte Vorlage hängt als Hologramm vor der Figur |
+| **B** | Auswahl der Baupläne: ein Kasten je Vorlage mit Zeichnung und Materialbedarf, Klick wählt; dann hängt die Vorlage als Hologramm vor der Figur (ohne Hauptmenü: gleich die letzte) |
 | Mausrad / **1 … 0** | Vorlage wechseln |
 | **R** (Shift+R) | um 90° drehen |
 | Linke Maustaste | Vorlage hier setzen (mehrere hintereinander möglich) |
