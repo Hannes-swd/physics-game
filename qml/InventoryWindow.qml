@@ -1,5 +1,5 @@
-// Inventar im Spiel (E im Spiel-Modus). Rohbau wie das Hauptmenü: Qt Quick Controls im Stil "Basic", ohne eigene
-// Gestaltung. "inventory" ist das C++-Objekt aus src/Menu.cpp: Raster (cols x rows), Teile als Rechtecke darin (die
+// Inventar im Spiel (E im Spiel-Modus), im Stil "Wald" wie das Hauptmenü (qml/Wald/).
+// "inventory" ist das C++-Objekt aus src/Menu.cpp: Raster (cols x rows), Teile als Rechtecke darin (die
 // Fläche entspricht dem Gewicht, die Form ungefähr der des Teils), Gewichtszeile. Rechte Maustaste auf ein Teil (oder
 // mit rechts aus dem Fenster ziehen und loslassen): herausnehmen, es hängt dann vor der Figur und wird mit links gesetzt.
 import QtQuick

@@ -52,10 +52,17 @@ Page {
     header: Label {
         text: page.title
         padding: 10
+        horizontalAlignment: Text.AlignHCenter
+        font.pixelSize: 24
+        font.bold: true
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        // auf breiten Bildschirmen nicht über die ganze Breite: in der Mitte, höchstens 900 breit
+        width: Math.min(parent.width - 20, 900)
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
         anchors.margins: 10
         spacing: 8
 

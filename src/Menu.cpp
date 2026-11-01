@@ -690,6 +690,7 @@ public:
             engine_->rootContext()->setContextProperty("menu", backend_.get());
             engine_->rootContext()->setContextProperty("pause", pause_.get());
             QObject::connect(backend_.get(), &MenuBackend::settingsChanged, [this] { settingsChanged_ = true; });
+            engine_->addImportPath(QStringLiteral("qrc:/menu"));  // der Stil "Wald"
             engine_->load(QUrl(QStringLiteral("qrc:/menu/PauseWindow.qml")));
             if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
                 reset();
@@ -846,6 +847,7 @@ public:
             engine_ = std::make_unique<QQmlApplicationEngine>();
             engine_->rootContext()->setContextProperty("inventory", backend_.get());
             backend_->set(cols_, rows_, items_, summary_);
+            engine_->addImportPath(QStringLiteral("qrc:/menu"));  // der Stil "Wald"
             engine_->load(QUrl(QStringLiteral("qrc:/menu/InventoryWindow.qml")));
             if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
                 reset();
@@ -967,6 +969,7 @@ public:
             engine_ = std::make_unique<QQmlApplicationEngine>();
             engine_->rootContext()->setContextProperty("catalog", backend_.get());
             backend_->set(title, closeKey, items, current);
+            engine_->addImportPath(QStringLiteral("qrc:/menu"));  // der Stil "Wald"
             engine_->load(QUrl(QStringLiteral("qrc:/menu/CatalogWindow.qml")));
             if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
                 reset();
@@ -1052,8 +1055,9 @@ InventoryUi* MainMenu::inventoryUi() {
 }
 
 MainMenu::MainMenu(int& argc, char** argv) {
-    // "Basic": schlichte Grundform der Qt Quick Controls, lässt sich später vollständig selbst gestalten
-    QQuickStyle::setStyle("Basic");
+    // "Wald": eigener Stil (qml/Wald/, eingebettet als qrc:/menu/Wald), Baumstamm-Buttons, Holzbretter, Moos. Was er
+    // nicht selbst gestaltet, kommt aus "Basic"
+    QQuickStyle::setStyle("Wald");
     // Pause und Inventar liegen durchsichtig über dem Spiel (grau abgedunkelt): dafür brauchen die Fenster Alpha
     QQuickWindow::setDefaultAlphaBuffer(true);
     impl_ = std::make_unique<Impl>(argc, argv);
@@ -1080,6 +1084,7 @@ MenuChoice MainMenu::show(const std::string& message, RemoteServer* remote, cons
     QQmlApplicationEngine& engine = *impl_->engine;
     MenuChoice c;
     engine.rootContext()->setContextProperty("menu", &backend);
+    engine.addImportPath(QStringLiteral("qrc:/menu"));  // der Stil "Wald"
     engine.load(QUrl(QStringLiteral("qrc:/menu/Main.qml")));
     if (engine.rootObjects().isEmpty()) return c;  // QML-Fehler (stehen in der Konsole): beenden
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());

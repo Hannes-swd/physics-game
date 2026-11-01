@@ -190,6 +190,8 @@ endif()
 if(WERKSTATT_MENU)
   set(MENU_QML qml/Main.qml qml/MainPage.qml qml/WorldsPage.qml qml/MultiplayerPage.qml qml/SettingsPage.qml qml/LoadingPage.qml
                qml/PauseWindow.qml qml/InventoryWindow.qml qml/CatalogWindow.qml)
+  file(GLOB MENU_STYLE RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} CONFIGURE_DEPENDS qml/Wald/*.qml)
+  list(APPEND MENU_QML qml/Wald/qmldir ${MENU_STYLE})  # der Stil "Wald" (qrc:/menu/Wald)
   add_library(WerkstattMenu STATIC src/Menu.cpp src/Menu.h)
   set_target_properties(WerkstattMenu PROPERTIES AUTOMOC ON)
   target_include_directories(WerkstattMenu PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -1,5 +1,5 @@
-// Pausenfenster im Spiel (ESC im Spiel-Modus). Rohbau wie das Hauptmenü: Qt Quick Controls im Stil "Basic", noch ohne
-// eigene Gestaltung. "pause" ist das C++-Objekt aus src/Menu.cpp (Weiterspielen, Modus wechseln, Beenden), "menu" ist
+// Pausenfenster im Spiel (ESC im Spiel-Modus), im Stil "Wald" wie das Hauptmenü (qml/Wald/).
+// "pause" ist das C++-Objekt aus src/Menu.cpp (Weiterspielen, Modus wechseln, Beenden), "menu" ist
 // dasselbe wie im Hauptmenü (Einstellungen). Seiten: Pause, Beenden, SettingsPage (dieselbe wie im Hauptmenü).
 import QtQuick
 import QtQuick.Controls
@@ -45,13 +45,17 @@ ApplicationWindow {
 
     Pane {
         anchors.centerIn: parent
-        width: Math.min(640, parent.width)
-        height: Math.min(600, parent.height)
-        padding: 0
+        // wächst mit dem Spielfenster wie das Hauptmenü (ausgelegt für 1000 x 680)
+        readonly property real zoom: Math.max(1, Math.min(parent.width / 1000, parent.height / 680))
+        scale: zoom
+        width: Math.min(640, parent.width / zoom)
+        height: Math.min(600, parent.height / zoom)
+        padding: 22  // Abstand zum Holzrahmen
 
         StackView {
             id: stack
             anchors.fill: parent
+            clip: true  // Seitenwechsel bleibt im Fenster
             initialItem: Page {
                 StackView.onActivated: menu.page = "pause"
 

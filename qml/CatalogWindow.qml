@@ -1,5 +1,5 @@
-// Auswahl im Spiel: Bauvorlagen (B) und Rezepte zum Herstellen (C). Rohbau wie das Hauptmenü: Qt Quick Controls im Stil
-// "Basic", ohne eigene Gestaltung. "catalog" ist das C++-Objekt aus src/Menu.cpp: Überschrift, ein Kasten je Vorlage mit
+// Auswahl im Spiel: Bauvorlagen (B) und Rezepte zum Herstellen (C), im Stil "Wald" wie das Hauptmenü (qml/Wald/).
+// "catalog" ist das C++-Objekt aus src/Menu.cpp: Überschrift, ein Kasten je Vorlage mit
 // einer kleinen Zeichnung (Flächen schon fertig projiziert, von hinten nach vorne), Name und was es braucht.
 // Klick auf einen Kasten: auswählen, das Hologramm hängt dann vor der Figur und wird mit links gesetzt.
 import QtQuick
