@@ -132,7 +132,7 @@ void main() {
     // Nebel wie bei den Körpern (nur in der Perspektive)
     if (pc.camPos.w < 0.5) {
         float fog = 1.0 - exp(-dist * frame.misc.z);
-        col = mix(col, kHorizon, fog);
+        col = mix(col, fogColor(), fog);
         alpha = mix(alpha, 1.0, fog);
         glow *= 1.0 - fog;
     }

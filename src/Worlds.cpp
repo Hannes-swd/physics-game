@@ -262,6 +262,10 @@ bool readInfo(const fs::path& dir, WorldInfo& w, std::string* err) {
         w.env.heat = boolOf(e["heat"], w.env.heat);
         w.env.ambient = numOf(e["ambient"], w.env.ambient);
         w.env.heatSpeed = numOf(e["heatSpeed"], w.env.heatSpeed);
+        w.env.dayTime = numOf(e["dayTime"], w.env.dayTime);
+        w.env.dayLength = numOf(e["dayLength"], w.env.dayLength);
+        w.env.dayRunning = boolOf(e["dayRunning"], w.env.dayRunning);
+        w.env.starLines = boolOf(e["starLines"], w.env.starLines);
     }
     return true;
 }
@@ -300,6 +304,10 @@ bool writeInfo(const WorldInfo& w, std::string* err) {
         e.set("heat", makeBool(w.env.heat));
         e.set("ambient", Json::makeNumber(w.env.ambient));
         e.set("heatSpeed", Json::makeNumber(w.env.heatSpeed));
+        e.set("dayTime", Json::makeNumber(w.env.dayTime));
+        e.set("dayLength", Json::makeNumber(w.env.dayLength));
+        e.set("dayRunning", makeBool(w.env.dayRunning));
+        e.set("starLines", makeBool(w.env.starLines));
         j.set("environment", std::move(e));
     }
     const fs::path file = w.dir / L"world.json", tmp = w.dir / L"world.json.tmp";

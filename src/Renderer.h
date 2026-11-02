@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "Sky.h"
 #include "Solid.h"
 
 struct GLFWwindow;
@@ -91,7 +92,9 @@ struct FrameDesc {
     float fogDensity = 0.00035f;
     glm::mat4 lightViewProj{1.0f};
     float shadowTexelWorld = 0.01f;
-    glm::vec3 sunDir{0.4f, 1.0f, 0.3f};
+    glm::vec3 sunDir{0.4f, 1.0f, 0.3f};  // Licht und Schatten: am Tag die Sonne, nachts der Mond (sky.lightDir)
+    sky::State sky = sky::at(10.0);      // Tag und Nacht: Himmel, Sonne, Mond, Sterne, Belichtung
+    bool starLines = false;              // Sternbildlinien zeichnen
     bool shadows = true;
     bool grid = true;
     bool buildMode = true;

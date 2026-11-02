@@ -32,25 +32,80 @@ layout(set = 0, binding = 2) uniform Frame {
     vec4 water[64];    // Gewässer, je 8 Werte (WaterGpu in Renderer.h): lo + Wellenlänge, hi + Wellenhöhe, Phasen,
                        // Absorption + Meer, Streufarbe + Rastergröße, Strömungsgitter (2), Grund (Meer)
     vec4 waterInfo;    // x = Anzahl, yz = Richtung der Wellen
+    // Tag und Nacht (Sky.h): Sonne, Mond, Himmel, Sterne
+    vec4 sunPos;       // xyz Richtung zur Sonne (auch unter dem Horizont; sunDir ist nachts der Mond)
+    vec4 sunDisc;      // rgb Farbe der Sonnenscheibe (0 unter dem Horizont)
+    vec4 moonPos;      // xyz Richtung zum Mond, w = Helligkeit der Scheibe
+    vec4 zenith;       // rgb Himmel oben
+    vec4 horizon;      // rgb Himmel am Horizont, auch die Farbe des Nebels
+    vec4 glow;         // rgb Abend-/Morgenrot um die Sonne, w = Sterne sichtbar 0..1
+    vec4 skyInfo;      // x = Anzahl Sterne, y = Anzahl Sternbildlinien
+    mat4 starRot;      // Himmelsäquator -> Ort (dreht sich mit der Sternzeit)
+    vec4 stars[192];   // xyz Richtung (Äquatorsystem), w = Größenklasse + 20 · Farbe (sky::kMaxStars)
+    ivec4 starLines[96];  // je zwei Linien: Indizes in stars (sky::kMaxLines / 2)
 } frame;
 // Hinweis: Alle Positionen in den Shadern sind relativ zum Darstellungsursprung (nahe der Kamera),
 // damit die Genauigkeit auch Kilometer vom Weltursprung entfernt erhalten bleibt.
 
-const vec3 kHorizon = vec3(0.62, 0.72, 0.86);
+// Technische Ansichten (orthografisch) bleiben immer im Tageslicht
+bool orthoView() { return pc.camPos.w > 0.5; }
+const vec3 kDaySun = vec3(0.4626, 0.8738, 0.3084);  // feste Sonne der technischen Ansichten
+
+// Farbe des Nebels: der Himmel am Horizont (nachts dunkel)
+vec3 fogColor() { return frame.horizon.rgb; }
 
 vec3 tonemap(vec3 x) {
-    x *= frame.misc.y;
+    x *= orthoView() ? 1.0 : frame.misc.y;  // Belichtung: nachts gewöhnt sich das Auge an die Dunkelheit
     vec3 c = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
     return pow(c, vec3(1.0 / 2.2));
 }
 
-// Himmel in einer Richtung (auch für Spiegelungen auf dem Wasser)
+// Mondscheibe (etwas größer als echt, damit man sie gut sieht): Kugel, die von der Sonne beleuchtet wird (daraus die
+// Phase), mit dunkleren Meeren
+const float kMoonRadius = 0.0105;  // rad
+vec3 moonDisc(vec3 dir) {
+    vec3 M = frame.moonPos.xyz;
+    float c = dot(dir, M);
+    if (c < 0.9995 || frame.moonPos.w <= 0.0) return vec3(0.0);
+    vec3 right = normalize(cross(M, abs(M.y) > 0.99 ? vec3(1, 0, 0) : vec3(0, 1, 0)));
+    vec3 up = cross(right, M);
+    vec2 p = vec2(dot(dir, right), dot(dir, up)) / kMoonRadius;
+    float r2 = dot(p, p);
+    if (r2 > 1.1) return vec3(0.0);
+    vec3 n = p.x * right + p.y * up - sqrt(max(1.0 - r2, 0.0)) * M;  // Oberfläche, zum Betrachter gewandt
+    float lit = smoothstep(-0.04, 0.06, dot(n, frame.sunPos.xyz));
+    // Meere: ein paar weiche, dunkle Flecken (fest auf der Scheibe)
+    float mare = 0.0;
+    mare += 0.55 * smoothstep(0.42, 0.05, length(p - vec2(-0.22, 0.30)));
+    mare += 0.45 * smoothstep(0.30, 0.02, length(p - vec2(0.25, 0.18)));
+    mare += 0.40 * smoothstep(0.34, 0.03, length(p - vec2(0.05, -0.28)));
+    mare += 0.30 * smoothstep(0.22, 0.02, length(p - vec2(-0.45, -0.05)));
+    float albedo = 1.0 - 0.38 * clamp(mare, 0.0, 1.0);
+    float edge = 1.0 - smoothstep(0.88, 1.0, r2);
+    float limb = 0.82 + 0.18 * sqrt(max(1.0 - r2, 0.0));
+    return vec3(0.95, 0.93, 0.88) * 0.55 * lit * albedo * limb * edge * frame.moonPos.w;
+}
+
+// Himmel in einer Richtung (auch für Spiegelungen auf dem Wasser): Verlauf nach der Tageszeit, Abendrot, Sonne, Mond.
+// Die Sterne zeichnet nur sky.frag
 vec3 skyColor(vec3 dir) {
-    vec3 zenith = vec3(0.16, 0.34, 0.72);
-    vec3 haze = vec3(0.45, 0.47, 0.50);
-    vec3 col = dir.y > 0.0 ? mix(kHorizon, zenith, pow(dir.y, 0.55)) : mix(kHorizon, haze, pow(-dir.y, 0.35));
-    float s = max(dot(dir, normalize(frame.sunDir.xyz)), 0.0);
-    return col + vec3(1.0, 0.9, 0.75) * (pow(s, 900.0) * 30.0 + pow(s, 12.0) * 0.25);
+    if (orthoView()) {  // technische Ansicht: Tageshimmel
+        vec3 h = vec3(0.62, 0.72, 0.86);
+        return dir.y > 0.0 ? mix(h, vec3(0.16, 0.34, 0.72), pow(dir.y, 0.55)) : mix(h, vec3(0.45, 0.47, 0.50), pow(-dir.y, 0.35));
+    }
+    vec3 hor = frame.horizon.rgb;
+    vec3 col = dir.y > 0.0 ? mix(hor, frame.zenith.rgb, pow(dir.y, 0.55)) : mix(hor, hor * vec3(0.72, 0.65, 0.58), pow(-dir.y, 0.35));
+    vec3 S = frame.sunPos.xyz;
+    float s = max(dot(dir, S), 0.0);
+    // Abend- und Morgenrot: um die Sonne, dicht am Horizont
+    float low = 1.0 - smoothstep(0.0, 0.45, abs(dir.y));
+    col += frame.glow.rgb * (pow(s, 5.0) * 0.9 + s * 0.15) * low;
+    col += frame.sunDisc.rgb * (pow(s, 900.0) * 30.0 + pow(s, 12.0) * 0.25);
+    // Mond: Scheibe und ein schwacher Hof
+    float m = max(dot(dir, frame.moonPos.xyz), 0.0);
+    col += moonDisc(dir) * smoothstep(-0.01, 0.005, dir.y);
+    col += vec3(0.55, 0.62, 0.78) * frame.moonPos.w * (pow(m, 600.0) * 0.06 + pow(m, 24.0) * 0.012);
+    return col;
 }
 
 // ------------------------------------------------------------------ Wasser

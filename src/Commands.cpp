@@ -416,6 +416,8 @@ std::string commandHelp() {
         "  tool select|saw [x|y|z] [angle] [kerf_mm]|drill [D_mm] [depth_mm]|round [r_mm] [chamfer]|mill [L W depth]|plane [mm]\n"
         "  tool heat [lighter|gas|welding|spray|nitrogen]   hold the mouse on a part (build) or F (play) to heat/cool it\n"
         "  window inspector|drawing|console|help|materials [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"
+        "  time | time <hh:mm>|dawn|sunrise|morning|noon|afternoon|sunset|dusk|night|midnight | time add <hours>   time of day\n"
+        "      (a day lasts 20 min) | time stop|run | time length <minutes per day> | sky   sun, moon, stars | sky lines [on|off]\n"
         "TERRAIN (world type normal, lengths in cm)\n"
         "  terrain | terrain at [x z] | terrain biomes   state, height, biome and climate at a spot, all biomes\n"
         "  terrain find <biome> | terrain goto <biome>   nearest spot of a biome (goto: the camera looks there)\n"

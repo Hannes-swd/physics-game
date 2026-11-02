@@ -681,6 +681,10 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         out = teleportCommand(t);
         return true;
     }
+    if (cmd == "time" || cmd == "sky") {  // Tag und Nacht (AppSky.cpp)
+        out = timeCommand(t);
+        return true;
+    }
     if (cmd == "lan") {
         out = lanCommand(t);
         return true;
@@ -920,6 +924,7 @@ std::string App::statusText() {
     s += std::string("mode          ") + (play_ ? "play" : "build") + "\n";
     s += std::string("view          ") + (play_ ? "first person" : viewName(viewMode_)) + "\n";
     s += std::string("tool          ") + toolName(tool_) + "\n";
+    s += "time of day   " + sky::clock(dayHours_) + (dayRunning_ ? "" : " (stopped)") + ", a day lasts " + fmtNum(dayLength_ / 60.0, 1) + " min\n";
     glm::dvec3 c = orbitTarget_ * 100.0;
     s += "camera        target " + fmtNum(c.x) + " " + fmtNum(c.y) + " " + fmtNum(c.z) + " cm, distance " + fmtNum(orbitDist_, 2) + " m\n";
     if (physics_.hasCharacter()) {
@@ -944,6 +949,7 @@ std::string App::statusText() {
 bool App::queryValue(const std::string& n, double& num, std::string& str) {
     str.clear();
     if (n == "time") num = time_;
+    else if (n == "daytime") num = dayHours_;  // Uhrzeit der Welt in Stunden
     else if (n == "fps") num = fps_;
     else if (n == "mode") str = play_ ? "play" : "build";
     else if (n == "view") str = play_ ? "firstperson" : viewName(viewMode_);

@@ -620,6 +620,10 @@ void App::netSync(Peer& p) {
                 for (float h : tile.h) w.f32(h);
             }
         }
+        // Tag und Nacht: die Uhr des Gastgebers (der Mitspieler lässt sie dazwischen selbst weiterlaufen)
+        w.f64(dayHours_);
+        w.f64(dayLength_);
+        w.u8(dayRunning_);
         p.conn->send(Msg::Tick, w);
     }
     net::Writer w;
@@ -945,7 +949,12 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
             m->updateBounds();
             b.ground = m;
         }
+        const double dayHours = r.f64(), dayLength = r.f64();
+        const bool dayRunning = r.u8() != 0;
         if (!r.ok()) break;
+        dayHours_ = std::fmod(std::fmod(dayHours, 24.0) + 24.0, 24.0);
+        dayLength_ = std::clamp(dayLength, 10.0, 864000.0);
+        dayRunning_ = dayRunning;
         if (air != world_->airDensity() || wind != world_->wind()) world_->setAir(air, wind);
         world_->setBreakage(breakage);
         world_->setBuildCollision(buildCollision);

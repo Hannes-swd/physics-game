@@ -47,6 +47,8 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 
 **Visualisierung:**
 - Echtzeit 3D-Rendering mit Vulkan
+- Tag und Nacht (ein Tag = 20 Minuten): Sonne mit Morgen- und Abendrot, Mond mit Schatten, echte Sternbilder und
+  Milchstraße; helle Nächte wie früher ohne Lampen ([23](docs/23-Tag-und-Nacht.md))
 - Physik-Inspektor (F3) für Debugging
 - Technische Zeichnungen mit SVG-Export
 - Verschiedene Ansicht-Modi

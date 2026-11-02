@@ -273,6 +273,11 @@ bool App::openWorld(std::string* err) {
         world_->setAmbient(w.env.ambient);
         world_->setHeatSpeed(w.env.heatSpeed);
     }
+    // Tag und Nacht (eine neue Welt beginnt am Morgen)
+    dayHours_ = std::fmod(std::fmod(w.env.dayTime, 24.0) + 24.0, 24.0);
+    dayLength_ = std::clamp(w.env.dayLength, 10.0, 864000.0);
+    dayRunning_ = w.env.dayRunning;
+    starLines_ = w.env.starLines;
     if (w.view.valid) {
         orbitTarget_ = w.view.orbitTarget;
         orbitYaw_ = w.view.orbitYaw;
@@ -338,6 +343,10 @@ bool App::saveWorld(bool quiet, bool evenAsClient) {
     w.env.heat = world_->heat();
     w.env.ambient = world_->ambient();
     w.env.heatSpeed = world_->heatSpeed();
+    w.env.dayTime = dayHours_;
+    w.env.dayLength = dayLength_;
+    w.env.dayRunning = dayRunning_;
+    w.env.starLines = starLines_;
     w.playTime += time_ - playTimeMark_;
     playTimeMark_ = time_;
     w.lastPlayed = worlds::now();

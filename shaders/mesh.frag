@@ -332,7 +332,11 @@ void main() {
     }
     bool ortho = pc.camPos.w > 0.5;
     vec3 V = normalize(pc.camPos.xyz - vWorldPos);
-    vec3 L = normalize(frame.sunDir.xyz);
+    // Licht: Sonne bzw. Mond (Tag und Nacht); technische Ansichten immer im festen Tageslicht ohne Schatten
+    vec3 L = ortho ? kDaySun : normalize(frame.sunDir.xyz);
+    vec3 lightCol = ortho ? vec3(3.4, 3.15, 2.9) : frame.sunColor.rgb;
+    vec3 skyAmb = ortho ? vec3(0.36, 0.45, 0.62) : frame.skyColor.rgb;
+    vec3 groundAmb = ortho ? vec3(0.20, 0.18, 0.16) : frame.groundColor.rgb;
     vec3 H = normalize(L + V);
     float NoL = max(dot(N, L), 0.0);
     float NoV = max(dot(N, V), 1e-3);
@@ -349,15 +353,15 @@ void main() {
     vec3 F = f0 + (1.0 - f0) * pow(1.0 - VoH, 5.0);
     vec3 kd = (1.0 - F) * (1.0 - metallic);
 
-    float sh = shadowFactor(vWorldPos, N);
-    vec3 direct = (kd * albedo / PI + D * Vis * F) * frame.sunColor.rgb * NoL * sh;
+    float sh = ortho ? 1.0 : shadowFactor(vWorldPos, N);
+    vec3 direct = (kd * albedo / PI + D * Vis * F) * lightCol * NoL * sh;
     // unter Wasser: weniger Sonne (rot zuerst), Lichtflecken der Wellen, weniger Umgebungslicht
     vec4 sea = waterCount() > 0 ? waterSun(vWorldPos, pc.params.y) : vec4(1.0);
     direct *= sea.rgb;
 
-    vec3 amb = mix(frame.groundColor.rgb, frame.skyColor.rgb, N.y * 0.5 + 0.5) * sea.a;
+    vec3 amb = mix(groundAmb, skyAmb, N.y * 0.5 + 0.5) * sea.a;
     vec3 R = reflect(-V, N);
-    vec3 env = mix(frame.groundColor.rgb * 1.2, frame.skyColor.rgb * 1.6, smoothstep(-0.3, 0.5, R.y));
+    vec3 env = mix(groundAmb * 1.2, skyAmb * 1.6, smoothstep(-0.3, 0.5, R.y));
     vec3 Fa = f0 + (max(vec3(1.0 - rough), f0) - f0) * pow(1.0 - NoV, 5.0);
     float ao = 0.75 + 0.25 * (N.y * 0.5 + 0.5);
     vec3 color = direct + amb * albedo * (1.0 - metallic) * ao + env * sea.a * Fa * (1.0 - 0.6 * rough) * ao;
@@ -381,7 +385,7 @@ void main() {
     if (!ortho) {
         float dist = length(pc.camPos.xyz - vWorldPos);
         float fog = 1.0 - exp(-dist * frame.misc.z);
-        color = mix(color, kHorizon, fog);
+        color = mix(color, fogColor(), fog);
     }
 
     // Hervorhebung (1 = Maus darüber, 2 = ausgewählt, 3 = Werkzeugziel)

@@ -44,6 +44,9 @@ struct WorldInfo {
         glm::dvec3 wind{0};
         bool breakage = true, buildCollision = true, heat = true;
         double ambient = 20.0, heatSpeed = 1.0;
+        // Tag und Nacht: Uhrzeit (Stunden), Länge eines Tags (s), läuft die Uhr, Sternbildlinien
+        double dayTime = 8.0, dayLength = 1200.0;
+        bool dayRunning = true, starLines = false;
     } env;
 };
 

@@ -398,6 +398,11 @@ private:
     AppOptions opt_;
     bool quit_ = false;
     double time_ = 0;
+    // Tag und Nacht (Sky.h): Uhrzeit der Welt in Stunden (12 = Mittag), Länge eines Tags in Sekunden, läuft die Uhr
+    double dayHours_ = 8.0, dayLength_ = sky::kDayLength;
+    bool dayRunning_ = true, starLines_ = false;
+    void updateDayTime(double dt);
+    std::string timeCommand(const std::vector<std::string>& args);  // Befehl "time"
     uint64_t frame_ = 0;
     float fps_ = 0;
 

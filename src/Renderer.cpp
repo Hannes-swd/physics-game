@@ -70,6 +70,17 @@ struct FrameUbo {
     glm::vec4 lightInfo;  // x = Anzahl
     WaterGpu water[kMaxWater];
     glm::vec4 waterInfo;  // x = Anzahl, yz = Richtung der Wellen
+    // Tag und Nacht (Sky.h), wie in common.glsl
+    glm::vec4 sunPos;     // xyz Richtung zur Sonne (auch unter dem Horizont)
+    glm::vec4 sunDisc;    // rgb Farbe der Sonnenscheibe (0 unter dem Horizont)
+    glm::vec4 moonPos;    // xyz Richtung zum Mond, w = Helligkeit der Scheibe
+    glm::vec4 zenith;     // rgb Himmel oben
+    glm::vec4 horizon;    // rgb Himmel am Horizont, auch Nebel
+    glm::vec4 glow;       // rgb Abend-/Morgenrot, w = Sterne sichtbar 0..1
+    glm::vec4 skyInfo;    // x = Anzahl Sterne, y = Anzahl Linien
+    glm::mat4 starRot;    // Himmelsäquator -> Ort
+    glm::vec4 stars[sky::kMaxStars];
+    glm::ivec4 starLines[sky::kMaxLines / 2];  // je zwei Linien (Indizes in stars)
 };
 
 constexpr VkDeviceSize kHeatBytes = 64 * 1024 * sizeof(glm::vec4);  // Anfangsgröße des Wärme-Puffers
@@ -837,10 +848,31 @@ void Renderer::render(const FrameDesc& fd) {
     FrameUbo ubo;
     ubo.lightViewProj = fd.lightViewProj;
     ubo.sunDir = glm::vec4(glm::normalize(fd.sunDir), 0.0f);
-    ubo.sunColor = glm::vec4(3.4f, 3.15f, 2.9f, 0.0f);
-    ubo.skyColor = glm::vec4(0.36f, 0.45f, 0.62f, 0.0f);
-    ubo.groundColor = glm::vec4(0.20f, 0.18f, 0.16f, 0.0f);
-    ubo.misc = glm::vec4(fd.shadowTexelWorld, 1.0f, fd.fogDensity, fd.shadows ? 1.0f : 0.0f);
+    const sky::State& sk = fd.sky;
+    ubo.sunColor = glm::vec4(sk.lightColor, 0.0f);
+    ubo.skyColor = glm::vec4(sk.skyAmbient, 0.0f);
+    ubo.groundColor = glm::vec4(sk.groundAmbient, 0.0f);
+    ubo.misc = glm::vec4(fd.shadowTexelWorld, sk.exposure, fd.fogDensity, fd.shadows ? 1.0f : 0.0f);
+    ubo.sunPos = glm::vec4(glm::normalize(sk.sunDir), 0.0f);
+    ubo.sunDisc = glm::vec4(sk.sunDisc, 0.0f);
+    ubo.moonPos = glm::vec4(glm::normalize(sk.moonDir), sk.moonBright);
+    ubo.zenith = glm::vec4(sk.zenith, 0.0f);
+    ubo.horizon = glm::vec4(sk.horizon, 0.0f);
+    ubo.glow = glm::vec4(sk.glow, sk.stars);
+    ubo.starRot = sk.starRot;
+    {
+        const std::vector<glm::vec4>& st = sky::stars();
+        const std::vector<glm::ivec2>& ln = sky::lines();
+        const size_t ns = std::min<size_t>(st.size(), sky::kMaxStars);
+        const size_t nl = fd.starLines ? std::min<size_t>(ln.size(), sky::kMaxLines) : 0;
+        for (size_t i = 0; i < ns; ++i) ubo.stars[i] = st[i];
+        for (size_t i = 0; i < nl; ++i) {
+            glm::ivec4& v = ubo.starLines[i / 2];
+            if (i % 2 == 0) v = glm::ivec4(ln[i], 0, 0);
+            else v = glm::ivec4(v.x, v.y, ln[i].x, ln[i].y);
+        }
+        ubo.skyInfo = glm::vec4((float)ns, (float)nl, 0.0f, 0.0f);
+    }
     ubo.originMod = glm::vec4(std::fmod(fd.origin.x, 200.0), std::fmod(fd.origin.y, 200.0), std::fmod(fd.origin.z, 200.0), 0.0f);
     ubo.originF = glm::vec4(glm::vec3(fd.origin), 0.0f);
     const size_t nLights = std::min<size_t>({fd.lightPos.size(), fd.lightColor.size(), (size_t)kMaxLights});

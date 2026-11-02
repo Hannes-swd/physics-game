@@ -13,7 +13,7 @@ namespace net {
 
 constexpr int kGamePort = 7780;        // TCP: Spiel
 constexpr int kDiscoveryPort = 7781;   // UDP: Spiele im LAN finden
-constexpr uint32_t kProtocol = 4;      // beide Seiten müssen dieselbe Version sprechen (3: Gelände, 4: Bäume)
+constexpr uint32_t kProtocol = 5;      // beide Seiten müssen dieselbe Version sprechen (3: Gelände, 4: Bäume, 5: Tageszeit)
 
 enum class Msg : uint8_t {
     // Mitspieler -> Gastgeber

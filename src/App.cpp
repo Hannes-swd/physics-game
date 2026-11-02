@@ -202,6 +202,7 @@ int App::run(const AppOptions& opt) {
         float dt = (float)std::min(now - last, 0.1);
         last = now;
         time_ += dt;
+        updateDayTime(dt);
 
         // Befehle kommen auch an, wenn das Fenster minimiert ist
         remote_->poll([&](uint64_t client, const std::string& l) {
@@ -457,7 +458,9 @@ void App::buildFrame(FrameDesc& fd) {
     fd.grid = showGrid_ && !play_;
     fd.shadows = showShadows_;
     fd.time = (float)time_;
-    fd.sunDir = glm::normalize(glm::vec3(0.45f, 0.85f, 0.3f));
+    fd.sky = sky::at(dayHours_);  // Tag und Nacht: Sonne bzw. Mond geben Licht und Schatten
+    fd.sunDir = glm::normalize(fd.sky.lightDir);
+    fd.starLines = starLines_;
     fd.fogDensity = (float)(0.00035 / settings_.viewDistance);  // Sichtweite (Einstellungen -> Grafik)
 
     for (const View& v : views_) {
@@ -480,7 +483,7 @@ void App::buildFrame(FrameDesc& fd) {
     {
         glm::vec3 c = glm::vec3(shadowCenter - O);
         glm::vec3 L = fd.sunDir;
-        glm::mat4 lv = glm::lookAt(c + L * 150.0f, c, glm::vec3(0, 1, 0));
+        glm::mat4 lv = glm::lookAt(c + L * 150.0f, c, std::abs(L.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0));
         float texel = float(2.0 * R / renderer_.shadowSize());
         glm::vec4 lc = lv * glm::vec4(c, 1.0f);
         glm::vec2 snapped = glm::floor(glm::vec2(lc) / texel) * texel;
