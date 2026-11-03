@@ -222,7 +222,9 @@ private:
     enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor };
     // Werkzeuge in der Hand (AppTools.cpp): Auswahl, Wirkung auf Ziel, Hilfstext in der Statuszeile
     void selectHandTool(HandTool t);
-    void handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown);
+    void handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown, bool rmbPressed);
+    std::string boreHole(uint32_t id, const glm::dvec3& from, const glm::dvec3& dir, double diameterMm, double depthMm, bool newStep);
+    void digGround(const glm::dvec3& p, double amount, double radius);
     std::string handToolHelp() const;
     void drawHandToolBar();  // Leiste unten rechts: Hand und Werkzeuge als Symbole, das gewählte hervorgehoben
     void holdForces(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw);

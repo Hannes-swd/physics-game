@@ -786,6 +786,8 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             if (glm::length(dir) < 1e-9) return fail("direction is zero");
             dir = glm::normalize(dir);
             depth = depth > 0 ? depth / 1000.0 : 0.0;
+            from = w.toPartSpace(*o, from);  // Welt -> Raum des Teils (wie bei der Ebene von cut)
+            dir = w.dirToPartSpace(*o, dir);
         } else {
             int k, s;
             double a, b;
@@ -1648,17 +1650,19 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         res.text = "chop: " + fmtNum(removed * 1e6, 0) + " cm3 of " + materials()[(size_t)o->material].name + " chipped off" +
                    (w.objects().size() > before ? " - it is through, the part falls" : "");
     } else if (cmd == "laser") {
-        // Laser: Schnitt durch einen Punkt (cm) senkrecht zur Strahlrichtung (laser <id> <x y z> <nx ny nz> [kerf_mm])
+        // Laser: Schnittebene durch einen Punkt (cm) mit der Normale n, beides in Weltkoordinaten
+        // (laser <id> <x y z> <nx ny nz> [kerf_mm])
         Object* o = obj(1);
         double x, y, z, nx, ny, nz, kerf = 0;
         if (!o || !num(2, x) || !num(3, y) || !num(4, z) || !num(5, nx) || !num(6, ny) || !num(7, nz))
-            return fail("laser <id> <x y z> <nx ny nz> [kerf_mm]   (cm: point the beam hits; normal = beam direction)");
+            return fail("laser <id> <x y z> <nx ny nz> [kerf_mm]   (cm, world: a point on the cut and the normal of the cut)");
         num(8, kerf);
         const glm::dvec3 n(nx, ny, nz);
-        if (glm::length(n) < 1e-9) return fail("beam direction is zero");
-        solid::Plane pl;
-        pl.n = glm::normalize(n);
-        pl.d = glm::dot(pl.n, glm::dvec3(x, y, z) / 100.0);
+        if (glm::length(n) < 1e-9) return fail("the normal is zero");
+        solid::Plane world;
+        world.n = glm::normalize(n);
+        world.d = glm::dot(world.n, glm::dvec3(x, y, z) / 100.0);
+        const solid::Plane pl = w.planeToPartSpace(*o, world);
         std::vector<uint32_t> ids;
         std::string err;
         const uint32_t id = o->id;

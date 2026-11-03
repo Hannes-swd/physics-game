@@ -624,7 +624,7 @@ void App::playInput(float dt) {
     // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
     planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
     const bool lmbPressed = lmbDown && !prevLmb_;
-    handToolAction(eye, fwd, lmbDown, lmbPressed, rmbDown);
+    handToolAction(eye, fwd, lmbDown, lmbPressed, rmbDown, rmbDown && !prevRmb_);
     const bool inHand = handTool_ != HandTool::None;
     HandInput in;
     in.lmbDown = lmbDown && !inHand;

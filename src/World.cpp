@@ -976,6 +976,17 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
     return true;
 }
 
+glm::dvec3 World::toPartSpace(const Object& o, const glm::dvec3& world) const { return glm::conjugate(o.rot) * (world - o.pos); }
+
+glm::dvec3 World::dirToPartSpace(const Object& o, const glm::dvec3& dir) const { return glm::conjugate(o.rot) * dir; }
+
+solid::Plane World::planeToPartSpace(const Object& o, const solid::Plane& world) const {
+    solid::Plane out;
+    out.n = glm::normalize(dirToPartSpace(o, world.n));
+    out.d = glm::dot(out.n, toPartSpace(o, world.n * world.d));  // ein Punkt der Ebene (der Fußpunkt vom Ursprung aus)
+    return out;
+}
+
 bool World::cut(uint32_t id, const solid::Plane& pl, double kerf, std::vector<uint32_t>* resultIds, std::string* err) {
     Object* o = find(id);
     if (!o) {

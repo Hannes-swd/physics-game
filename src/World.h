@@ -316,6 +316,10 @@ public:
 
     // ---------------------------------------------------------- Werkzeuge
     // Sägen entlang einer lokalen Ebene. kerf = Schnittfuge (m). resultIds: alle entstandenen Teile.
+    // Schnitt und Bohrung rechnen im Raum des Teils. Aus der Welt umrechnen (Lage pos und Drehung rot des Teils):
+    glm::dvec3 toPartSpace(const Object& o, const glm::dvec3& world) const;
+    glm::dvec3 dirToPartSpace(const Object& o, const glm::dvec3& dir) const;
+    solid::Plane planeToPartSpace(const Object& o, const solid::Plane& world) const;
     bool cut(uint32_t id, const solid::Plane& localPlane, double kerf, std::vector<uint32_t>* resultIds, std::string* err);
     // Bohren: lokaler Startpunkt + Richtung, Durchmesser/Tiefe in m (Tiefe <= 0: durchgehend)
     bool drill(uint32_t id, const glm::dvec3& localFrom, const glm::dvec3& localDir, double diameter, double depth,

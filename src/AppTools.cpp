@@ -5,8 +5,10 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "Scatter.h"
+#include "Terrain.h"
 
 namespace {
 constexpr double kAxeReach = 2.6;      // m
@@ -14,6 +16,9 @@ constexpr double kLaserReach = 8.0;    // m
 constexpr double kDrillReach = 2.5;    // m, auf Teile
 constexpr double kDigReach = 6.0;      // m, auf Gelände
 constexpr double kTractorReach = 10.0; // m
+constexpr double kDigRadius = 0.6;     // m: Planierer und Erdbohrer graben eine Mulde von gut 1 m Breite
+constexpr double kDigStep = 0.08;      // m je Schritt, solange die Taste gehalten wird
+constexpr double kLaserStep = 0.08;    // s zwischen zwei Brennschritten des Lasers
 
 // Punkt in cm (scale 100) oder Richtung (scale 1), für Befehle
 std::string vecText(const glm::dvec3& v, double scale, int digits) {
@@ -27,9 +32,9 @@ void App::selectHandTool(HandTool t) {
     switch (t) {
     case HandTool::None: toast("Hand: Maus links nimmt Teile auf, rechts wirft sie (1-6 wählt ein Werkzeug)"); break;
     case HandTool::Axe: toast("Axt: Linksklick auf Holz hackt (2 oder X legt sie zurück in die Hand)"); break;
-    case HandTool::Laser: toast("Laser: Linksklick schneidet quer durch das Teil vor dir (bis 8 m)"); break;
-    case HandTool::Drill: toast("Erdbohrer: Linksklick bohrt in Teile, auf Gelände gräbt er eine Mulde"); break;
-    case HandTool::Terra: toast("Planierer: Linksklick halten senkt das Gelände, rechts hebt es an"); break;
+    case HandTool::Laser: toast("Laser: Linksklick halten brennt dort, wo du hinzielst (bis 8 m), 1 legt ihn weg"); break;
+    case HandTool::Drill: toast("Erdbohrer: Linksklick bohrt in Teile, auf Gelände halten gräbt er eine Grube"); break;
+    case HandTool::Terra: toast("Planierer: Linksklick halten gräbt, rechts halten füllt auf"); break;
     case HandTool::Tractor: toast("Traktorstrahl: Linksklick zieht Steine, Stöcke und Stämme bis 10 m ins Inventar"); break;
     }
 }
@@ -38,16 +43,52 @@ std::string App::handToolHelp() const {
     const std::string tail = " · WASD laufen · Leertaste springen · 1 Hand" + std::string(cheats_ ? " · Tab Bauen" : "");
     switch (handTool_) {
     case HandTool::Axe: return "AXT: Maus links hackt (auf Holz zielen, bis 2,6 m)" + tail;
-    case HandTool::Laser: return "LASER: Maus links schneidet (bis 8 m)" + tail;
-    case HandTool::Drill: return "ERDBOHRER: Maus links bohrt (Teil oder Gelände)" + tail;
-    case HandTool::Terra: return "PLANIERER: Maus links senken, rechts heben (halten)" + tail;
+    case HandTool::Laser: return "LASER: Maus links halten brennt, wo du hinzielst (bis 8 m)" + tail;
+    case HandTool::Drill: return "ERDBOHRER: Maus links bohrt in Teile, halten gräbt im Gelände" + tail;
+    case HandTool::Terra: return "PLANIERER: Maus links halten gräbt, rechts halten füllt auf" + tail;
     case HandTool::Tractor: return "TRAKTORSTRAHL: Maus links zieht ins Inventar (bis 10 m)" + tail;
     case HandTool::None: break;
     }
     return "";
 }
 
-void App::handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown) {
+// Loch bohren (Laser und Erdbohrer): von from aus in Richtung dir, Durchmesser und Tiefe in mm (Tiefe 0: durch das ganze Teil).
+// newStep: ein neuer Schritt für Rückgängig. Sonst fügt sich das Bohren dem letzten Schritt an (der Laser brennt so in einem Zug).
+// Rückgabe: Fehlermeldung, leer wenn es geklappt hat. Beim Mitspieler rechnet der Gastgeber den Befehl "drillat".
+std::string App::boreHole(uint32_t id, const glm::dvec3& from, const glm::dvec3& dir, double diameterMm, double depthMm, bool newStep) {
+    if (netClient()) {
+        runLine("drillat " + std::to_string(id) + " " + vecText(from, 100, 1) + " " + vecText(dir, 1, 4) + " " + fmtNum(diameterMm, 1) + " " +
+                    fmtNum(depthMm, 1),
+                "drill");
+        return "";
+    }
+    Object* o = world_->find(id);
+    if (!o) return "part not found";
+    const glm::dvec3 ndir = glm::normalize(dir);
+    std::vector<uint32_t> ids;
+    double removed = 0;
+    std::string err;
+    if (newStep) world_->pushUndo();
+    if (!world_->drill(id, world_->toPartSpace(*o, from), world_->dirToPartSpace(*o, ndir), diameterMm / 1000.0, depthMm / 1000.0, &ids,
+                       &removed, &err)) {
+        if (newStep) world_->discardUndo();
+        return err;
+    }
+    return "";
+}
+
+// Gelände heben (amount > 0) oder senken (amount < 0), in m. Beim Mitspieler rechnet der Gastgeber den Befehl "terrain".
+void App::digGround(const glm::dvec3& p, double amount, double radius) {
+    if (netClient()) {
+        runLine(std::string(amount < 0 ? "terrain lower " : "terrain raise ") + fmtNum(p.x * 100, 1) + " " + fmtNum(p.z * 100, 1) + " " +
+                    fmtNum(radius * 100, 0) + " " + fmtNum(std::abs(amount) * 100, 1),
+                "terra");
+        return;
+    }
+    if (Terrain* tr = world_->terrain()) tr->raise(p.x, p.z, radius, amount);
+}
+
+void App::handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown, bool rmbPressed) {
     if (handTool_ == HandTool::None) return;
     RayHit h;
     const bool hitAny = world_->raycast(eye, fwd, h, 0);
@@ -63,36 +104,45 @@ void App::handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbD
         }
         break;
     case HandTool::Laser:
-        if (lmbPressed && ready && hitPart && h.t < kLaserReach) {
-            toolReady_ = time_ + 0.5;
-            // Schnittebene durch den Treffer, senkrecht zur Blickrichtung
-            runLine("laser " + std::to_string(h.obj->id) + " " + vecText(h.point, 100, 1) + " " + vecText(fwd, 1, 4), "laser");
+        // Halten brennt dort, wo man hinzielt: je Schritt 2 cm tiefer in das Teil, 3 cm breit. Zieht man den Strahl
+        // durch, entsteht ein Schnitt; so lange, bis das Teil durch ist. Ein Schritt ist ein Rückgängig-Schritt.
+        if (lmbDown && ready) {
+            if (!hitPart || h.t > kLaserReach) {
+                if (lmbPressed) toast("Laser: auf ein Teil zielen (bis 8 m)", false);
+                break;
+            }
+            toolReady_ = time_ + kLaserStep;
+            const std::string e = boreHole(h.obj->id, h.point - fwd * 0.01, fwd, 30, 30, lmbPressed);
+            if (!e.empty() && lmbPressed) toast("Laser: " + e, false);
         }
         break;
     case HandTool::Drill:
-        if (lmbPressed && ready) {
-            if (hitPart && h.t < kDrillReach) {
+        if (hitPart && h.t < kDrillReach) {
+            if (lmbPressed && ready) {
                 // 2 cm vor der Oberfläche ansetzen, 12 mm Durchmesser, 8 cm tief
                 toolReady_ = time_ + 0.3;
-                runLine("drillat " + std::to_string(h.obj->id) + " " + vecText(h.point + h.normal * 0.02, 100, 1) + " " +
-                            vecText(-h.normal, 1, 4) + " 12 80",
-                        "drill");
-            } else if (hitAny && h.t < kDigReach) {
-                // Gelände: Mulde mit 25 cm Radius, 8 cm tief
-                toolReady_ = time_ + 0.3;
-                runLine("terrain lower " + fmtNum(h.point.x * 100, 1) + " " + fmtNum(h.point.z * 100, 1) + " 25 8", "drill");
+                if (const std::string e = boreHole(h.obj->id, h.point + h.normal * 0.02, -h.normal, 12, 80, true); !e.empty())
+                    toast("Erdbohrer: " + e, false);
             }
-        }
-        break;
-    case HandTool::Terra:
-        // Gelände: halten senkt (links) bzw. hebt (rechts) in kleinen Schritten
-        if ((lmbDown || rmbDown) && ready && hitAny && !h.obj && h.t < kDigReach) {
+        } else if (!hitPart && hitAny && h.t < kDigReach && lmbDown && ready) {
+            // Gelände: halten gräbt die Grube tiefer
             toolReady_ = time_ + 0.2;
-            runLine(std::string(lmbDown ? "terrain lower " : "terrain raise ") + fmtNum(h.point.x * 100, 1) + " " +
-                        fmtNum(h.point.z * 100, 1) + " 100 3",
-                    "terra");
+            digGround(h.point, -kDigStep, kDigRadius);
         }
         break;
+    case HandTool::Terra: {
+        // Planierer: gräbt und füllt den Boden, den der Blick trifft (Teile davor stören nicht)
+        Terrain* tr = world_->terrain();
+        double t = 0;
+        glm::dvec3 n(0, 1, 0);
+        if (!tr) {
+            if (lmbPressed || rmbPressed) toast("Diese Welt ist flach: kein Gelände zum Graben", false);
+        } else if ((lmbDown || rmbDown) && ready && tr->raycast(eye, fwd, kDigReach, t, n)) {
+            toolReady_ = time_ + 0.2;
+            digGround(eye + fwd * t, lmbDown ? -kDigStep : kDigStep, kDigRadius);
+        }
+        break;
+    }
     case HandTool::Tractor:
         if (lmbPressed && ready && !netClient()) {
             toolReady_ = time_ + 0.2;
