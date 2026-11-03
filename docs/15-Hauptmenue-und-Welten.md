@@ -25,7 +25,7 @@ Beim Start öffnet sich das **Hauptmenü**, nicht gleich eine Welt. Es ist mit *
     **Zufällig** würfelt neu. Gleicher Seed bedeutet gleiche Welt.
   - **Welttyp**: *Normal* (Gelände mit Biomen) oder *Flach* (Ebene wie bisher)
   - **Biome** (nur bei *Normal*): *Alle Biome* oder *Nur …* ein einzelnes Biom
-  - **Cheats**: *Ohne Cheats (normal)* (Standard) oder *Mit Cheats*. Ohne Cheats gibt es nur den Spiel-Modus: Tab wechselt
+  - **Mit Cheats** (Häkchen, Standard: aus). Ohne Cheats gibt es nur den Spiel-Modus: Tab wechselt
     nicht in den Bau-Modus, F1 öffnet keine Konsole, und die Befehle in den Menüs (Szenen, Physik, Wasser, Wärme, Ansicht,
     Bearbeiten) sind aus. Die Pause-Taste „Modus wechseln“ ist aus. Werkzeuge in der Hand und Bauvorlagen (B, C) gehen
     trotzdem. Mit Cheats ist oben rechts „· Cheats“ zu sehen.
