@@ -1,5 +1,5 @@
 // Welten: jede Welt ist ein Ordner unter %APPDATA%\Werkstatt\worlds\
-//   world.json        Name, Seed, Generator, erstellt, zuletzt geöffnet, Spielzeit, Kamera/Spielfigur, Umgebung
+//   world.json        Name, Seed, Generator, Cheats, erstellt, zuletzt geöffnet, Spielzeit, Kamera/Spielfigur, Umgebung
 //   world.bin         Teile, Verbindungen, Gewässer, entfernte Bäume (binär, WorldBin.cpp); ältere Welten: scene.werkstatt
 //   generator.json, trees.json   Kopien von Biomen und Baumarten (die Welt sieht immer gleich aus)
 //   regions/          geänderte Gelände-Chunks
@@ -26,6 +26,9 @@ struct WorldInfo {
     int64_t created = 0, lastPlayed = 0;  // Unix-Zeit (s)
     double playTime = 0;                // gespielte Zeit (s)
     bool broken = false;                // world.json unlesbar (die Welt lässt sich nur löschen)
+    // Cheats: Bau-Modus (Tab), Konsole und die Befehle in den Menüs. Ohne Cheats nur Spielen. Welten ohne den Eintrag
+    // (älter) haben Cheats.
+    bool cheats = false;
 
     // Ansicht beim letzten Speichern
     struct View {
@@ -70,6 +73,7 @@ struct CreateOptions {
     std::string generator = "normal";
     std::string biome = "all";
     std::string generatorText;
+    bool cheats = false;                // siehe WorldInfo::cheats
 };
 bool create(const std::string& name, const std::string& seedText, const CreateOptions& options, WorldInfo& out, std::string* err);
 std::string randomSeedText();  // zufälliger Seed als Zahl (für das Feld "Seed" beim Erstellen)

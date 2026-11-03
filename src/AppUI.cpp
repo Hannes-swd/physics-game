@@ -128,6 +128,7 @@ void App::drawUI() {
         drawViewLabels();
     } else {
         drawPlayHud();
+        drawHandToolBar();
     }
     drawStatusBar();
     drawToasts();
@@ -164,7 +165,7 @@ void App::setPause(Pause p) {
             std::string note;
             if (haveWorld_ && !worldReadOnly_ && !netClient()) note = "Die Welt wird beim Verlassen gespeichert.";
             else if (!haveWorld_) note = "Nicht gespeicherte Änderungen gehen verloren.";
-            opt_.pauseUi->open(glfwGetWin32Window(window_), opt_.menu, note);
+            opt_.pauseUi->open(glfwGetWin32Window(window_), opt_.menu, note, cheats_);
         }
     } else if (!now && was) {
         if (opt_.pauseUi) opt_.pauseUi->close();
@@ -186,7 +187,7 @@ void App::updatePause() {
     if (ui.takeSettingsChanged()) reloadSettings();
     switch (a) {
     case PauseUi::Action::Resume: setPause(Pause::None); break;
-    case PauseUi::Action::SwitchMode: leavePlay(); break;  // schließt das Fenster
+    case PauseUi::Action::SwitchMode: setMode(false); break;  // schließt das Fenster; ohne Cheats bleibt es offen
     case PauseUi::Action::ToMenu:
     case PauseUi::Action::QuitGame:
         ui.close();
@@ -220,7 +221,9 @@ void App::drawPauseMenu() {
     const ImVec2 button(260, 0);
     if (pause_ == Pause::Menu) {
         if (ImGui::Button("Weiterspielen", button)) setPause(Pause::None);
-        if (ImGui::Button("Modus wechseln (Bauen)", button)) leavePlay();
+        ImGui::BeginDisabled(!cheats_);
+        if (ImGui::Button("Modus wechseln (Bauen)", button)) setMode(false);
+        ImGui::EndDisabled();
         if (ImGui::Button("Einstellungen", button)) showSettings_ = true;
         if (ImGui::Button("Beenden", button)) pause_ = Pause::Quit;
     } else {
@@ -341,6 +344,7 @@ void App::drawMenuBar() {
         }
         if (opt_.menu && ImGui::MenuItem("Zurück zum Hauptmenü")) leaveToMenu();
         if (haveWorld_ || opt_.menu) ImGui::Separator();
+        ImGui::BeginDisabled(!cheats_);  // Szenen ersetzen die ganze Welt: nur mit Cheats
         if (ImGui::MenuItem("Leere Werkstatt")) runLine("scene empty", "konsole");
         if (ImGui::MenuItem("Beispiel-Werkstatt")) runLine("scene demo", "konsole");
         if (ImGui::MenuItem("Beispiel-Welt (alles)")) runLine("scene showcase", "konsole");
@@ -348,6 +352,7 @@ void App::drawMenuBar() {
         if (ImGui::MenuItem("Wasserbecken (Schwimmen, Sinken, Boote)")) runLine("scene water", "konsole");
         if (ImGui::MenuItem("Fluss (Strömung, Hindernisse, Treibgut)")) runLine("scene river", "konsole");
         if (ImGui::MenuItem("Baumschule (alle Baumarten)")) runLine("scene trees", "konsole");
+        ImGui::EndDisabled();
         ImGui::Separator();
         if (ImGui::MenuItem(haveWorld_ ? "Szene speichern unter..." : "Speichern...", haveWorld_ ? nullptr : "Strg+S")) saveDialog(true);
         if (ImGui::MenuItem("Laden...", "Strg+O")) saveDialog(false);
@@ -367,20 +372,20 @@ void App::drawMenuBar() {
             else world_->redo();
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Alles auswählen", "Strg+A")) {
+        if (ImGui::MenuItem("Alles auswählen", "Strg+A", false, cheats_)) {
             selection_.clear();
             for (auto& o : world_->objects()) selection_.push_back(o->id);
         }
-        if (ImGui::MenuItem("Duplizieren", "Strg+D", false, !selection_.empty())) duplicateSelected();
-        if (ImGui::MenuItem("Löschen", "Entf", false, !selection_.empty())) deleteSelected();
-        if (ImGui::MenuItem("Absetzen", "G", false, !selection_.empty())) dropSelected();
+        if (ImGui::MenuItem("Duplizieren", "Strg+D", false, cheats_ && !selection_.empty())) duplicateSelected();
+        if (ImGui::MenuItem("Löschen", "Entf", false, cheats_ && !selection_.empty())) deleteSelected();
+        if (ImGui::MenuItem("Absetzen", "G", false, cheats_ && !selection_.empty())) dropSelected();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Ansicht")) {
         const char* names[] = {"Perspektive", "Oben (Draufsicht)", "Vorne", "Seite", "Vier Ansichten"};
         const char* keys[] = {"1", "2", "3", "4", "5"};
         for (int i = 0; i < 5; ++i)
-            if (ImGui::MenuItem(names[i], keys[i], (int)viewMode_ == i && !play_)) {
+            if (ImGui::MenuItem(names[i], keys[i], (int)viewMode_ == i && !play_, cheats_ || !play_)) {
                 if (play_) leavePlay();
                 viewMode_ = (ViewMode)i;
             }
@@ -392,12 +397,12 @@ void App::drawMenuBar() {
         if (world_->terrain()) ImGui::MenuItem("Gras und Büsche", nullptr, &showFlora_);
         ImGui::Separator();
         ImGui::MenuItem("Physik-Inspektor", "F3", &showInspector_);
-        ImGui::MenuItem("Materialien bearbeiten", nullptr, &showMaterials_);
+        ImGui::MenuItem("Materialien bearbeiten", nullptr, &showMaterials_, cheats_);
         if (ImGui::MenuItem("Dreitafelprojektion", "F4", false, !selection_.empty())) showDrawing(selection_);
-        ImGui::MenuItem("Konsole", "F1", &showConsole_);
+        ImGui::MenuItem("Konsole", "F1", &showConsole_, cheats_ || showConsole_);
         ImGui::EndMenu();
     }
-    if (ImGui::BeginMenu("Physik")) {
+    if (ImGui::BeginMenu("Physik", cheats_)) {  // die Befehle hier (Wind, Vakuum, Wasser, Wärme) brauchen Cheats
         bool br = world_->breakage();
         if (ImGui::MenuItem("Bruch (Verbindungen und Teile)", nullptr, &br)) runLine(br ? "breakage on" : "breakage off", "konsole");
         bool vac = world_->airDensity() == 0.0;
@@ -455,7 +460,7 @@ void App::drawMenuBar() {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Modus")) {
-        if (ImGui::MenuItem("Bauen (CAD)", "Tab", !play_)) setMode(false);
+        if (ImGui::MenuItem("Bauen (CAD)", "Tab", !play_, cheats_)) setMode(false);
         if (ImGui::MenuItem("Spielen (Physik)", "Tab", play_)) setMode(true);
         ImGui::EndMenu();
     }
@@ -472,8 +477,9 @@ void App::drawMenuBar() {
     }
     ImGui::SameLine(ImGui::GetWindowWidth() - 330);
     const bool simOn = netClient() ? netHostSim_ : world_->simulating();  // im LAN läuft sie, sobald irgendwer spielt
-    ImGui::TextColored(play_ ? ImVec4(0.4f, 1.0f, 0.5f, 1) : kAccent,
-                       play_ ? (pauseStopped_ ? "SPIEL-MODUS (Pause)" : "SPIEL-MODUS (Physik an)") : simOn ? "BAU-MODUS (Physik an)" : "BAU-MODUS (Physik aus)");
+    std::string mode = play_ ? (pauseStopped_ ? "SPIEL-MODUS (Pause)" : "SPIEL-MODUS (Physik an)") : simOn ? "BAU-MODUS (Physik an)" : "BAU-MODUS (Physik aus)";
+    if (cheats_) mode += " · Cheats";
+    ImGui::TextColored(play_ ? ImVec4(0.4f, 1.0f, 0.5f, 1) : kAccent, "%s", mode.c_str());
     ImGui::EndMainMenuBar();
 }
 
@@ -1022,11 +1028,12 @@ void App::drawStatusBar() {
         left = "BAUPLAN: " + planTemplates()[(size_t)k].label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) +
                ") · Rad / 1-0 wechseln · R drehen · Maus links setzen · G " + (planFixed_ ? "fest (schwebt)" : "Physik") +
                " · Alt ohne Einrasten · B / rechts fertig";
-    } else if (play_ && axe_) {
-        left = "AXT: Maus links hackt (auf Holz zielen, bis 2,6 m) · X Axt weglegen · WASD laufen · Tab Bauen";
+    } else if (play_ && handTool_ != HandTool::None) {
+        left = handToolHelp();
     } else if (play_) {
         left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · F " +
-               std::string(heatTools()[heatTool_].label) + " · X Axt · B Bauplan · C Herstellen · Tab Bauen";
+               std::string(heatTools()[heatTool_].label) + " · 1-6 Hand/Werkzeuge (unten rechts) · B Bauplan · C Herstellen" +
+               (cheats_ ? " · Tab Bauen" : "");
     } else if (Object* o = world_->find(hovered_)) {
         left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg";
         if (!o->heat.empty() && (std::abs(o->heatInfo.tMax - world_->ambient()) > 5 || o->heatInfo.tMin < world_->ambient() - 5))
@@ -1170,7 +1177,8 @@ void App::drawPlayHud() {
         dl->AddText(ImVec2(c.x - ts.x / 2, c.y + 24), IM_COL32(255, 255, 255, 240), info.c_str());
     }
     if (!cursorCaptured_ && pause_ == Pause::None && !showSettings_) {  // Maus frei (z.B. Konsole), ohne Pausenfenster
-        const char* t = "Maus frei - klicken zum Weiterspielen (Esc = Pause, Tab = Bau-Modus)";
+        const char* t = cheats_ ? "Maus frei - klicken zum Weiterspielen (Esc = Pause, Tab = Bau-Modus)"
+                                : "Maus frei - klicken zum Weiterspielen (Esc = Pause)";
         ImVec2 ts = ImGui::CalcTextSize(t);
         dl->AddRectFilled(ImVec2(c.x - ts.x / 2 - 12, c.y - 60), ImVec2(c.x + ts.x / 2 + 12, c.y - 52 + ts.y), IM_COL32(0, 0, 0, 170), 6);
         dl->AddText(ImVec2(c.x - ts.x / 2, c.y - 56), IM_COL32(255, 220, 160, 255), t);

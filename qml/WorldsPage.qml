@@ -164,7 +164,7 @@ Page {
 
         function create() {
             const biome = biomeBox.currentIndex <= 0 ? "all" : menu.biomes[biomeBox.currentIndex - 1].id
-            const r = menu.createWorld(nameField.text, seedField.text, normal ? "normal" : "flat", normal ? biome : "all")
+            const r = menu.createWorld(nameField.text, seedField.text, normal ? "normal" : "flat", normal ? biome : "all", cheatBox.currentIndex === 1)
             if (r.error !== "") {
                 error = r.error
                 return
@@ -181,6 +181,7 @@ Page {
             seedField.text = menu.randomSeed()  // steht schon fest, lässt sich aber ändern
             typeBox.currentIndex = 0
             biomeBox.currentIndex = 0
+            cheatBox.currentIndex = 0  // normal: ohne Cheats
             error = ""
             nameField.selectAll()
             nameField.forceActiveFocus()
@@ -228,6 +229,19 @@ Page {
                     for (let i = 0; i < menu.biomes.length; ++i) m.push("Nur " + menu.biomes[i].label)
                     return m
                 }
+            }
+            Label { text: "Cheats" }
+            ComboBox {
+                id: cheatBox
+                Layout.fillWidth: true
+                model: ["Ohne Cheats (normal)", "Mit Cheats (Bau-Modus und alle Befehle)"]
+            }
+            Label {
+                text: cheatBox.currentIndex === 1
+                      ? "Mit Cheats: Tab wechselt in den Bau-Modus, die Konsole (F1) und die Befehle in den Menüs gehen."
+                      : "Ohne Cheats: nur Spielen. Bauen geht mit Werkzeugen und Bauvorlagen, Konsole und Befehle sind aus."
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
             Label {
                 text: "Gleicher Seed = gleiche Welt: dieselben Hügel und Biome an denselben Stellen."

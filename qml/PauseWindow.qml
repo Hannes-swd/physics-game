@@ -74,8 +74,9 @@ ApplicationWindow {
                         onClicked: pause.resume()
                     }
                     Button {
-                        text: "Modus wechseln"
+                        text: pause.cheats ? "Modus wechseln" : "Modus wechseln (nur mit Cheats)"
                         Layout.fillWidth: true
+                        enabled: pause.cheats
                         onClicked: pause.switchMode()
                     }
                     Button {

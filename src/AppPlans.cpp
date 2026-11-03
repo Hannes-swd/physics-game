@@ -212,7 +212,7 @@ void App::planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool
             planMode_ = false;
             toast(craft ? "Keine Rezepte gefunden (assets/recipes fehlt?)" : "Keine Vorlagen gefunden (assets/blueprints fehlt?)", false);
         }
-        if (planMode_) axe_ = false;
+        if (planMode_) handTool_ = HandTool::None;
     }
     if (!planMode_) {
         planPreviewOk_ = false;

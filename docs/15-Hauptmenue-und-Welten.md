@@ -25,6 +25,10 @@ Beim Start öffnet sich das **Hauptmenü**, nicht gleich eine Welt. Es ist mit *
     **Zufällig** würfelt neu. Gleicher Seed bedeutet gleiche Welt.
   - **Welttyp**: *Normal* (Gelände mit Biomen) oder *Flach* (Ebene wie bisher)
   - **Biome** (nur bei *Normal*): *Alle Biome* oder *Nur …* ein einzelnes Biom
+  - **Cheats**: *Ohne Cheats (normal)* (Standard) oder *Mit Cheats*. Ohne Cheats gibt es nur den Spiel-Modus: Tab wechselt
+    nicht in den Bau-Modus, F1 öffnet keine Konsole, und die Befehle in den Menüs (Szenen, Physik, Wasser, Wärme, Ansicht,
+    Bearbeiten) sind aus. Die Pause-Taste „Modus wechseln“ ist aus. Werkzeuge in der Hand und Bauvorlagen (B, C) gehen
+    trotzdem. Mit Cheats ist oben rechts „· Cheats“ zu sehen.
   - Mehr zum Gelände: [16](16-Weltgenerierung.md)
 - In der Liste steht neben jeder Welt ihr Typ („normal, alle Biome“, „normal, nur Ebene“, „flach“).
 
@@ -96,6 +100,7 @@ Umbenennen bleibt er gleich.
 | `seed`, `seedText` | Seed als Text (64 Bit passen in keine JSON-Zahl) und wie er eingegeben wurde (leer: zufällig gewählt) |
 | `generator`, `generatorVersion` | `normal` (Gelände mit Biomen) oder `flat` (Ebene), Version 1. Ändert sich später der Generator, bleiben alte Welten bei ihrer Version und sehen gleich aus |
 | `biome` | `all` oder die `id` eines Bioms, wenn die Welt nur aus diesem besteht |
+| `cheats` | `true`: Bau-Modus (Tab), Konsole (F1) und die Befehle in den Menüs gehen. `false`: nur Spielen. Fehlt der Eintrag (ältere Welten), gelten Cheats |
 | `created`, `lastPlayed` | Unix-Zeit in Sekunden (`lastPlayed`: beim Öffnen und bei jedem Speichern) |
 | `playTime` | gespielte Zeit in Sekunden |
 | `view` | Kamera im Bau-Modus, Ansicht, Spiel-Modus mit Lage und Blick der Spielfigur |
@@ -183,7 +188,7 @@ bleibt beim Wechsel offen. Befehle, die mitten im Wechsel ankommen, bearbeitet d
 | `menu select <n\|Name>` | Welt auswählen (n = Nummer aus `menu`) |
 | `menu play [n\|Name]` | Welt öffnen (ohne Angabe: die ausgewählte) |
 | `menu lan [n\|Name]` | Welt öffnen und gleich im LAN freigeben |
-| `menu new <Name> [Seed] [normal\|flat] [all\|<Biom>]` | Welt anlegen und auswählen (nicht öffnen). Nach dem Namen in beliebiger Reihenfolge: Seed, Welttyp (Standard `normal`), Biome (Standard `all`, sonst die `id` eines Bioms). Ohne Seed: zufällig |
+| `menu new <Name> [Seed] [normal\|flat] [all\|<Biom>] [cheats\|nocheats]` | Welt anlegen und auswählen (nicht öffnen). Nach dem Namen in beliebiger Reihenfolge: Seed, Welttyp (Standard `normal`), Biome (Standard `all`, sonst die `id` eines Bioms), Cheats (Standard `nocheats`). Ohne Seed: zufällig |
 | `menu rename <n\|Name> <neuer Name>` | umbenennen |
 | `menu delete <n\|Name>` | in den Papierkorb |
 | `menu games` | LAN-Spiele im Netz (wechselt auf `multiplayer`, dort wird gesucht) |

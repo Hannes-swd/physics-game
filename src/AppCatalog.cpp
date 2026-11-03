@@ -198,7 +198,7 @@ bool App::catalogChoose(int index) {
     (catalogCraft_ ? craftType_ : planType_) = index;
     planCraft_ = catalogCraft_;
     planMode_ = true;
-    axe_ = false;
+    handTool_ = HandTool::None;
     catalogOpen(false);
     return true;
 }

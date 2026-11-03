@@ -133,9 +133,13 @@ void App::handleInput(float dt) {
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) setMode(!play_);
         if (ImGui::IsKeyPressed(ImGuiKey_F1, false) || ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false)) {
-            showConsole_ = !showConsole_;
-            focusConsole_ = showConsole_;
-            if (showConsole_ && play_) setCursorCaptured(false);
+            if (!cheats_ && !showConsole_) {  // die Konsole mit allen Befehlen gibt es nur mit Cheats
+                toast("Die Konsole gibt es nur mit Cheats (neue Welt: Cheats an)", false);
+            } else {
+                showConsole_ = !showConsole_;
+                focusConsole_ = showConsole_;
+                if (showConsole_ && play_) setCursorCaptured(false);
+            }
         }
         if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) showInspector_ = !showInspector_;
         if (ImGui::IsKeyPressed(ImGuiKey_F5, false) && play_) thirdPerson_ = !thirdPerson_;
@@ -596,11 +600,13 @@ void App::playInput(float dt) {
     // Maustasten direkt von GLFW (ImGui ignoriert die Maus, solange sie gefangen ist)
     const bool lmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     const bool rmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-    // Axt: X nimmt sie (oder legt sie weg); dann hackt die linke Maustaste statt zu tragen
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_X, false)) {
-        axe_ = !axe_;
-        if (axe_) planMode_ = false;
-        toast(axe_ ? "Axt in der Hand: Linksklick auf Holz hackt (X legt sie weg)" : "Axt weggelegt");
+    // Werkzeuge: 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl (Leiste unten rechts).
+    // X ist zusätzlich der Schalter für die Axt. Mit einem Werkzeug in der Hand wirkt die linke Maustaste das Werkzeug.
+    if (!io.WantTextInput && !planMode_) {  // in der Bauvorlagen-Auswahl zählen 1-0 für die Vorlagen
+        const HandTool slots[6] = {HandTool::None, HandTool::Axe, HandTool::Laser, HandTool::Drill, HandTool::Terra, HandTool::Tractor};
+        for (int k = 0; k < 6; ++k)
+            if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + k), false)) selectHandTool(slots[k]);
+        if (ImGui::IsKeyPressed(ImGuiKey_X, false)) selectHandTool(handTool_ == HandTool::Axe ? HandTool::None : HandTool::Axe);
     }
     // F: das Teil, auf das man schaut (auch Zeug am Boden), direkt ins Inventar
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false) && !planMode_ && !netClient()) {
@@ -617,18 +623,12 @@ void App::playInput(float dt) {
     }
     // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
     planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
-    if (axe_ && lmbDown && !prevLmb_ && time_ >= axeReady_) {
-        axeReady_ = time_ + 0.4;  // ein Hieb braucht etwas Zeit
-        if (lookHit_.obj && lookHit_.t < 2.6) {
-            const glm::dvec3 p = lookHit_.point, back = eye - p;
-            runLine("chop " + std::to_string(lookHit_.obj->id) + " " + fmtNum(p.x * 100, 1) + " " + fmtNum(p.y * 100, 1) + " " +
-                        fmtNum(p.z * 100, 1) + " " + fmtNum(back.x, 3) + " " + fmtNum(back.z, 3),
-                    "axe");
-        }
-    }
+    const bool lmbPressed = lmbDown && !prevLmb_;
+    handToolAction(eye, fwd, lmbDown, lmbPressed, rmbDown);
+    const bool inHand = handTool_ != HandTool::None;
     HandInput in;
-    in.lmbDown = lmbDown && !axe_;
-    in.lmbPresses = lmbDown && !prevLmb_ && !axe_;
+    in.lmbDown = lmbDown && !inHand;
+    in.lmbPresses = lmbPressed && !inHand;
     in.rmbPresses = rmbDown && !prevRmb_;
     prevLmb_ = lmbDown;
     prevRmb_ = rmbDown;

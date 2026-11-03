@@ -12,8 +12,9 @@ public:
     virtual ~PauseUi() = default;
 
     // gameWindow: HWND des Spielfensters (das Pausenfenster steht mittig davor). fromMenu: "Zurück zum Hauptmenü"
-    // anbieten. note: Hinweis auf der Seite "Beenden" (z.B. ob die Welt gespeichert wird)
-    virtual void open(void* gameWindow, bool fromMenu, const std::string& note) = 0;
+    // anbieten. note: Hinweis auf der Seite "Beenden" (z.B. ob die Welt gespeichert wird). cheats: "Modus wechseln"
+    // (in den Bau-Modus) erlauben, sonst ist der Knopf aus
+    virtual void open(void* gameWindow, bool fromMenu, const std::string& note, bool cheats) = 0;
     virtual void close() = 0;
     virtual bool isOpen() const = 0;
     // Qt-Ereignisse abarbeiten; Rückgabe: was gewählt wurde (None: nichts)

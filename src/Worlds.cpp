@@ -238,6 +238,7 @@ bool readInfo(const fs::path& dir, WorldInfo& w, std::string* err) {
     w.generator = strOf(j["generator"], "flat");
     w.generatorVersion = (int)numOf(j["generatorVersion"], 1);
     w.biome = strOf(j["biome"], "all");
+    w.cheats = boolOf(j["cheats"], true);  // ältere Welten (ohne Eintrag) durften schon immer alles
     w.created = (int64_t)numOf(j["created"], 0);
     w.lastPlayed = (int64_t)numOf(j["lastPlayed"], 0);
     w.playTime = numOf(j["playTime"], 0);
@@ -279,6 +280,7 @@ bool writeInfo(const WorldInfo& w, std::string* err) {
     j.set("generator", Json::makeString(w.generator));
     j.set("generatorVersion", Json::makeNumber(w.generatorVersion));
     j.set("biome", Json::makeString(w.biome));
+    j.set("cheats", makeBool(w.cheats));
     j.set("created", Json::makeNumber((double)w.created));
     j.set("lastPlayed", Json::makeNumber((double)w.lastPlayed));
     j.set("playTime", Json::makeNumber(std::floor(w.playTime)));
@@ -355,6 +357,7 @@ bool create(const std::string& nameIn, const std::string& seedText, const Create
     w.seed = seedFromText(seedText);
     w.generator = opt.generator;
     w.biome = opt.generator == "normal" ? (opt.biome.empty() ? "all" : opt.biome) : "all";
+    w.cheats = opt.cheats;
     w.created = w.lastPlayed = now();
     // Die Welt bekommt ihre eigene Kopie der Biome: spätere Änderungen an assets/biomes.json verändern sie nicht
     bool ok = true;

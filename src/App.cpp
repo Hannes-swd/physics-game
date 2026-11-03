@@ -329,6 +329,10 @@ void App::showDrawing(const std::vector<uint32_t>& ids) {
 }
 
 std::string App::setMode(bool play) {
+    if (!play && !cheats_) {  // Bau-Modus nur mit Cheats (Tab, Menü, Pause, Befehle gehen alle hier durch)
+        toast("Der Bau-Modus gibt es nur mit Cheats (neue Welt: Cheats an)", false);
+        return "Error: the build mode needs cheats (a new world with cheats on)";
+    }
     if (play && !play_) enterPlay();
     else if (!play && play_) leavePlay();
     return play_ ? "play mode: physics running" : "build mode: physics paused";
@@ -341,7 +345,7 @@ std::string App::setView(const std::string& v) {
     else if (v == "side" || v == "4") viewMode_ = ViewMode::Side;
     else if (v == "quad" || v == "5") viewMode_ = ViewMode::Quad;
     else return "Error: unknown view (perspective, top, front, side, quad)";
-    if (play_) leavePlay();
+    if (play_ && cheats_) leavePlay();
     return "view changed";
 }
 

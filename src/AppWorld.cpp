@@ -213,6 +213,7 @@ bool App::openWorld(std::string* err) {
     WorldInfo w;
     if (!worlds::readInfo(fs::u8path(opt_.worldDir), w, err)) return false;
     worldInfo_ = w;
+    cheats_ = w.cheats;
     haveWorld_ = true;
     worldReadOnly_ = false;
     invLoad();  // Inventar der Figur (inventory.bin)
@@ -300,6 +301,7 @@ bool App::openWorld(std::string* err) {
         orbitTarget_.y = world_->groundHeight(orbitTarget_.x, orbitTarget_.z) + 0.6;
         orbitDist_ = 12.0;
     }
+    if (!cheats_ && !play_) enterPlay();  // ohne Cheats gibt es nur den Spiel-Modus (die Figur steht im Gelände)
     worldInfo_.lastPlayed = worlds::now();
     std::string werr;
     if (!worldReadOnly_ && !worlds::writeInfo(worldInfo_, &werr)) log("world.json: " + werr, 2);

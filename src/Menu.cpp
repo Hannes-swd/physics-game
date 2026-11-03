@@ -223,8 +223,10 @@ public:
     QVariantList biomes() const { return biomes_; }
     // Zufälliger Seed fürs Feld "Seed" (die Welt ist damit schon festgelegt, man kann ihn noch ändern)
     Q_INVOKABLE QString randomSeed() const { return qs(worlds::randomSeedText()); }
-    // Ergebnis: {error: "" oder Meldung, dir: Ordner der neuen Welt}. type "normal" oder "flat", biome "all" oder eine id
-    Q_INVOKABLE QVariantMap createWorld(const QString& name, const QString& seed, const QString& type = "normal", const QString& biome = "all") {
+    // Ergebnis: {error: "" oder Meldung, dir: Ordner der neuen Welt}. type "normal" oder "flat", biome "all" oder eine id,
+    // cheats: Bau-Modus und alle Befehle erlaubt (sonst nur Spielen)
+    Q_INVOKABLE QVariantMap createWorld(const QString& name, const QString& seed, const QString& type = "normal", const QString& biome = "all",
+                                        bool cheats = false) {
         QVariantMap r;
         WorldInfo w;
         std::string err;
@@ -232,6 +234,7 @@ public:
         opt.generator = ss(type);
         opt.biome = ss(biome).empty() ? "all" : ss(biome);
         opt.generatorText = gen_->text;
+        opt.cheats = cheats;
         if (opt.biome != "all" && gen_->findBiome(opt.biome) < 0) {
             r["error"] = qs("Unbekanntes Biom '" + opt.biome + "'.");
             return r;
@@ -531,9 +534,12 @@ private:
             // menu new <name> [seed] [normal|flat] [all|<biome>]: nach dem Namen in beliebiger Reihenfolge
             if (arg(2).empty()) return "Error: menu new <name> [seed] [normal|flat] [all|<biome>]   (names with spaces in \"quotes\")";
             std::string seed, type = "normal", biome = "all";
+            bool cheats = false;  // wie im Dialog: ohne Cheats, sonst nur Spielen
             for (size_t i = 3; i < t.size(); ++i) {
                 const std::string a = lower(t[i]);
                 if (a == "normal" || a == "flat" || a == "flach") type = a == "flach" ? "flat" : a;
+                else if (a == "cheats" || a == "mit-cheats") cheats = true;
+                else if (a == "nocheats" || a == "ohne-cheats") cheats = false;
                 else if (a == "all" || a == "alle") biome = "all";
                 else if (gen_->findBiome(a) >= 0) biome = a;
                 else if (seed.empty()) seed = t[i];
@@ -542,14 +548,14 @@ private:
             if (type == "flat" && biome != "all") return "Error: a flat world has no biomes (use 'normal " + biome + "')";
             if (seed.empty()) seed = worlds::randomSeedText();  // wie im Dialog: der Seed steht schon vorher fest
             Q_EMIT closeDialogs();
-            const QVariantMap r = createWorld(qs(arg(2)), qs(seed), qs(type), qs(biome));
+            const QVariantMap r = createWorld(qs(arg(2)), qs(seed), qs(type), qs(biome), cheats);
             if (!r["error"].toString().isEmpty()) return "Error: " + ss(r["error"].toString());
             if (page_ != "worlds") requestPage("worlds");
             setSelectedDir(r["dir"].toString());
             const int i = indexOf(selectedDir_);
             const WorldInfo& w = infos_[(size_t)i - 1];
-            return "created world " + std::to_string(i) + " " + quoted(w.name) + ", seed " + std::to_string(w.seed) +
-                   ", " + typeText(w) + ", selected. 'menu play' opens it.";
+            return "created world " + std::to_string(i) + " " + quoted(w.name) + ", seed " + std::to_string(w.seed) + ", " + typeText(w) +
+                   (w.cheats ? ", mit Cheats" : ", ohne Cheats") + ", selected. 'menu play' opens it.";
         }
         if (sub == "rename") {
             const WorldInfo* w = findWorld(arg(2), err);
@@ -651,13 +657,16 @@ class PauseBackend : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool fromMenu READ fromMenu NOTIFY changed)  // "Zurück zum Hauptmenü" anbieten
     Q_PROPERTY(QString note READ note NOTIFY changed)       // Hinweis auf der Seite "Beenden"
+    Q_PROPERTY(bool cheats READ cheats NOTIFY changed)      // "Modus wechseln" (Bau-Modus) nur mit Cheats
 
 public:
     bool fromMenu() const { return fromMenu_; }
     QString note() const { return note_; }
-    void set(bool fromMenu, const QString& note) {
+    bool cheats() const { return cheats_; }
+    void set(bool fromMenu, const QString& note, bool cheats) {
         fromMenu_ = fromMenu;
         note_ = note;
+        cheats_ = cheats;
         Q_EMIT changed();
     }
     Q_INVOKABLE void resume() { action = PauseUi::Action::Resume; }
@@ -672,6 +681,7 @@ Q_SIGNALS:
 
 private:
     bool fromMenu_ = false;
+    bool cheats_ = false;
     QString note_;
 };
 
@@ -682,7 +692,7 @@ class QtPause : public PauseUi {
 public:
     ~QtPause() override { reset(); }
 
-    void open(void* gameWindow, bool fromMenu, const std::string& note) override {
+    void open(void* gameWindow, bool fromMenu, const std::string& note, bool cheats) override {
         if (!engine_) {
             backend_ = std::make_unique<MenuBackend>("", nullptr, true);
             pause_ = std::make_unique<PauseBackend>();
@@ -701,7 +711,7 @@ public:
         if (!window_) return;
         backend_->reloadSettings();
         settingsChanged_ = false;
-        pause_->set(fromMenu, qs(note));
+        pause_->set(fromMenu, qs(note), cheats);
         pause_->action = Action::None;
         Q_EMIT backend_->pageRequested(QStringLiteral("pause"));
         // vor dem Spielfenster (gehört zu ihm: kein eigener Knopf in der Taskleiste), rahmenlos genau darüber

@@ -218,6 +218,13 @@ private:
     void grabForces(float dt);
     // Tragen/Werfen/Drehen einer Spielfigur (eigene oder Mitspieler)
     void handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in);
+    // Spiel-Modus: Werkzeug in der Hand (Axt, Laser, Erdbohrer, Planierer, Traktorstrahl)
+    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor };
+    // Werkzeuge in der Hand (AppTools.cpp): Auswahl, Wirkung auf Ziel, Hilfstext in der Statuszeile
+    void selectHandTool(HandTool t);
+    void handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown);
+    std::string handToolHelp() const;
+    void drawHandToolBar();  // Leiste unten rechts: Hand und Werkzeuge als Symbole, das gewählte hervorgehoben
     void holdForces(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw);
     void updatePreview();
     void applyTool();
@@ -471,13 +478,16 @@ private:
 
     // Spielen
     bool play_ = false;
+    // Cheats der offenen Welt (world.json): Bau-Modus (Tab), Konsole, Physik- und Szenen-Befehle in den Menüs. Ohne Welt
+    // (Start mit --empty, Skript) ist alles erlaubt.
+    bool cheats_ = true;
     bool cursorCaptured_ = false;
     double cursorX_ = 0, cursorY_ = 0;
     double scrollAccum_ = 0;
     bool prevLmb_ = false, prevRmb_ = false;
     glm::dvec2 autoMove_{0};      // per Befehl: x = vorwärts, y = rechts
     double autoMoveTime_ = 0;
-    bool axe_ = false;            // Spiel-Modus: Axt in der Hand (X), Linksklick hackt
+    HandTool handTool_ = HandTool::None;  // Spiel-Modus: was man gerade in der Hand hält (X Axt, 1-4 die anderen)
     std::vector<InvItem> inv_;
     uint32_t invNextKey_ = 1;
     bool invOpen_ = false;
@@ -497,7 +507,7 @@ private:
     int planLookPiece_ = -1;
     double dismantleHold_ = 0;    // so lange wird Q schon auf dasselbe Bauteil gehalten
     uint32_t dismantleId_ = 0;
-    double axeReady_ = 0;         // nächster Hieb frühestens dann (Spielzeit)
+    double toolReady_ = 0;        // nächste Werkzeug-Aktion frühestens dann (Spielzeit)
     bool autoRun_ = false, jumpRequest_ = false;
     double playYaw_ = 0, playPitch_ = 0;
     Hand hand_;
