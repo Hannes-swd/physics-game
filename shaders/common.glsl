@@ -54,6 +54,17 @@ const vec3 kDaySun = vec3(0.4626, 0.8738, 0.3084);  // feste Sonne der technisch
 // Farbe des Nebels: der Himmel am Horizont (nachts dunkel)
 vec3 fogColor() { return frame.horizon.rgb; }
 
+// Anteil Nebel zwischen Kamera und Punkt (beide relativ zum Ursprung). Die Dichte (frame.misc.z, am Boden) nimmt mit der
+// Höhe ab (Skalenhöhe 700 m): über dem Tal und auf dem Berg ist die Luft klarer. Integral der Dichte entlang des Strahls
+const float kFogScaleHeight = 700.0;
+float fogAmount(vec3 cam, vec3 p) {
+    float dist = length(p - cam);
+    float h0 = max(cam.y + frame.originF.y, 0.0), h1 = max(p.y + frame.originF.y, 0.0);
+    float e0 = exp(-h0 / kFogScaleHeight), e1 = exp(-h1 / kFogScaleHeight);
+    float avg = abs(h1 - h0) > 1.0 ? (e0 - e1) * kFogScaleHeight / (h1 - h0) : 0.5 * (e0 + e1);
+    return 1.0 - exp(-dist * frame.misc.z * avg);
+}
+
 vec3 tonemap(vec3 x) {
     x *= orthoView() ? 1.0 : frame.misc.y;  // Belichtung: nachts gewöhnt sich das Auge an die Dunkelheit
     vec3 c = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);

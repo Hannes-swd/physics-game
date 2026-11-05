@@ -44,23 +44,49 @@ jedem Ort gewinnt das Biom, dessen Bereiche am besten passen:
 Jeder Zweck hat seinen eigenen Seed, abgeleitet aus dem Welt-Seed und einem Namen (`climate/temperature`,
 `height/hills` …). Ein neues Biom in der Datei verschiebt deshalb die Höhen der alten Biome nicht.
 
-**Biome (Standard):** Die Kontinentalität teilt die Welt in drei Bänder: ganz niedrig **Seen**, in der Mitte das
-**Land**, ganz hoch das **Gebirge**. Darum liegt ein See nie direkt am Gebirge.
+**Biome (Standard):** Die Kontinentalität teilt die Welt in Bänder: ganz niedrig **Seen** (0–0.24), dann ein
+**Küstenstreifen** (0.24–0.33), in der Mitte das **Land** (0.33–0.72, am Rand zum Gebirge Hochplateaus) und ganz hoch das
+**Gebirge** (0.72–1). Im Land teilen Wärme, Feuchtigkeit und Zerklüftung die Biome auf.
 
-| Biom | Klima | Gelände | Oberfläche | Flüsse |
+| Biom | Klima | Gelände | Besonderes | Flüsse |
 |---|---|---|---|---|
-| `plains` (Ebene) | Land; feucht (`humidity` 0.35–0.62), `erosion` 0–0.5 | 1 m ± 1,2 m, Formen ~180 m | Gras, Hänge erdig | ja |
-| `forest` (Wald) | Land; sehr feucht (`humidity` ab 0.62), `erosion` 0–0.5 | 1,5 m ± 2,5 m, Formen ~150 m | dunkler Waldboden | ja |
-| `hills` (Hügellandschaft) | Land; feucht (`humidity` ab 0.35), `erosion` 0.5–1 | 4 m ± 16 m, Formen ~140 m, 5 Oktaven | dunkleres Gras, steile Hänge felsig | ja |
-| `desert` (Wüste) | Land; heiß und trocken: `temperature` 0.55–1, `humidity` 0–0.35 | 2 m ± 4 m, Dünen ~60 m | Sand (Material `sand`), Kakteen | ja (sie fließen hindurch) |
-| `steppe` (Steppe) | Land; kalt und trocken: `temperature` 0–0.55, `humidity` 0–0.35 | 2 m ± 3 m, Formen ~220 m | trockenes, gelbliches Gras | ja |
-| `lake` (See) | `continentalness` 0–0.24 | **unter Wasser**: −7 m ± 3,5 m | Sand, am Ufer ein Strand | münden hinein |
-| `mountains` (Gebirge) | `continentalness` 0.72–1 | Vorland 14 m ± 12 m, darauf **Grate bis 340 m**, ab 230 m Schnee | Bergwiese, Hänge Granit; Erzbrocken | **keine** (sie entspringen davor) |
+| `plains` (Ebene) | mild, feucht, wenig zerklüftet | flach | einzelne Eichen | ja |
+| `meadow` (Blumenwiese) | wie Ebene, ganz flach (`erosion` < 0.25) | sanft | sehr viele bunte Blumen | ja |
+| `forest` (Wald) | sehr feucht, nicht heiß | leicht wellig | dichter Misch-/Nadelwald | ja |
+| `swamp` (Sumpf) | nass (`humidity` ab 0.82), nicht heiß | knapp über/unter Wasser: **Tümpel** (`water`, ohne Strand) | Moorbäume, Schilfgras, Schlamm | ja |
+| `jungle` (Dschungel) | heiß (`temperature` ab 0.7) und feucht | wellig | Urwaldriesen, Palmen, dichtes Gebüsch | ja |
+| `hills` (Hügellandschaft) | feucht, zerklüftet (zwei Klimabereiche) | 4 m ± 16 m | Fichten, viele Felsbrocken | ja |
+| `cherry` (Kirschblütenhain) | mäßig feucht, mittel zerklüftet | hügelig | rosa blühende Kirschbäume | ja |
+| `plateau` (Hochplateau) | Land nahe am Gebirge (`continentalness` 0.62–0.72), flach | **85 m hoch mit steilem Rand** (`plateau`) | Heide, Granitbrocken | keine (entspringen am Fuß) |
+| `desert` (Wüste) | heiß, trocken, wenig zerklüftet | Dünen | Sand, Kakteen | ja |
+| `canyon` (Canyon) | heiß, trocken, zerklüftet | **Terrassen** (`terraces`, Stufen von 12 m), Tafelberge | roter Sandstein, Kakteen | ja (schneiden Schluchten) |
+| `steppe` (Steppe) | kühl, trocken | flach | gelbliches Gras | ja |
+| `rockfield` (Felsenmeer) | kühl, trocken, zerklüftet | unruhig | **sehr viele große Felsbrocken** | ja |
+| `tundra` (Tundra) | kalt (`temperature` 0.1–0.22), trocken | flach | Moos, Schneeflecken auf Kuppen | ja |
+| `taiga` (Schneewald) | kalt, feucht | wellig | **Schnee am Boden** (Material `snow`), verschneite Fichten | ja |
+| `glacier` (Gletscher) | sehr kalt (`temperature` < 0.1) | weite Eisflächen | Material `ice` (sehr glatt), oben Schnee | keine (entspringen davor) |
+| `beach` (Sandstrand) | Küste, warm, flach | fällt sanft unter Wasser (`steps`) | Palmen, Treibholz | ja |
+| `cliffs` (Felsküste) | Küste, kühl oder zerklüftet | **Felswand** vom Wasser auf 14 m (`steps`) | Granit, Fichten oben | ja |
+| `lake` (See) | `continentalness` 0–0.24, wenig zerklüftet | unter Wasser, −7 m | Sandgrund | münden hinein |
+| `archipelago` (Inselsee) | wie See, zerklüftet | unter Wasser mit **Inseln** | Inseln mit Bäumen und Wiese | münden hinein |
+| `mountains` (Gebirge) | `continentalness` 0.72–1 | Grate bis 340 m, ab 230 m Schnee | Erzbrocken | keine (entspringen davor) |
 
-„Land“ heißt `continentalness` 0.24–0.72. Die Biome decken zusammen das ganze Klima ab: Jeder Ort passt zu einem Biom
-(früher wurden kalte, trockene Gegenden zu Ebene oder Hügeln; dafür gibt es jetzt die Steppe).
-Im Wald stehen dicht Bäume, in den Hügeln und im Gebirge einige Fichten, in der Ebene einzelne Eichen ([17](17-Baeume.md)).
-Auf Schnee und am Sandstrand wachsen weder Bäume noch Gras.
+Die Biome decken zusammen das ganze Klima ab: Jeder Ort passt zu einem Biom. Küsten (Strand, Felsküste) und Sumpf sind
+Wasser-Biome (`"water": true`): Ihr Gelände darf unter den Wasserspiegel, dort ist Wasser. Strand und Felsküste fallen
+nach der Kontinentalität zum See hin ab (`steps`), darum liegt vor jeder Küste Wasser.
+Auf Schnee über der Baumgrenze (Gebirge, Gletscher) und am Sandstrand wachsen weder Bäume noch Gras; im Schneewald und in
+der Tundra schon (`"snow": { "bare": false }`).
+
+**Neue Schlüssel** (alle optional, alte Welten bleiben gleich):
+
+| Schlüssel | Bedeutung |
+|---|---|
+| `climate` als Liste | mehrere Klimabereiche für ein Biom (z. B. Hügel, Felsküste) |
+| `height.plateau` | `height` m obendrauf, vom Biomrand über `ramp` (Klimaeinheiten) steil ansteigend |
+| `height.terraces` | Höhe in Stufen von `step` m; `sharpness` 0..1 (1: fast senkrechte Wände, breite flache Böden) |
+| `height.steps` | Liste `{ "climate": "continentalness", "from": [Wert, Höhe], "to": [Wert, Höhe] }`: Höhe nach dem Klima, weich dazwischen |
+| `shore_color`, `beach` | nur Wasser-Biome: Farbe von Grund und Ufer; `false` = kein Sandstrand (Sumpf) |
+| `snow.bare` | `false`: Bäume und Gras wachsen auf dem Schnee |
 
 ## Seen
 

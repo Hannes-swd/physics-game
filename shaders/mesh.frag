@@ -383,8 +383,7 @@ void main() {
 
     // Nebel nur in der Perspektive
     if (!ortho) {
-        float dist = length(pc.camPos.xyz - vWorldPos);
-        float fog = 1.0 - exp(-dist * frame.misc.z);
+        float fog = fogAmount(pc.camPos.xyz, vWorldPos);
         color = mix(color, fogColor(), fog);
     }
 

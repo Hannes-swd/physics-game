@@ -82,4 +82,9 @@ selbst weiterlaufen. Nur der Gastgeber kann sie mit `time` ändern. Die Sternbil
   Wasser). `shaders/sky.frag` zeichnet Sterne, Milchstraße und Linien. Die schwachen Sterne kommen aus einem Würfelgitter
   (höchstens ein Stern je Zelle, in der Milchstraße dichter, je Größenklasse dreimal so viele), die hellen aus dem
   Katalog.
-- Der Nebel hat die Farbe des Himmels am Horizont, nachts ist er also dunkel.
+- Der Nebel hat die Farbe des Himmels am Horizont, nachts ist er also dunkel. Er ist dünn (am Boden nach 2 km etwa ein
+  Fünftel) und nimmt mit der Höhe ab (Skalenhöhe 700 m, `fogAmount` in `common.glsl`): vom Berg aus sieht man klar weit.
+- **Wolken** (`cloudLayer` in `sky.frag`): Haufenwolken auf einer Schicht in 2 km Höhe, fest über der Welt, treiben
+  langsam. Mal mehr, mal weniger Wolken je Gegend. Von Himmel und Sonne beleuchtet, unten grauer, zur Sonne mit hellem
+  Rand, abends und morgens rötlich. Nachts sind sie weg, der Sternenhimmel bleibt frei.
+- Tagsüber ist der Himmel tiefblau, mit höherer Sonne noch tiefer (Stützstelle bei 35°), der Horizont nur etwas heller.

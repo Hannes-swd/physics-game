@@ -1714,7 +1714,7 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
                 const double dens = mat >= 0 ? materials()[(size_t)mat].density : 700.0;
                 o << "  " << tt.id << " (" << tt.label << "): " << fmtNum(m.height, 1) << " m tall, trunk " << fmtNum(tt.diameter * 100, 0)
                   << " cm, " << tt.wood << " " << fmtNum(m.volume, 2) << " m3 = " << fmtNum(m.volume * dens, 0) << " kg, "
-                  << (tt.cone ? "cone" : "round") << " crown, " << lib.variants(k) << " forms\n";
+                  << (tt.cone ? "cone" : tt.palm ? "palm" : "round") << " crown, " << lib.variants(k) << " forms\n";
             }
             size_t parts = 0, generated = 0, changed = 0;
             for (const auto& op : w.objects()) {
@@ -1826,8 +1826,12 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             o << cfg.biomes.size() << " biome(s)" << (g.singleBiome() >= 0 ? ", this world uses only " + cfg.biomes[(size_t)g.singleBiome()].id : "") << "\n";
             for (const GenConfig::Biome& b : cfg.biomes) {
                 o << "  " << b.id << " (" << b.label << "):";
-                for (int k = 0; k < kClimateCount; ++k)
-                    if (b.lo[k] > 0 || b.hi[k] < 1) o << " " << kClimateNames[k] << " " << pct(b.lo[k]) << "-" << pct(b.hi[k]);
+                for (size_t q = 0; q < b.boxes.size(); ++q) {
+                    if (q) o << " |";
+                    for (int k = 0; k < kClimateCount; ++k)
+                        if (b.boxes[q].lo[k] > 0 || b.boxes[q].hi[k] < 1)
+                            o << " " << kClimateNames[k] << " " << pct(b.boxes[q].lo[k]) << "-" << pct(b.boxes[q].hi[k]);
+                }
                 o << ", height " << fmtNum(b.height.base, 1) << " m +- " << fmtNum(b.height.amplitude, 1) << " m (scale " << fmtNum(b.height.scale, 0)
                   << " m)" << (b.height.ridgeHeight > 0 ? ", ridges up to " + fmtNum(b.height.ridgeHeight, 0) + " m" : "")
                   << (b.water ? ", lake (under water)" : "") << (b.snowFrom < 1e29 ? ", snow from " + fmtNum(b.snowFrom, 0) + " m" : "")

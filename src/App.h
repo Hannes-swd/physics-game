@@ -230,6 +230,30 @@ private:
     // Minimap oben rechts (AppMinimap.cpp): Norden oben, man selbst als Pfeil in der Mitte, Mitspieler als Pfeile in
     // ihrer Farbe. Das Gelände kommt aus dem Generator, je Zelle einmal gerechnet und behalten
     void drawMinimap();
+    // Spuren im Schnee (AppSnow.cpp): Fußabdrücke der Figuren, Abdrücke von Teilen, die auf Schnee liegen oder rutschen.
+    // Nur Bild, jeder Rechner zeichnet sie selbst; nach einiger Zeit verschwinden sie
+    struct SnowPrint {
+        glm::dvec3 pos{0};    // auf der Oberfläche
+        glm::vec3 normal{0, 1, 0};
+        float yaw = 0;        // Blick-/Laufrichtung (wie playYaw_)
+        float w = 0, l = 0;   // Teil: Breite (x) und Länge (z) des Abdrucks; Fuß: 0
+        float side = 0;       // Fuß: −1 links, +1 rechts
+        double born = 0;
+    };
+    std::vector<SnowPrint> snowPrints_;
+    size_t snowNext_ = 0;  // Ringpuffer: nächster Platz, wenn voll
+    struct Stride {
+        glm::dvec3 last{0};
+        float side = 1;
+        bool init = false;
+    };
+    std::unordered_map<uint32_t, Stride> strides_;           // je Figur: wo der letzte Schritt war
+    std::unordered_map<uint32_t, glm::dvec3> imprintAt_;     // je Teil: wo es zuletzt einen Abdruck gemacht hat
+    const void* snowGen_ = nullptr;
+    bool onSnow(double x, double z, glm::dvec3* ground = nullptr, glm::vec3* normal = nullptr) const;
+    void addSnowPrint(const SnowPrint& p);
+    void updateSnow(float dt);
+    void addSnowPrints(FrameDesc& fd);
     // Große Karte (M): Rad zoomt, Maus ziehen verschiebt; die Welt läuft weiter, die Figur steht
     void openMap(bool on);
     void drawBigMap();

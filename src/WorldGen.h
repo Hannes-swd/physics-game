@@ -42,7 +42,11 @@ struct GenConfig {
     double blend = 0.04;        // Übergangsbreite in Klimaeinheiten
     struct Biome {
         std::string id, label;
-        double lo[kClimateCount] = {0, 0, 0, 0}, hi[kClimateCount] = {1, 1, 1, 1};
+        // Klimabereiche: ein Quader je Eintrag ("climate" als Objekt oder Liste von Objekten); der Score ist der beste
+        struct Box {
+            double lo[kClimateCount] = {0, 0, 0, 0}, hi[kClimateCount] = {1, 1, 1, 1};
+        };
+        std::vector<Box> boxes = {Box{}};
         struct Height {
             double base = 0, amplitude = 1, scale = 100, persistence = 0.5, lacunarity = 2.0;
             int octaves = 3;
@@ -50,6 +54,17 @@ struct GenConfig {
             // nach innen über "ramp" (Klimaeinheiten, wie der Score) auf volle Höhe: kein Steilhang an der Biomgrenze
             double ridgeHeight = 0, ridgeScale = 1000, ridgePersistence = 0.5, ridgeSharpness = 2.0, ridgeRamp = 0.12;
             int ridgeOctaves = 5;
+            // Hochplateau ("plateau"): "height" m obendrauf, vom Biomrand über "ramp" (Klimaeinheiten) steil ansteigend
+            double plateauHeight = 0, plateauRamp = 0.02;
+            // Terrassen ("terraces"): Höhe in Stufen von "step" m; "sharpness" 0 = keine, 1 = senkrechte Wände
+            double terraceStep = 0, terraceSharpness = 0.8;
+            // Stufen nach dem Klima ("steps"): je Eintrag h0 + (h1 − h0) · weich(Klimawert von c0 bis c1). So fällt eine Küste
+            // zur Seeseite hin unter Wasser (sanft beim Strand, als Wand bei Klippen)
+            struct Step {
+                int param = 2;
+                double c0 = 0, h0 = 0, c1 = 1, h1 = 0;
+            };
+            std::vector<Step> steps;
         } height;
         glm::vec3 color{0.35f, 0.45f, 0.22f}, slopeColor{0.45f, 0.4f, 0.35f};
         float slopeStart = 0.35f, slopeEnd = 0.6f;
@@ -58,9 +73,13 @@ struct GenConfig {
         // See/Meer ("water": true): das Gelände liegt unter dem Wasserspiegel der Flüsse und wird nicht angehoben, dort ist
         // Wasser. Am Ufer überblendet es weich ins Land (Strand in der Farbe "color" des Sees). Flüsse münden hinein
         bool water = false;
+        bool beach = true;                // See: Sandstrand über dem Wasser ("beach": false, z. B. Sumpf: keiner)
+        bool shoreColorGiven = false;
+        glm::vec3 shoreColor{0};          // See: Farbe von Grund und Strand ("shore_color", sonst "color")
         // Schnee ("snow"): ab "from" m über "blend" m wird die ebene Oberfläche weiß (steile Hänge bleiben Fels)
         double snowFrom = 1e30, snowBlend = 25;
         glm::vec3 snowColor{0.86f, 0.88f, 0.92f};
+        bool snowBare = true;             // auf Schnee keine Bäume und kein Gras ("bare": false, z. B. Taiga: doch)
         double rivers = 1.0;    // wie viele Flüsse hier Wasser führen (0 = keine, 1 = so viele wie "rivers.presence")
         double treesPerHa = 0;  // Bäume je Hektar
         std::vector<std::pair<std::string, double>> treeTypes;  // Art (trees.json) und Gewicht
@@ -155,7 +174,8 @@ struct GenSample {
     RiverSample river;              // der Fluss hier (strength 0: keiner)
     double lake = 0;                // Anteil der See-Biome ("water": true) an diesem Ort, 0..1
     float beach = 0;                // Sandstrand am See 0..1 (dort kein Gras und keine Büsche)
-    float snow = 0;                 // Schnee 0..1 (nur ebene Stellen sind weiß; kein Gras, keine Bäume)
+    float snow = 0;                 // Schnee 0..1 (nur ebene Stellen sind weiß)
+    float bare = 0;                 // so weit kein Gras und keine Bäume (Schnee über der Baumgrenze), 0..1
 };
 
 class WorldGen {
@@ -174,7 +194,7 @@ public:
     void sample(double x, double z, GenSample& out) const;
     double height(double x, double z) const;
     // nur dieses Biom (ohne Überblenden); score: wie tief der Ort im Biom liegt (Grate wachsen damit, ohne Angabe: voll)
-    double biomeHeight(int biome, double x, double z, double score = 1e9) const;
+    double biomeHeight(int biome, double x, double z, double score = 1e9, const Climate* climate = nullptr) const;
 
     bool hasRivers() const { return cfg_->rivers.enabled; }
     double riverLevel() const { return cfg_->rivers.level; }

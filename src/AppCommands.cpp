@@ -732,6 +732,19 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
                    (pauseStopped_ ? ", world paused" : "");
         return true;
     }
+    if (cmd == "snow") {  // Spuren im Schnee: snow [clear]
+        if (t.size() > 1 && t[1] == "clear") {
+            snowPrints_.clear();
+            snowNext_ = 0;
+        }
+        const glm::dvec3 feet = netClient() ? netFeet_ : physics_.characterPosition();
+        size_t feetN = 0;
+        for (const SnowPrint& p : snowPrints_) feetN += p.w <= 0;
+        out = std::to_string(snowPrints_.size()) + " print(s) in the snow (" + std::to_string(feetN) + " footprints, " +
+              std::to_string(snowPrints_.size() - feetN) + " from parts); " +
+              (play_ ? std::string(onSnow(feet.x, feet.z) ? "the player stands on snow" : "the player is not on snow") : std::string("build mode"));
+        return true;
+    }
     if (cmd == "map") {  // große Karte des Spiel-Modus (M)
         const std::string v = t.size() > 1 ? t[1] : "";
         if (!play_) {

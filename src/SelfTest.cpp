@@ -800,28 +800,27 @@ int runSelfTest() {
             differ += s1.height != s3.height;
             ++count[(size_t)s1.biome];
             negative += s1.score[s1.biome] < 0;  // das Klima passt zu keinem Biom (Lücke)
-            // biomes.json: Kontinentalität niedrig See, hoch Gebirge; dazwischen feucht -> wenig Zerklüftung Ebene (sehr
-            // feucht: Wald), viel Zerklüftung Hügel; trocken: heiß Wüste, kalt Steppe
+            // Liegt das Klima sicher (0,02 vom Rand) in einem Bereich eines Bioms aus biomes.json, muss es dieses sein
             const Climate c = g1.climate(x, z);
-            const double e = c.v[kErosion], hum = c.v[kHumidity], tmp = c.v[kTemperature], con = c.v[kContinentalness];
-            if (con < 0.22 && s1.biome != lake) ++wrong;
-            if (con > 0.74 && s1.biome != mountains) ++wrong;
-            if (con < 0.26 || con > 0.70) continue;
-            if (hum > 0.37 && hum < 0.6 && e < 0.48 && s1.biome != plains) ++wrong;
-            if (hum > 0.64 && e < 0.48 && s1.biome != forest) ++wrong;
-            if (hum > 0.37 && e > 0.52 && s1.biome != hills) ++wrong;
-            if (hum < 0.33 && tmp > 0.57 && s1.biome != desert) ++wrong;
-            if (hum < 0.33 && tmp < 0.53 && s1.biome != steppe) ++wrong;
-            if (s1.biome == desert && hum > 0.37) ++wrong;
+            for (size_t b = 0; b < cfg->biomes.size(); ++b)
+                for (const GenConfig::Biome::Box& box : cfg->biomes[b].boxes) {
+                    bool in = true;
+                    for (int p = 0; p < kClimateCount; ++p)
+                        in = in && (box.lo[p] <= 0 || c.v[p] > box.lo[p] + 0.02) && (box.hi[p] >= 1 || c.v[p] < box.hi[p] - 0.02);
+                    if (in && s1.biome != (int)b) ++wrong;
+                }
         }
         check(plains >= 0 && hills >= 0 && desert >= 0 && equal == 3600 && differ > 3400, "same seed, same terrain and biomes; other seed, other terrain",
               std::to_string(equal) + " equal, " + std::to_string(differ) + " different");
         std::string tally;
-        for (size_t b = 0; b < cfg->biomes.size(); ++b) tally += std::to_string(count[b]) + " " + cfg->biomes[b].id + ", ";
-        check(wrong == 0 && negative == 0 && counted(plains) > 120 && counted(hills) > 240 && counted(desert) > 80 && counted(forest) > 120 &&
-                  counted(steppe) > 40 && counted(lake) > 10 && counted(mountains) > 40,
-              "biomes sit where their climate fits (lake and mountains by continentalness; plains, forest, hills by humidity and erosion; "
-              "desert and steppe dry), no climate is left without a biome",
+        int missing = 0;
+        for (size_t b = 0; b < cfg->biomes.size(); ++b) {
+            tally += std::to_string(count[b]) + " " + cfg->biomes[b].id + ", ";
+            missing += count[b] == 0;
+        }
+        check(wrong == 0 && negative == 0 && missing == 0 && counted(plains) > 120 && counted(hills) > 240 && counted(desert) > 80 &&
+                  counted(forest) > 120 && counted(steppe) > 40 && counted(lake) > 10 && counted(mountains) > 40,
+              "biomes sit where their climate fits (every biome occurs on 24 km), no climate is left without a biome",
               tally + std::to_string(wrong) + " wrong, " + std::to_string(negative) + " without a fitting biome");
         WorldGen only(4711, cfg, hills);
         int onlyHills = 0;
@@ -842,7 +841,14 @@ int runSelfTest() {
                 g1.sample(i * 0.5 + 0.5, lineZ, s1);
                 if (last >= 0 && s0.biome != last) ++borders;
                 last = s0.biome;
-                if (mountains >= 0 && std::max(s0.score[mountains], s1.score[mountains]) > 0.01) continue;
+                // absichtlich steil: Grate, Plateaurand, Terrassen, Klippen
+                bool steep = false;
+                for (size_t b = 0; b < cfg->biomes.size(); ++b) {
+                    const GenConfig::Biome& d = cfg->biomes[b];
+                    if (d.height.ridgeHeight > 0 || d.height.plateauHeight > 0 || d.height.terraceStep > 0 || !d.height.steps.empty())
+                        steep |= std::max(s0.score[b], s1.score[b]) > -cfg->blend;
+                }
+                if (steep) continue;
                 steepest = std::max(steepest, std::abs(s1.height - s0.height));
             }
         check(borders > 0 && steepest < 0.6, "biome borders blend smoothly (no cliffs)",
@@ -901,12 +907,14 @@ int runSelfTest() {
                 const RiverSample& r = s.river;
                 if (r.strength <= 0.0 || r.strength >= 0.999 || r.dist > r.half) continue;
                 ++fading;
-                fadingAway += mountains < 0 || s.score[mountains] < -2.0 * cfg->blend;
+                bool near = false;  // ein Biom ohne Flüsse (Gebirge, Hochplateau, Gletscher) ist nah
+                for (size_t b = 0; b < cfg->biomes.size(); ++b) near |= cfg->biomes[b].rivers < 1.0 && s.score[b] > -2.0 * cfg->blend;
+                fadingAway += !near;
             }
             check(rv.enabled && rv.endless && crossings >= 8 && crossings <= 70, "rivers: not rare, not everywhere",
                   std::to_string(crossings) + " rivers crossed on 80 km (about every " + num(80.0 / std::max(crossings, 1)) + " km)");
-            check(fadingAway == 0, "rivers never end in the open land (they start at the foot of the mountains or end in a lake)",
-                  std::to_string(fading) + " spots where a river fades out, " + std::to_string(fadingAway) + " of them far from mountains");
+            check(fadingAway == 0, "rivers never end in the open land (they start at the foot of mountains, plateaus, glaciers or end in a lake)",
+                  std::to_string(fading) + " spots where a river fades out, " + std::to_string(fadingAway) + " of them far from mountains, plateaus, glaciers");
             check(lowDry == 0 && lowestDry >= rv.level + rv.floor - 0.01, "outside the river beds and lakes the ground stays above the water",
                   "lowest dry ground " + num((lowestDry - rv.level) * 100) + " cm above the river level");
             // See: tiefes Wasser in der Mitte, das Ufer steigt weich bis über den Wasserspiegel (Strand), Flüsse münden hinein
@@ -955,10 +963,70 @@ int runSelfTest() {
                 int mouths = 0;
                 for (int m : mouthRows) mouths += m;
                 const double waterDepth = rv.level - probe.waterBottom(f.x, f.y);  // das Gewässer des Geländes sieht ihn
-                check(found && mid.wet && deep < rv.level - 4.0 && shore && steepest < 0.6 && mouths > 0 && waterDepth > 2.0,
-                      "a lake: deep water inside, a soft shore up to dry land, rivers flow into it",
+                check(found && mid.wet && deep < rv.level - 4.0 && shore && mouths > 0 && waterDepth > 2.0,
+                      "a lake: deep water inside, a shore up to dry land, rivers flow into it",
                       "found " + num(glm::length(f)) + " m away, " + num(rv.level - deep) + " m deep (water " + num(waterDepth) + " m at the spot found), shore " + num(glm::length(p - f)) +
                           " m out, steepest step " + num(steepest * 100) + " cm per 50 cm, " + std::to_string(mouths) + " river spots at lake shores within 20 km");
+            }
+            // Neue Biome: an der nächsten Stelle des Bioms ein Feld von 400 m abtasten (alle 4 m)
+            {
+                Terrain probe(physics, nullptr, std::make_shared<WorldGen>(4711, cfg, -1), {});
+                struct Area {
+                    bool found = false;
+                    double lo = 1e9, hi = -1e9, steepest = 0;
+                    int water = 0, dry = 0;
+                };
+                auto area = [&](const char* id) {
+                    Area a;
+                    const int b = cfg->findBiome(id);
+                    glm::dvec2 f;
+                    if (b < 0 || !probe.findBiome(b, glm::dvec2(0, 0), 20000.0, f)) return a;
+                    a.found = true;
+                    for (int j = -50; j <= 50; ++j)
+                        for (int i = -50; i <= 50; ++i) {
+                            GenSample s, t;
+                            g1.sample(f.x + i * 4.0, f.y + j * 4.0, s);
+                            g1.sample(f.x + i * 4.0 + 0.5, f.y + j * 4.0, t);
+                            a.lo = std::min(a.lo, s.height), a.hi = std::max(a.hi, s.height);
+                            a.steepest = std::max(a.steepest, std::abs(t.height - s.height) / 0.5);
+                            (s.wet && s.height < rv.level ? a.water : a.dry) += 1;
+                        }
+                    return a;
+                };
+                const Area plateau = area("plateau"), swamp = area("swamp"), isles = area("archipelago");
+                // Klippen: vom Wasser vor der Küste landeinwärts (weg vom See) bis oben auf die Klippe gehen
+                Area cliffs;
+                if (const int cb = cfg->findBiome("cliffs"); cb >= 0 && lake >= 0) {
+                    glm::dvec2 f;
+                    cliffs.found = probe.findBiome(cb, glm::dvec2(0, 0), 20000.0, f);
+                    double sc[kMaxBiomes];
+                    auto lakeScore = [&](const glm::dvec2& p) {
+                        g1.classify(g1.climate(p.x, p.y), sc);
+                        double s = -1e9;
+                        for (size_t b = 0; b < cfg->biomes.size(); ++b)
+                            if (cfg->biomes[b].water) s = std::max(s, sc[b]);
+                        return s;
+                    };
+                    glm::dvec2 p = f;
+                    double prev = g1.height(p.x, p.y);
+                    for (int k = 0; k < 4000 && cliffs.found; ++k) {
+                        const double s0 = lakeScore(p);
+                        const glm::dvec2 g(lakeScore(p + glm::dvec2(5, 0)) - s0, lakeScore(p + glm::dvec2(0, 5)) - s0);
+                        if (glm::length(g) < 1e-12) break;
+                        p -= glm::normalize(g) * 0.5;  // vom Wasser weg, landeinwärts
+                        GenSample s;
+                        g1.sample(p.x, p.y, s);
+                        cliffs.steepest = std::max(cliffs.steepest, std::abs(s.height - prev) / 0.5);
+                        prev = s.height;
+                        if (!s.wet && s.height > rv.level + 10.0) break;  // oben auf der Klippe
+                    }
+                }
+                check(plateau.found && plateau.hi > 70 && swamp.found && swamp.water > 200 && swamp.dry > 2000 && isles.found && isles.dry > 200 &&
+                          isles.water > 2000 && cliffs.found && cliffs.steepest > 1.0,
+                      "new biomes have their shape: a high plateau, a swamp with ponds, a lake with islands, steep cliffs at the water",
+                      "plateau up to " + num(plateau.hi) + " m; swamp " + std::to_string(swamp.water) + " wet / " + std::to_string(swamp.dry) +
+                          " dry spots; islands " + std::to_string(isles.dry) + " dry in " + std::to_string(isles.water) + " wet; cliffs steepest " +
+                          num(std::atan(cliffs.steepest) * 57.3) + "°");
             }
             GenConfig old;
             std::string perr;

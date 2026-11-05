@@ -235,8 +235,9 @@ bool parseTreeConfig(const std::string& text, TreeConfig& out, std::string* errO
         if (const Json& s = t["crown"]; s.type == Json::Object) {
             const std::string ws = w + ".crown";
             if (s["shape"].type == Json::String) {
-                if (s["shape"].str != "round" && s["shape"].str != "cone") return fail(ws + ".shape: 'round' or 'cone'");
+                if (s["shape"].str != "round" && s["shape"].str != "cone" && s["shape"].str != "palm") return fail(ws + ".shape: 'round', 'cone' or 'palm'");
                 d.cone = s["shape"].str == "cone";
+                d.palm = s["shape"].str == "palm";
             }
             if (!num(s, "bottom", d.crownBottom, err, ws) || !num(s, "top", d.crownTop, err, ws) || !num(s, "radius", d.crownRadius, err, ws))
                 return fail(err);
@@ -350,7 +351,29 @@ TreeModel buildTreeModel(const TreeType& t, uint64_t seed) {
 
     // Krone
     const double cr = t.crownRadius;
-    if (t.cone) {
+    if (t.palm) {
+        // Palme: Wedel vom Stammende aus im Kreis, erst schräg hinauf, dann im Bogen nach unten; je Wedel eine Reihe
+        // flacher Büschel, die zur Spitze kleiner werden
+        const dvec3 top = center(H);
+        const int fronds = 8;
+        for (int f = 0; f < fronds; ++f) {
+            const double az = f * 2.0 * kPi / fronds + r.range(-0.25, 0.25), len = cr * r.range(0.85, 1.1);
+            const dvec3 out(std::cos(az), 0, std::sin(az));
+            const int n = 5;
+            for (int k = 0; k < n; ++k) {
+                const double s = (k + 0.5) / n;                      // 0 am Stamm .. 1 an der Spitze
+                const double rise = 0.55 * len * s - 0.95 * len * s * s;  // Bogen: hinauf, dann hängend
+                const dvec3 c = top + out * (len * s) + dvec3(0, rise + 0.2, 0);
+                const double w = cr * 0.2 * (1.0 - 0.6 * s);
+                const dvec3 radii(std::abs(out.x) * len / n * 0.75 + w * std::abs(out.z), w * 0.25, std::abs(out.z) * len / n * 0.75 + w * std::abs(out.x));
+                const uint64_t bs = noise::mix64(seed + 701 + (uint64_t)(f * 16 + k));
+                blob(m.leaves, c, radii, 1, bs);
+                if (k % 2 == 0) blob(m.leavesLow, c, radii * 1.3, 0, bs);
+            }
+        }
+        blob(m.leaves, top + dvec3(0, 0.15, 0), dvec3(R1 * 3.0 + 0.15), 1, noise::mix64(seed + 699));  // Herz der Krone
+        m.crownAnchor = top;
+    } else if (t.cone) {
         // Nadelbaum: überlappende Kegelstufen, unten breit, oben spitz
         const int tiers = std::clamp((int)std::round((t.crownTop - t.crownBottom) / 2.2), 3, 12);
         const double step = (t.crownTop - t.crownBottom) / tiers;
@@ -475,7 +498,7 @@ bool Forest::spotOf(int64_t cx, int64_t cz, TreeSpot& out) const {
     if (accept >= density * s * s) return false;
     // nicht im Flussbett, nicht direkt am Wasser
     if (g.wet || (cfg.rivers.enabled && g.height < cfg.rivers.level + cfg.rivers.floor + 0.05 && g.river.strength > 0)) return false;
-    if (g.snow > 0.05f || g.beach > 0.3f) return false;  // über der Baumgrenze (Schnee), am Sandstrand
+    if (g.bare > 0.05f || g.beach > 0.3f) return false;  // über der Baumgrenze (Schnee), am Sandstrand
     const auto& types = biomeTypes_[(size_t)g.biome];
     if (types.empty()) return false;
     double total = 0;

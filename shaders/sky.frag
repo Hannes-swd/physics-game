@@ -33,6 +33,47 @@ float fbm3(vec3 p) {
     return s;
 }
 
+// ------------------------------------------------------------------ Wolken
+float vnoise2(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+float cloudNoise(vec2 p) {
+    float s = 0.0, a = 0.5;
+    const mat2 rot = mat2(1.6, 1.2, -1.2, 1.6);  // je Oktave gedreht: keine Gitterkanten
+    for (int i = 0; i < 5; ++i) {
+        s += a * vnoise2(p);
+        p = rot * p + 3.1;
+        a *= 0.5;
+    }
+    return s;
+}
+
+// Haufenwolken auf einer Schicht in 2 km Höhe, fest über der Welt (gehen mit beim Laufen), treiben langsam mit dem Wind.
+// Ergebnis: Farbe und Deckkraft
+const float kCloudHeight = 2000.0;
+vec4 cloudLayer(vec3 dir) {
+    if (dir.y <= 0.01) return vec4(0.0);
+    float camY = pc.camPos.y + frame.originF.y;
+    float t = max(kCloudHeight - camY, 200.0) / dir.y;   // Weg bis zur Schicht
+    vec2 p = frame.originF.xz + pc.camPos.xz + dir.xz * t;  // Ort auf der Schicht (Welt, m)
+    float time = pc.params.y;
+    vec2 q = p * 0.00028 + vec2(time * 0.0025, time * 0.0009);
+    float n = cloudNoise(q);
+    float cover = 0.52 + 0.14 * (vnoise2(p * 0.00004 + 7.0) - 0.5);  // mal mehr, mal weniger bewölkt
+    float d = smoothstep(cover, cover + 0.2, n);
+    float thick = smoothstep(cover, cover + 0.42, n);           // dicke Stellen: unten grauer
+    float fade = smoothstep(0.02, 0.22, dir.y) * exp(-t * 0.00002);  // zum Horizont dünner
+    vec3 S = frame.sunPos.xyz;
+    float s = max(dot(dir, S), 0.0);
+    vec3 lit = frame.horizon.rgb * 0.9 + frame.zenith.rgb * 0.4 + frame.sunDisc.rgb * 0.55;  // Himmel + Sonne
+    vec3 col = lit * mix(1.15, 0.70, thick);
+    col += frame.sunDisc.rgb * pow(s, 6.0) * 0.6 * (1.0 - thick);  // Silberrand zur Sonne hin
+    col += frame.glow.rgb * 0.6 * pow(s, 2.0);                     // Abend- und Morgenrot färbt sie
+    return vec4(col, d * fade);
+}
+
 // Farbe eines Sterns (0 blauweiß ... 4 rot), dezent
 vec3 starTint(int c) {
     if (c == 0) return vec3(0.80, 0.88, 1.00);
@@ -145,6 +186,11 @@ void main() {
         // Sterne und Milchstraße drehen sich mit dem Himmel (Äquatorsystem -> Ort: starRot, zurück: transponiert)
         vec3 e = transpose(mat3(frame.starRot)) * dir;
         col += nightSky(e, max(px, 1e-5), dir.y) * frame.glow.w;
+    }
+    // Wolken: tagsüber und in der Dämmerung; nachts weg (der Sternenhimmel bleibt frei)
+    if (frame.glow.w < 0.999) {
+        vec4 cl = cloudLayer(dir);
+        col = mix(col, cl.rgb, cl.a * (1.0 - frame.glow.w));
     }
     if (waterCount() > 0) {
         if (insideWater(pc.camPos.xyz)) {

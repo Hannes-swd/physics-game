@@ -149,8 +149,8 @@ void Flora::sampleGrid(int64_t tx, int64_t tz, std::vector<Mix>& grid) const {
             }
             m.grass *= plants_, m.flowers *= plants_;
             if (g.wet) m.grass = m.flowers = m.bushes = 0;  // Flussbett, See
-            if (g.snow > 0 || g.beach > 0) {  // Schnee (nach oben immer weniger) und Sandstrand: kein Bewuchs
-                const double keep = std::clamp(1.0 - 1.5 * (double)std::max(g.snow, g.beach), 0.0, 1.0);
+            if (g.bare > 0 || g.beach > 0) {  // Schnee über der Baumgrenze (nach oben immer weniger) und Sandstrand: kein Bewuchs
+                const double keep = std::clamp(1.0 - 1.5 * (double)std::max(g.bare, g.beach), 0.0, 1.0);
                 m.grass *= keep, m.flowers *= keep, m.bushes *= keep;
             }
         }

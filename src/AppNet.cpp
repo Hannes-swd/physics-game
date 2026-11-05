@@ -1136,7 +1136,7 @@ bool App::localCommand(const std::string& line) const {
     static const char* local[] = {"help",   "?",        "materials", "mode",    "view",      "camera", "screenshot",
                                   "photo",  "tool",     "window",    "display", "log",       "select", "drawing",
                                   "threeview", "quit",  "exit",      "save",    "edges",     "list",   "ls",
-                                  "chunks", "lan",      "player",    "menu",    "world",     "tp",     "teleport", "pause", "map"};
+                                  "chunks", "lan",      "player",    "menu",    "world",     "tp",     "teleport", "pause", "map", "snow"};
     const std::string w = firstWord(line);
     if (w.empty() || w[0] == '#') return true;
     for (const char* l : local)

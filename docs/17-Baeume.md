@@ -67,9 +67,20 @@ Die Lage jedes Baums kommt **nur aus dem Seed**: gleicher Seed, gleicher Wald, a
 | Biom | Bäume je Hektar | Arten |
 |---|---|---|
 | `forest` (Wald) | 150 | alle: viele junge, einige große |
+| `jungle` (Dschungel) | 170 | Urwaldriese `jungle_big`, Urwaldbaum `jungle_mid`, einige Palmen |
+| `taiga` (Schneewald) | 110 | Verschneite Fichte `spruce_snow` |
+| `archipelago` (Inselsee) | 45 | Fichten, junge Eichen (nur auf den Inseln) |
+| `cherry` (Kirschblütenhain) | 40 | Kirschbaum `cherry` (rosa Blüten) |
+| `swamp` (Sumpf) | 30 | Moorbaum `swamp_tree` (krumm, dunkel) |
 | `hills` (Hügellandschaft) | 18 | Fichten |
+| `mountains` (Gebirge) | 12 | Fichten (nicht auf Schnee) |
+| `beach` (Sandstrand) | 10 | Palme `palm` |
+| `cliffs` (Felsküste) | 6 | Fichten |
 | `plains` (Ebene) | 4 | einzelne Eichen |
-| `desert` (Wüste) | 0 | – |
+| `desert`, `canyon`, `glacier`, `rockfield`, `lake` | 0 | – |
+
+Die **Palme** hat eine eigene Kronenform: `"shape": "palm"` (Wedel, die oben am gebogenen Stamm im Kreis hinaus und dann
+im Bogen nach unten hängen). Die übrigen neuen Arten sind runde Kronen bzw. Kegel mit eigenen Farben.
 
 Der **Wald** ist ein eigenes Biom: sehr feucht (`humidity` 0.62–1) und eher flach (`erosion` 0–0.5), dunkler Boden.
 Die Ebene liegt jetzt bei `humidity` 0.35–0.62. Siehe [16](16-Weltgenerierung.md).

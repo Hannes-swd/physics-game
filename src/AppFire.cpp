@@ -66,6 +66,7 @@ void App::heatToolInput(float) {
 void App::updateFx(float dt) {
     dt = std::min(dt, 0.1f);
     updateWaterFx(dt);  // Spritzer, Dampf
+    updateSnow(dt);     // Spuren im Schnee
     const glm::vec3 wind = glm::vec3(world_->wind());
     // Rauch und Funken aus den Feuern
     for (const Fire& F : world_->fires()) {

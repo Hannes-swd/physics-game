@@ -320,7 +320,7 @@ Physik läuft leicht in Zeitlupe).
 
 ## Selbsttest
 
-`Werkstatt.exe --selftest` prüft (183 Prüfungen):
+`Werkstatt.exe --selftest` prüft (184 Prüfungen):
 
 - Geometrie: Volumen, Sägeschnitt, Bohrung (π r² h), Innenflächen, Schnittfuge, Zahnrad, Kugel, Kanten finden,
   Abrunden/Fasen (Volumen nach Formel), Hohlkehle, Drehbank

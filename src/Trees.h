@@ -33,6 +33,7 @@ struct TreeType {
            branchRise = 30;
     // Krone
     bool cone = false;  // Nadelbaum (Kegel) statt Büschel
+    bool palm = false;  // Palme: Wedel, die oben am Stamm im Kreis hinaus und nach unten hängen
     double crownBottom = 4, crownTop = 12, crownRadius = 3;
     glm::vec3 leafColor{0.15f, 0.27f, 0.07f}, leafColor2{0.08f, 0.17f, 0.04f};
     double scaleMin = 0.85, scaleMax = 1.15;

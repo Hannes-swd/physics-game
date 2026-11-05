@@ -465,7 +465,7 @@ void App::buildFrame(FrameDesc& fd) {
     fd.sky = sky::at(dayHours_);  // Tag und Nacht: Sonne bzw. Mond geben Licht und Schatten
     fd.sunDir = glm::normalize(fd.sky.lightDir);
     fd.starLines = starLines_;
-    fd.fogDensity = (float)(0.00035 / settings_.viewDistance);  // Sichtweite (Einstellungen -> Grafik)
+    fd.fogDensity = (float)(0.00012 / settings_.viewDistance);  // Dunst am Boden (dünn: klare Sicht); Sichtweite (Einstellungen -> Grafik)
 
     for (const View& v : views_) {
         ViewDesc vd;
@@ -617,6 +617,7 @@ void App::buildFrame(FrameDesc& fd) {
         }
     });
 
+    addSnowPrints(fd); // Fußabdrücke und Abdrücke im Schnee (vor den Bäumen: die Liste ist begrenzt)
     addTrees(fd, visibleAny);  // Bäume des Generators (die nahen sind Teile, oben schon dabei)
     addFlora(fd, visibleAny);  // Gras, Blumen, Büsche
     addScatter(fd, visibleAny); // Steine, Stöcke, Stämme, Stümpfe (die großen in der Nähe sind Teile, oben schon dabei)

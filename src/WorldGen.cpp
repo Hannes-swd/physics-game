@@ -137,18 +137,32 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
         d.id = b["id"].str;
         d.label = b["label"].type == Json::String ? b["label"].str : d.id;
         if (c.findBiome(d.id) >= 0) return fail(w + ".id: '" + d.id + "' is used twice");
-        if (const Json& cl = b["climate"]; cl.type == Json::Object) {
+        // "climate": ein Objekt (ein Bereich) oder eine Liste von Objekten (mehrere Bereiche, das Biom gilt in jedem)
+        auto readBox = [&](const Json& cl, const std::string& wc, GenConfig::Biome::Box& box) {
             for (const auto& [key, v] : cl.obj) {
                 int p = -1;
                 for (int k = 0; k < kClimateCount; ++k)
                     if (key == kClimateNames[k]) p = k;
-                if (p < 0) return fail(w + ".climate: unknown value '" + key + "' (temperature, humidity, continentalness, erosion)");
+                if (p < 0) return fail(wc + ": unknown value '" + key + "' (temperature, humidity, continentalness, erosion)");
                 if (v.type != Json::Array || v.size() != 2 || v[0].type != Json::Number || v[1].type != Json::Number)
-                    return fail(w + ".climate." + key + ": [from, to] expected, e.g. [0.2, 0.6]");
-                d.lo[p] = std::clamp(v[0].num, 0.0, 1.0);
-                d.hi[p] = std::clamp(v[1].num, 0.0, 1.0);
-                if (d.hi[p] < d.lo[p]) return fail(w + ".climate." + key + ": 'to' is smaller than 'from'");
+                    return fail(wc + "." + key + ": [from, to] expected, e.g. [0.2, 0.6]");
+                box.lo[p] = std::clamp(v[0].num, 0.0, 1.0);
+                box.hi[p] = std::clamp(v[1].num, 0.0, 1.0);
+                if (box.hi[p] < box.lo[p]) return fail(wc + "." + key + ": 'to' is smaller than 'from'");
             }
+            return true;
+        };
+        if (const Json& cl = b["climate"]; cl.type == Json::Object) {
+            if (!readBox(cl, w + ".climate", d.boxes[0])) return false;
+        } else if (cl.type == Json::Array) {
+            d.boxes.clear();
+            for (size_t k = 0; k < cl.size(); ++k) {
+                const std::string wc = w + ".climate[" + std::to_string(k) + "]";
+                if (cl[k].type != Json::Object) return fail(wc + ": object expected");
+                d.boxes.emplace_back();
+                if (!readBox(cl[k], wc, d.boxes.back())) return false;
+            }
+            if (d.boxes.empty()) return fail(w + ".climate: at least one range is needed");
         }
         if (const Json& h = b["height"]; h.type == Json::Object) {
             const std::string wh = w + ".height";
@@ -173,15 +187,61 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
                 t.ridgeSharpness = std::clamp(t.ridgeSharpness, 0.5, 6.0);
                 t.ridgeRamp = std::clamp(t.ridgeRamp, 0.005, 1.0);
             }
+            if (const Json& pl = h["plateau"]; pl.type == Json::Object) {
+                GenConfig::Biome::Height& t = d.height;
+                if (!num(pl, "height", t.plateauHeight, err, wh + ".plateau") || !num(pl, "ramp", t.plateauRamp, err, wh + ".plateau"))
+                    return fail(err);
+                t.plateauHeight = std::clamp(t.plateauHeight, 0.0, 2000.0);
+                t.plateauRamp = std::clamp(t.plateauRamp, 0.002, 1.0);
+            }
+            if (const Json& st = h["steps"]; st.type == Json::Array) {
+                for (size_t k = 0; k < st.size(); ++k) {
+                    const std::string ws = wh + ".steps[" + std::to_string(k) + "]";
+                    const Json& e = st[k];
+                    GenConfig::Biome::Height::Step s;
+                    s.param = -1;
+                    for (int p = 0; p < kClimateCount; ++p)
+                        if (e["climate"].type == Json::String && e["climate"].str == kClimateNames[p]) s.param = p;
+                    if (s.param < 0) return fail(ws + ".climate: temperature, humidity, continentalness or erosion expected");
+                    auto pair = [&](const char* key, double& a, double& v) {
+                        const Json& j = e[key];
+                        if (j.type != Json::Array || j.size() != 2 || j[0].type != Json::Number || j[1].type != Json::Number)
+                            return fail(ws + "." + key + ": [climate value, height m] expected");
+                        a = j[0].num, v = j[1].num;
+                        return true;
+                    };
+                    if (!pair("from", s.c0, s.h0) || !pair("to", s.c1, s.h1)) return false;
+                    if (s.c1 <= s.c0) return fail(ws + ": 'to' must come after 'from' (climate value)");
+                    d.height.steps.push_back(s);
+                }
+            }
+            if (const Json& te = h["terraces"]; te.type == Json::Object) {
+                GenConfig::Biome::Height& t = d.height;
+                if (!num(te, "step", t.terraceStep, err, wh + ".terraces") || !num(te, "sharpness", t.terraceSharpness, err, wh + ".terraces"))
+                    return fail(err);
+                t.terraceStep = std::clamp(t.terraceStep, 0.0, 500.0);
+                t.terraceSharpness = std::clamp(t.terraceSharpness, 0.0, 1.0);
+            }
         }
-        if (b.has("water")) {
-            if (b["water"].type != Json::Bool) return fail(w + ".water: true or false expected");
-            d.water = b["water"].num != 0;
+        auto flag = [&](const char* key, bool& out) {
+            if (!b.has(key)) return true;
+            if (b[key].type != Json::Bool) return fail(w + "." + key + ": true or false expected");
+            out = b[key].num != 0;
+            return true;
+        };
+        if (!flag("water", d.water) || !flag("beach", d.beach)) return false;
+        if (b.has("shore_color")) {
+            if (!readVec3(b["shore_color"], d.shoreColor)) return fail(w + ".shore_color: [r, g, b] expected");
+            d.shoreColorGiven = true;
         }
         if (const Json& sn = b["snow"]; sn.type == Json::Object) {
             if (!num(sn, "from", d.snowFrom, err, w + ".snow") || !num(sn, "blend", d.snowBlend, err, w + ".snow")) return fail(err);
             if (sn.has("color") && !readVec3(sn["color"], d.snowColor)) return fail(w + ".snow.color: [r, g, b] expected");
             d.snowBlend = std::max(d.snowBlend, 0.5);
+            if (sn.has("bare")) {
+                if (sn["bare"].type != Json::Bool) return fail(w + ".snow.bare: true or false expected");
+                d.snowBare = sn["bare"].num != 0;
+            }
         }
         if (const Json& s = b["surface"]; s.type == Json::Object) {
             const std::string ws = w + ".surface";
@@ -194,6 +254,7 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
             if (s["material"].type == Json::String) d.material = s["material"].str;
         }
         if (b.has("border_color") && !readVec3(b["border_color"], d.borderColor)) return fail(w + ".border_color: [r, g, b] expected");
+        if (!d.shoreColorGiven) d.shoreColor = d.color;
         if (!num(b, "rivers", d.rivers, err, w)) return fail(err);
         d.rivers = std::clamp(d.rivers, 0.0, 1.0);
         if (const Json& tr = b["trees"]; tr.type == Json::Object) {
@@ -394,24 +455,27 @@ int WorldGen::classify(const Climate& c, double* scoresOut) const {
     double* scores = scoresOut ? scoresOut : local;
     int best = 0;
     for (size_t b = 0; b < cfg_->biomes.size(); ++b) {
-        const GenConfig::Biome& d = cfg_->biomes[b];
-        double out2 = 0, depth = 1.0;
-        for (int p = 0; p < kClimateCount; ++p) {
-            const double v = c.v[p];
-            if (v < d.lo[p]) out2 += (d.lo[p] - v) * (d.lo[p] - v);
-            else if (v > d.hi[p]) out2 += (v - d.hi[p]) * (v - d.hi[p]);
-            else {
-                if (d.lo[p] > 0) depth = std::min(depth, v - d.lo[p]);
-                if (d.hi[p] < 1) depth = std::min(depth, d.hi[p] - v);
+        double s = -1e30;
+        for (const GenConfig::Biome::Box& d : cfg_->biomes[b].boxes) {  // mehrere Bereiche: der beste zählt
+            double out2 = 0, depth = 1.0;
+            for (int p = 0; p < kClimateCount; ++p) {
+                const double v = c.v[p];
+                if (v < d.lo[p]) out2 += (d.lo[p] - v) * (d.lo[p] - v);
+                else if (v > d.hi[p]) out2 += (v - d.hi[p]) * (v - d.hi[p]);
+                else {
+                    if (d.lo[p] > 0) depth = std::min(depth, v - d.lo[p]);
+                    if (d.hi[p] < 1) depth = std::min(depth, d.hi[p] - v);
+                }
             }
+            s = std::max(s, out2 > 0 ? -std::sqrt(out2) : depth);
         }
-        scores[b] = out2 > 0 ? -std::sqrt(out2) : depth;
+        scores[b] = s;
         if (scores[b] > scores[best]) best = (int)b;  // bei Gleichstand gewinnt das erste in der Liste
     }
     return best;
 }
 
-double WorldGen::biomeHeight(int b, double x, double z, double score) const {
+double WorldGen::biomeHeight(int b, double x, double z, double score, const Climate* clim) const {
     const GenConfig::Biome::Height& h = cfg_->biomes[(size_t)b].height;
     double v = h.base + h.amplitude * noise::fbm(heightSeed_[(size_t)b], x / h.scale, z / h.scale, h.octaves, h.persistence, h.lacunarity);
     if (h.ridgeHeight > 0) {
@@ -420,6 +484,15 @@ double WorldGen::biomeHeight(int b, double x, double z, double score) const {
         if (k > 0)
             v += k * h.ridgeHeight *
                  noise::ridged(ridgeSeed_[(size_t)b], x / h.ridgeScale, z / h.ridgeScale, h.ridgeOctaves, h.ridgePersistence, 2.0, h.ridgeSharpness);
+    }
+    if (h.plateauHeight > 0) v += h.plateauHeight * smooth01(score / h.plateauRamp);  // Hochplateau: steiler Rand
+    if (clim)
+        for (const GenConfig::Biome::Height::Step& s : h.steps)  // Stufen nach dem Klima (Küsten)
+            v += s.h0 + (s.h1 - s.h0) * smooth01((clim->v[s.param] - s.c0) / std::max(s.c1 - s.c0, 1e-6));
+    if (h.terraceStep > 0) {
+        // Terrassen: in jeder Stufe der größte Teil flach, dann eine steile Wand bis zur nächsten (stetig)
+        const double q = v / h.terraceStep, f = q - std::floor(q), s = 0.9 * h.terraceSharpness;
+        v = h.terraceStep * (std::floor(q) + smooth01((f - s) / std::max(1.0 - s, 1e-3)));
     }
     return v;
 }
@@ -436,15 +509,16 @@ void WorldGen::sample(double x, double z, GenSample& out) const {
     const size_t n = cfg_->biomes.size();
     const GenConfig::Rivers& rv = cfg_->rivers;
     out.lake = 0;
-    out.snow = 0;
+    out.snow = out.bare = 0;
     out.beach = 0;
     out.wet = false;  // (applyRivers setzt es nur in der Nähe eines Flusses)
     out.river = RiverSample();
     if (single_ >= 0) {  // nur ein Biom: die ganze Welt ist so
         const GenConfig::Biome& d = cfg_->biomes[(size_t)single_];
+        const Climate single0 = d.height.steps.empty() ? Climate() : climate(x, z);  // Stufen nach dem Klima
         out.biome = single_;
         for (size_t b = 0; b < n; ++b) out.score[b] = (int)b == single_ ? 1.0 : -1.0;
-        out.height = biomeHeight(single_, x, z);
+        out.height = biomeHeight(single_, x, z, 1e9, d.height.steps.empty() ? nullptr : &single0);
         out.color = d.color;
         out.slopeColor = d.slopeColor;
         out.slopeStart = d.slopeStart;
@@ -458,6 +532,7 @@ void WorldGen::sample(double x, double z, GenSample& out) const {
         }
         if (d.snowFrom < 1e29) {
             out.snow = (float)smooth01((out.height - d.snowFrom) / d.snowBlend);
+            out.bare = d.snowBare ? out.snow : 0.0f;
             out.color += (d.snowColor - out.color) * out.snow;
         }
         return;
@@ -484,7 +559,7 @@ void WorldGen::sample(double x, double z, GenSample& out) const {
         if (w[b] <= 0) continue;
         const double f = w[b] / sum;
         const GenConfig::Biome& d = cfg_->biomes[b];
-        const double hb = biomeHeight((int)b, x, z, out.score[b]);
+        const double hb = biomeHeight((int)b, x, z, out.score[b], &c);
         if (d.water) hLake += w[b] / sumLake * hb;
         else out.height += w[b] / sumLand * hb;
         out.color += (float)f * d.color;
@@ -501,26 +576,35 @@ void WorldGen::sample(double x, double z, GenSample& out) const {
         if (sumLand > 0) applyRivers(x, z, out);
         else out.height = rv.level + rv.floor;
         out.height += (hLake - out.height) * t;
-        // Strand: knapp über und unter dem Wasser die Farbe des Sees (Sand), weich ab dem Rand des Übergangs
-        const glm::vec3 beach = [&] {
-            glm::vec3 col(0);
-            for (size_t b = 0; b < n; ++b)
-                if (cfg_->biomes[b].water) col += (float)(w[b] / sumLake) * cfg_->biomes[b].color;
-            return col;
-        }();
-        const float k = (float)(smooth01((rv.level + 1.0 - out.height) / 0.7) * std::min(1.0, t / 0.03));
-        out.color += (beach - out.color) * k;
-        out.slopeColor += (beach - out.slopeColor) * k;
-        out.beach = k;
+        // Grund unter dem Wasser in der Uferfarbe des Sees (Sand, Schlamm), bei Seen mit Strand ("beach") auch bis 1 m
+        // darüber; weich ab dem Rand des Übergangs
+        glm::vec3 shore(0);
+        double beachShare = 0;
+        for (size_t b = 0; b < n; ++b)
+            if (cfg_->biomes[b].water) {
+                shore += (float)(w[b] / sumLake) * cfg_->biomes[b].shoreColor;
+                beachShare += cfg_->biomes[b].beach ? w[b] / sumLake : 0.0;
+            }
+        const double edge = std::min(1.0, t / 0.03);
+        const double kBand = smooth01((rv.level + 1.0 - out.height) / 0.7) * beachShare * edge;
+        const double kUnder = smooth01((rv.level + 0.1 - out.height) / 0.3) * edge;
+        const float k = (float)std::max(kBand, kUnder);
+        out.color += (shore - out.color) * k;
+        out.slopeColor += (shore - out.slopeColor) * k;
+        out.beach = (float)kBand;
         // Wasser: wo der Grund unter dem Spiegel liegt, mit einem schmalen Rand (gräbt man direkt am Ufer, läuft es voll)
         out.wet = out.wet || (rv.enabled && out.height < rv.level + 0.3);
     }
     // Schnee: ab einer Höhe (je Biom), nur auf ebenen Stellen (die Farbe für steile Hänge bleibt)
-    double snow = 0;
+    double snow = 0, bare = 0;
     for (size_t b = 0; b < n; ++b) {
         const GenConfig::Biome& d = cfg_->biomes[b];
-        if (w[b] > 0 && d.snowFrom < 1e29) snow += w[b] / sum * smooth01((out.height - d.snowFrom) / d.snowBlend);
+        if (w[b] <= 0 || d.snowFrom >= 1e29) continue;
+        const double s = w[b] / sum * smooth01((out.height - d.snowFrom) / d.snowBlend);
+        snow += s;
+        if (d.snowBare) bare += s;
     }
+    out.bare = (float)bare;
     if (snow > 0) {
         glm::vec3 col(0);
         double ws = 0;
