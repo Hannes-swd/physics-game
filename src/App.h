@@ -219,7 +219,7 @@ private:
     // Tragen/Werfen/Drehen einer Spielfigur (eigene oder Mitspieler)
     void handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in);
     // Spiel-Modus: Werkzeug in der Hand (Axt, Laser, Erdbohrer, Planierer, Traktorstrahl)
-    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor };
+    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor, Pickaxe };
     // Werkzeuge in der Hand (AppTools.cpp): Auswahl, Wirkung auf Ziel, Hilfstext in der Statuszeile
     void selectHandTool(HandTool t);
     void handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown, bool rmbPressed);
@@ -227,6 +227,17 @@ private:
     void digGround(const glm::dvec3& p, double amount, double radius);
     std::string handToolHelp() const;
     void drawHandToolBar();  // Leiste unten rechts: Hand und Werkzeuge als Symbole, das gewählte hervorgehoben
+    // Minimap oben rechts (AppMinimap.cpp): Norden oben, man selbst als Pfeil in der Mitte, Mitspieler als Pfeile in
+    // ihrer Farbe. Das Gelände kommt aus dem Generator, je Zelle einmal gerechnet und behalten
+    void drawMinimap();
+    struct MapCell {
+        glm::vec3 color{0};
+        float height = 0;
+        bool water = false;
+    };
+    std::unordered_map<uint64_t, MapCell> mapCells_;
+    const void* mapGen_ = nullptr;  // Generator, für den mapCells_ gilt
+    bool showMinimap_ = true;
     void holdForces(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw);
     void updatePreview();
     void applyTool();
@@ -489,7 +500,7 @@ private:
     bool prevLmb_ = false, prevRmb_ = false;
     glm::dvec2 autoMove_{0};      // per Befehl: x = vorwärts, y = rechts
     double autoMoveTime_ = 0;
-    HandTool handTool_ = HandTool::None;  // Spiel-Modus: was man gerade in der Hand hält (X Axt, 1-4 die anderen)
+    HandTool handTool_ = HandTool::None;  // Spiel-Modus: was man gerade in der Hand hält (X Axt, 1-7 alle)
     std::vector<InvItem> inv_;
     uint32_t invNextKey_ = 1;
     bool invOpen_ = false;

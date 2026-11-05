@@ -522,10 +522,13 @@ std::string App::teleportCommand(const std::vector<std::string>& t) {
         return done(feet, glm::dvec3(s.pos.x, feet.y + 1.0, s.pos.z), 6.0, "tree " + f->library().config().types[(size_t)s.type].id);
     }
 
-    // Zeug am Boden: neben das nächste Stück dieser Art (Stein, Stock, Stamm, Stumpf), Blick darauf
+    // Zeug am Boden: neben das nächste Stück dieser Art (Stein, Stock, Stamm, Stumpf, Erz, Kaktus), Blick darauf
+    static const char* const kSingular[kScatterKinds] = {"stone", "stick", "log", "stump", "ore", "cactus"};
     int scatterKind = -1;
     for (int k = 0; k < kScatterKinds; ++k)
-        if (w == kScatterNames[k] || w + "s" == kScatterNames[k]) scatterKind = k;
+        if (w == kScatterNames[k] || w == kSingular[k]) scatterKind = k;
+    if (w == "erz") scatterKind = kScatterOre;
+    if (w == "kaktus") scatterKind = kScatterCactus;
     if (scatterKind >= 0) {
         ScatterField* f = world_->scatter();
         if (!f || !f->any()) return "Error: this world has nothing lying on the ground (flat world, or made before)";
@@ -544,7 +547,7 @@ std::string App::teleportCommand(const std::vector<std::string>& t) {
         away = glm::length(away) > 1e-6 ? glm::normalize(away) : glm::dvec2(1, 0);
         const glm::dvec2 at = glm::dvec2(s->pos.x, s->pos.z) + away * (1.5 + f->shape(s->shape).radius * s->size);
         const glm::dvec3 feet(at.x, world_->groundHeight(at.x, at.y) + 0.05, at.y);
-        return done(feet, s->pos, 4.0, std::string(kScatterNames[scatterKind]).substr(0, std::string(kScatterNames[scatterKind]).size() - 1));
+        return done(feet, s->pos, 4.0, kSingular[scatterKind]);
     }
 
     // Biom: die nächste Stelle, an der es ganz es selbst ist; man schaut tiefer hinein

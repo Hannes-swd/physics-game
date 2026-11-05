@@ -600,11 +600,12 @@ void App::playInput(float dt) {
     // Maustasten direkt von GLFW (ImGui ignoriert die Maus, solange sie gefangen ist)
     const bool lmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     const bool rmbDown = glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-    // Werkzeuge: 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl (Leiste unten rechts).
+    // Werkzeuge: 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, 7 Spitzhacke (Leiste unten rechts).
     // X ist zusätzlich der Schalter für die Axt. Mit einem Werkzeug in der Hand wirkt die linke Maustaste das Werkzeug.
     if (!io.WantTextInput && !planMode_) {  // in der Bauvorlagen-Auswahl zählen 1-0 für die Vorlagen
-        const HandTool slots[6] = {HandTool::None, HandTool::Axe, HandTool::Laser, HandTool::Drill, HandTool::Terra, HandTool::Tractor};
-        for (int k = 0; k < 6; ++k)
+        const HandTool slots[7] = {HandTool::None,  HandTool::Axe,     HandTool::Laser,  HandTool::Drill,
+                                   HandTool::Terra, HandTool::Tractor, HandTool::Pickaxe};
+        for (int k = 0; k < 7; ++k)
             if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + k), false)) selectHandTool(slots[k]);
         if (ImGui::IsKeyPressed(ImGuiKey_X, false)) selectHandTool(handTool_ == HandTool::Axe ? HandTool::None : HandTool::Axe);
     }

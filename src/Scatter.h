@@ -1,4 +1,4 @@
-// Zeug am Boden: Steine, Stöcke, umgefallene Stämme, Baumstümpfe (siehe docs/19-Steine-und-Holz.md).
+// Zeug am Boden: Steine, Stöcke, umgefallene Stämme, Baumstümpfe, Erzbrocken, Kakteen (siehe docs/19-Steine-und-Holz.md).
 //
 //   Formen     je Art einige Vorlagen aus dem Seed der Welt, Mittelpunkt = Schwerpunkt. Steine: kantige Brocken (konvexe
 //              Hülle zufälliger Punkte auf einem Ellipsoid, 1 m groß). Stöcke, Stämme, Stümpfe: Kegelstümpfe mit Rinde wie
@@ -10,7 +10,8 @@
 //   Bild       alle als Vorlagen (gleiches Netz, viele Lagen); kleine Steine und Stöcke nur in der Nähe.
 //   Physik     zuerst gar keine. Große (Steine ab scatter.big_stone, Stämme, Stümpfe) werden in der Nähe der Spieler zu
 //              festen Teilen wie Bäume (statisch: es wird nichts gerechnet, man läuft aber nicht hindurch). Fasst man eins
-//              an, wird es beweglich (Stümpfe nicht: sie wurzeln). Kleine bleiben Bild, bis man sie aufhebt.
+//              an, wird es beweglich (Stümpfe, Kakteen und Erzbrocken nicht: sie wurzeln bzw. sitzen im Fels). Kleine
+//              bleiben Bild, bis man sie aufhebt.
 //              Wie bei Bäumen (Object::treeKey): unverändert = nicht gespeichert, entfernte merkt sich die Welt.
 #pragma once
 #include <glm/glm.hpp>
@@ -63,9 +64,11 @@ public:
     const GenConfig::ScatterView& view() const { return gen_->config().scatterView; }
     // groß: in der Nähe ein festes Teil (man läuft nicht hindurch); sonst nur Bild, bis man es aufhebt
     bool big(const ScatterSpot& s) const {
-        return s.kind == kScatterLog || s.kind == kScatterStump || (s.kind == kScatterStone && s.size >= view().bigStone);
+        return s.kind == kScatterLog || s.kind == kScatterStump || s.kind == kScatterOre || s.kind == kScatterCactus ||
+               (s.kind == kScatterStone && s.size >= view().bigStone);
     }
-    static bool rooted(int kind) { return kind == kScatterStump; }  // bleibt fest, auch wenn man ihn anfasst
+    // bleibt fest, auch wenn man es anfasst: Stümpfe und Kakteen wurzeln, Erzbrocken sitzen im Fels
+    static bool rooted(int kind) { return kind == kScatterStump || kind == kScatterOre || kind == kScatterCactus; }
     int shapes() const { return (int)shapes_.size(); }
     const ScatterShape& shape(int i) const { return shapes_[(size_t)i]; }
     // Schlüssel: Bit 62 gesetzt (Bäume haben Bit 63), Art in Bit 56..59

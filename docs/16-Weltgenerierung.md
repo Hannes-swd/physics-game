@@ -44,17 +44,64 @@ jedem Ort gewinnt das Biom, dessen Bereiche am besten passen:
 Jeder Zweck hat seinen eigenen Seed, abgeleitet aus dem Welt-Seed und einem Namen (`climate/temperature`,
 `height/hills` …). Ein neues Biom in der Datei verschiebt deshalb die Höhen der alten Biome nicht.
 
-**Biome (Standard):**
+**Biome (Standard):** Die Kontinentalität teilt die Welt in drei Bänder: ganz niedrig **Seen**, in der Mitte das
+**Land**, ganz hoch das **Gebirge**. Darum liegt ein See nie direkt am Gebirge.
 
 | Biom | Klima | Gelände | Oberfläche | Flüsse |
 |---|---|---|---|---|
-| `plains` (Ebene) | feucht (`humidity` 0.35–0.62), `erosion` 0–0.5 | 1 m ± 1,2 m, Formen ~180 m | Gras, Hänge erdig | ja |
-| `forest` (Wald) | sehr feucht (`humidity` ab 0.62), `erosion` 0–0.5 | 1,5 m ± 2,5 m, Formen ~150 m | dunkler Waldboden | ja |
-| `hills` (Hügellandschaft) | feucht (`humidity` ab 0.35), `erosion` 0.5–1 | 4 m ± 16 m, Formen ~140 m, 5 Oktaven | dunkleres Gras, steile Hänge felsig | ja |
-| `desert` (Wüste) | heiß und trocken: `temperature` 0.55–1, `humidity` 0–0.35 | 2 m ± 4 m, Dünen ~60 m | Sand (Material `sand`) | **keine** |
+| `plains` (Ebene) | Land; feucht (`humidity` 0.35–0.62), `erosion` 0–0.5 | 1 m ± 1,2 m, Formen ~180 m | Gras, Hänge erdig | ja |
+| `forest` (Wald) | Land; sehr feucht (`humidity` ab 0.62), `erosion` 0–0.5 | 1,5 m ± 2,5 m, Formen ~150 m | dunkler Waldboden | ja |
+| `hills` (Hügellandschaft) | Land; feucht (`humidity` ab 0.35), `erosion` 0.5–1 | 4 m ± 16 m, Formen ~140 m, 5 Oktaven | dunkleres Gras, steile Hänge felsig | ja |
+| `desert` (Wüste) | Land; heiß und trocken: `temperature` 0.55–1, `humidity` 0–0.35 | 2 m ± 4 m, Dünen ~60 m | Sand (Material `sand`), Kakteen | ja (sie fließen hindurch) |
+| `steppe` (Steppe) | Land; kalt und trocken: `temperature` 0–0.55, `humidity` 0–0.35 | 2 m ± 3 m, Formen ~220 m | trockenes, gelbliches Gras | ja |
+| `lake` (See) | `continentalness` 0–0.24 | **unter Wasser**: −7 m ± 3,5 m | Sand, am Ufer ein Strand | münden hinein |
+| `mountains` (Gebirge) | `continentalness` 0.72–1 | Vorland 14 m ± 12 m, darauf **Grate bis 340 m**, ab 230 m Schnee | Bergwiese, Hänge Granit; Erzbrocken | **keine** (sie entspringen davor) |
 
-Kalte, trockene Gegenden (dafür gibt es noch kein eigenes Biom) werden Ebene oder Hügel, je nachdem, was näher liegt.
-Im Wald stehen dicht Bäume, in den Hügeln einige Fichten, in der Ebene einzelne Eichen ([17](17-Baeume.md)).
+„Land“ heißt `continentalness` 0.24–0.72. Die Biome decken zusammen das ganze Klima ab: Jeder Ort passt zu einem Biom
+(früher wurden kalte, trockene Gegenden zu Ebene oder Hügeln; dafür gibt es jetzt die Steppe).
+Im Wald stehen dicht Bäume, in den Hügeln und im Gebirge einige Fichten, in der Ebene einzelne Eichen ([17](17-Baeume.md)).
+Auf Schnee und am Sandstrand wachsen weder Bäume noch Gras.
+
+## Seen
+
+Ein Biom mit `"water": true` ist ein **See** (Meer): Sein Gelände liegt unter dem Wasserspiegel der Flüsse (`rivers.level`)
+und wird nicht angehoben; dort ist Wasser, dasselbe Gewässer wie die Flüsse (schwimmen, treiben, Wellen).
+
+- **Ufer:** Land und See werden getrennt gerechnet (das Land wie immer mit Anheben und Flusstälern) und dann über die
+  Übergangsbreite überblendet. Weil sich die Kontinentalität nur langsam ändert, ist das Ufer flach: von der
+  Wasserlinie bis zur vollen Tiefe einige hundert Meter.
+- **Strand:** bis 1 m über dem Wasser in der Farbe des Sees (Sand), dort kein Gras und keine Bäume.
+- **Flüsse** laufen in den See hinein; im See verliert sich ihre Strömung. Ein Fluss, der auf der anderen Seite
+  weiterläuft, ist dort sein Abfluss.
+- Wasser gibt es im See und am Ufer bis 30 cm über dem Spiegel (gräbt man direkt am Ufer, läuft die Grube voll).
+- Die Größe: `continentalness` unter 0.24 ergibt Seen von einigen hundert Metern bis über 5 km, etwa 4 % der Fläche.
+
+## Gebirge
+
+`height.ridges` setzt auf die normale Höhe eines Bioms **Grate** (Bergketten): Das Rauschen wird zu Kämmen geformt
+(1 − |Rauschen|, hoch `sharpness`), feinere Oktaven zählen vor allem auf den Kämmen. Damit es an der Biomgrenze keinen
+Steilhang gibt, wachsen die Grate erst **hinter der Grenze**: vom Rand (Score 0) bis zum Score `ramp` von 0 auf volle
+Höhe. Über rund einen Kilometer steigt das Vorland so zum Gebirge an.
+
+```json
+"height": {
+  "base": 14.0, "amplitude": 12.0, "scale": 170, "octaves": 5, "persistence": 0.5,
+  "ridges": { "height": 340, "scale": 1500, "octaves": 6, "persistence": 0.5, "sharpness": 2.0, "ramp": 0.12 }
+},
+"snow": { "from": 230, "blend": 35, "color": [0.88, 0.90, 0.94] }
+```
+
+| Schlüssel | Bedeutung |
+|---|---|
+| `ridges.height` | so hoch werden die Grate höchstens (m, über der normalen Höhe) |
+| `ridges.scale` | Abstand der Bergketten (m) |
+| `ridges.octaves`, `persistence` | Feinheit der Kämme |
+| `ridges.sharpness` | wie spitz die Kämme sind (1 rund, 2 scharf) |
+| `ridges.ramp` | über wie viel Klima (vom Biomrand nach innen, wie der Score) die Grate auf volle Höhe wachsen |
+| `snow.from`, `blend`, `color` | ab dieser Höhe (m) über `blend` m werden ebene Stellen weiß; steile Hänge bleiben Fels |
+
+Das Gelände ist ein Höhenfeld ohne Höhengrenze; Physik, Strahl und Kacheln kommen mit Hunderten Metern zurecht. Die
+höchsten Gipfel der Standardwelt liegen bei rund 330 m.
 
 ## Flüsse
 
@@ -62,17 +109,20 @@ Flüsse entstehen ebenfalls nur aus dem Seed, mit dem Gelände zusammen:
 
 - **Wo:** Die Flusslinien sind die Nulllinien eines eigenen, großen Rauschfelds (`spacing`, Standard 2,5 km). Zwei weitere
   Felder verschieben es ein wenig: so entstehen Schlingen (`meander`). Die Linien sind lang und durchgehend.
-- **Wie viele:** Ein weiteres Rauschfeld entscheidet, welche Abschnitte der Linien Wasser führen (`presence`, 60 %).
-  Wo ein Fluss endet, wird er schmaler und flacher, bis das Bett über dem Wasser liegt (wie an einer Quelle).
-  Auf einer geraden Strecke trifft man etwa alle 5–6 km auf einen Fluss.
-- **Biom:** Jedes Biom sagt mit `rivers` (0..1), wie viele Flüsse dort Wasser führen. Die Wüste hat 0: Dort gibt es nie
-  einen Fluss; ein Fluss läuft schon vor ihrer Grenze aus. Gerechnet wird mit dem Abstand zum gewinnenden Biom, darum gilt
-  das auch in Gegenden, deren Klima zu keinem Biom passt.
+- **Ohne Lücken** (`"endless": true`, Standard): Jede Linie führt Wasser. Die Nulllinien eines Rauschfelds enden nie
+  (sie sind geschlossen oder laufen unendlich weit), darum **endet ein Fluss nicht mitten im Land**: Er mündet in einen
+  See oder entspringt am Fuß des Gebirges (ein Biom mit `rivers` 0), wo er schmaler und flacher wird, bis das Bett über
+  dem Wasser liegt. Auf einer geraden Strecke trifft man etwa alle 3–4 km auf einen Fluss.
+- **Mit Lücken** (ohne `endless`, Welten von vorher): Ein weiteres Rauschfeld entscheidet, welche Abschnitte der Linien
+  Wasser führen (`presence`, 60 %); dort laufen Flüsse auch mitten im Land aus.
+- **Biom:** Jedes Biom sagt mit `rivers` (0..1), wie viele Flüsse dort Wasser führen. Das Gebirge hat 0: Ein Fluss
+  läuft kurz vor seiner Grenze aus (mit `endless` gerechnet nach dem Abstand zu diesem Biom). Ohne `endless` wird mit
+  dem Abstand zum gewinnenden Biom gerechnet.
 - **Form:** Entlang der Linie wird eine Rinne gegraben (5–14 m breit, 1–2,2 m tief, in der Mitte am tiefsten), dazu ein
   Tal: Das Gelände darf neben dem Fluss höchstens so hoch sein wie ein Hang mit `valley_slope` (19°) vom Ufer aus; nach
   `valley` m (90) gilt wieder das normale Gelände. In der Ebene liegt das Ufer flach, im Hügelland schneidet der Fluss
   ein Tal. Flussbett und Ufer haben eine eigene Farbe (`bed_color`).
-- **Wasserspiegel:** Alle Flüsse haben denselben Spiegel (`level`, 0 m). Außerhalb der Flussbetten bleibt das Gelände
+- **Wasserspiegel:** Alle Flüsse und Seen haben denselben Spiegel (`level`, 0 m). Außerhalb der Flussbetten und Seen bleibt das Gelände
   mindestens `floor` (30 cm) darüber, tiefere Senken werden weich angehoben. So steht nirgends sonst Wasser, und wer
   irgendwo tiefer gräbt, stößt nicht auf Wasser (nur direkt am Fluss läuft die Grube voll).
 - **Wasser:** Die Flüsse sind ein echtes Gewässer („rivers of the terrain“ in `water`): Teile schwimmen und treiben mit
@@ -80,13 +130,16 @@ Flüsse entstehen ebenfalls nur aus dem Seed, mit dem Gelände zusammen:
   Strömungsgitter lenkt das Wasser um Steine und Teile. Das Gewässer entsteht mit dem Gelände, wird nicht gespeichert und
   im LAN nicht übertragen (jeder Rechner erzeugt es selbst); `water remove all` lässt es stehen.
 - **Alte Welten** (ohne `rivers` in ihrer `generator.json`) bleiben genau, wie sie waren: keine Flüsse, kein Anheben.
+  Ebenso Welten mit Flüssen, aber ohne `endless`, Seen und Gebirge: Ihr Gelände bleibt gleich (nur die Wüste bekommt
+  Kakteen, siehe [19](19-Steine-und-Holz.md)). Seen, Gebirge und endlose Flüsse gibt es in **neuen** Welten oder nach
+  `terrain reload`.
 
 `terrain at` zeigt in der Zeile `river`, wie weit die Flussmitte ist, Breite, Tiefe, Strömung und das Wasser an der Stelle.
 `tp river` geht ans Ufer des nächsten Flusses. `terrain map bild.png` zeichnet eine Karte von oben mit allen Flüssen.
 
 ```json
 "rivers": {
-  "level": 0.0, "spacing": 2500, "presence": 0.6,
+  "level": 0.0, "spacing": 2500, "endless": true,
   "meander": 60, "meander_scale": 260,
   "width": [5, 14], "depth": [1.0, 2.2],
   "bank": 0.35, "floor": 0.3,
@@ -98,9 +151,10 @@ Flüsse entstehen ebenfalls nur aus dem Seed, mit dem Gelände zusammen:
 
 | Schlüssel | Bedeutung |
 |---|---|
-| `level` | Wasserspiegel aller Flüsse (m) |
+| `level` | Wasserspiegel aller Flüsse und Seen (m) |
 | `spacing` | Größe des Linienmusters (m): größer = Flüsse weiter auseinander |
-| `presence` | Anteil der Linien mit Wasser (0..1), in Biomen mit `rivers`: 1 |
+| `endless` | `true`: jede Linie führt Wasser, Flüsse enden nur im See oder entspringen vor einem Biom ohne Flüsse |
+| `presence` | nur ohne `endless`: Anteil der Linien mit Wasser (0..1), in Biomen mit `rivers`: 1 |
 | `meander`, `meander_scale` | Schlingen: wie weit (m) und wie groß die Bögen (m) |
 | `width`, `depth` | Breite der Rinne und Tiefe in der Mitte, je `[von, bis]` (m); breite Abschnitte sind tiefer |
 | `bank` | Ufer über dem Wasser (m) |
@@ -147,6 +201,9 @@ Flüsse entstehen ebenfalls nur aus dem Seed, mit dem Gelände zusammen:
 | `biomes[].id`, `label` | Name für Befehle (klein, eindeutig) und Anzeigename im Menü |
 | `biomes[].climate` | Bereiche `[von, bis]` je Klimawert |
 | `biomes[].height` | Höhe = `base` + `amplitude` · Rauschen (−1..1). `scale` = Größe der Formen (m), `octaves` = Detailstufen, `persistence` = wie stark jede feinere Stufe ist, `lacunarity` (2) = Frequenzschritt |
+| `biomes[].height.ridges` | Gebirge: Grate obendrauf, siehe [Gebirge](#gebirge) |
+| `biomes[].water` | `true`: See, siehe [Seen](#seen) |
+| `biomes[].snow` | Schnee ab einer Höhe, siehe [Gebirge](#gebirge) |
 | `biomes[].surface.color` | Farbe der Oberfläche (linear, 0..1) |
 | `biomes[].surface.slope_color`, `slope_start`, `slope_end` | Farbe an steilen Hängen; Übergang zwischen `slope_start` und `slope_end` (gemessen als 1 − Normale.y: 0 = eben, 0.3 ≈ 45°) |
 | `biomes[].surface.material` | Material für Reibung und Stöße (aus `materials.json`, z. B. `soil` = Erde) |
@@ -243,7 +300,8 @@ später eine Voxel-Schicht in der Nähe dazu, gespeichert in denselben Regionsda
 | `terrain reset` | alle Änderungen weg |
 | `terrain reload` | `assets/biomes.json` neu lesen und in diese Welt übernehmen |
 | `terrain borders on\|off` | Linien an den Biomgrenzen (auch *Ansicht → Biomgrenzen* und in den Einstellungen) |
-| `terrain map <bild.png> [größe_m] [pixel]` | Karte von oben um die Kamera (Standard 8 km, 512 Pixel): Farbe der Biome, Höhe als Schatten, Flüsse blau, Raster je km, Mitte rot. Dazu der Anteil jedes Bioms und der Flüsse |
+| `terrain map <bild.png> [größe_m] [pixel]` | Karte von oben um die Kamera (Standard 8 km, 512 Pixel): Farbe der Biome, Höhe als Schatten, Flüsse blau, Seen dunkelblau, Raster je km, Mitte rot. Dazu der Anteil jedes Bioms, der Flüsse und Seen und der höchste Punkt |
+| `terrain new <seed> [biom]` | Gelände in eine flache Welt ohne Ordner (Skripte, `--headless`; wird nicht gespeichert), Biome aus `assets/biomes.json`. Z. B. `Werkstatt.exe --headless --script karte.txt` mit `terrain new 4711` und `terrain map karte.png 40000 1000` |
 
 ```
 > terrain at 30000 30000
@@ -285,9 +343,13 @@ Mitspieler selbst, ändernde beim Gastgeber. Protokollversion 4 (beide brauchen 
 - Gleicher Seed muss überall dasselbe ergeben: kein `/fp:fast`, keine Zufallsverteilungen der Standardbibliothek, und
   Werte nur aus Seed und Ort (nie aus der Reihenfolge, in der Kacheln entstehen). Die Selbsttests prüfen das.
 - Ändert sich der Generator so, dass alte Welten anders aussähen, `generatorVersion` erhöhen und den alten Weg behalten.
-- Selbsttests (Abschnitt *Terrain*): Rauschen und Generator deterministisch, Biome passen zum Klima, eine Welt mit
-  einem Biom, Grenzen ohne Stufen, nächste Stelle eines Bioms (nichts liegt näher), Block und Kugel auf einem Hang, Strahl,
-  Ändern, Speichern, Laden, Zurücksetzen.
+- Selbsttests (Abschnitt *Terrain*): Rauschen und Generator deterministisch, Biome passen zum Klima (kein Klima ohne
+  Biom), eine Welt mit einem Biom, Grenzen ohne Stufen, Gebirge hoch mit Schnee und ohne Steilhang an der Grenze, Flüsse
+  enden nicht mitten im Land, See mit tiefem Wasser, weichem Ufer und Mündungen, nächste Stelle eines Bioms (nichts liegt
+  näher), Block und Kugel auf einem Hang, Strahl, Ändern, Speichern, Laden, Zurücksetzen. Abschnitt *Stones*: Erze im
+  Gebirge und Abbauen mit der Spitzhacke, Kakteen in der Wüste.
+- Seen und Land werden in `WorldGen::sample` getrennt überblendet (`GenSample::lake`, `beach`), die Grate in
+  `biomeHeight` (`noise::ridged`, wächst mit dem Score), Schnee danach nach der fertigen Höhe (`GenSample::snow`).
 - Suche nach dem nächsten Biom (`Terrain::findBiome`): quadratische Ringe im 32-m-Raster, nur das Klima; nach dem ersten
   Fund weiter bis zu dem Ring, der nichts Näheres mehr enthalten kann, dann um den Fund im 4-m- und 0,5-m-Raster.
   „Im Biom“ heißt: es ist das Biom an dieser Stelle **und** sein Score ist mindestens `border_blend`, dort mischt sich
@@ -295,8 +357,6 @@ Mitspieler selbst, ändernde beim Gastgeber. Protokollversion 4 (beide brauchen 
 
 ## Ausblick
 
-- **Pflanzen** am Boden (Gras, Büsche) je Biom; Bäume gibt es schon ([17](17-Baeume.md)).
-- **Meer:** Biome mit niedriger Kontinentalität als Ozean, die Flüsse münden hinein (gleicher Wasserspiegel).
 - **Flüsse mit Gefälle:** heute haben alle Flüsse denselben Spiegel (sie fließen eben); Gefälle bräuchte einen Spiegel,
   der entlang des Flusses sinkt, und Wasserfälle.
 - **Höhlen und Überhänge:** Voxel-Schicht nahe der Spielfigur über dem Höhenfeld.

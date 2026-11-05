@@ -475,6 +475,7 @@ bool Forest::spotOf(int64_t cx, int64_t cz, TreeSpot& out) const {
     if (accept >= density * s * s) return false;
     // nicht im Flussbett, nicht direkt am Wasser
     if (g.wet || (cfg.rivers.enabled && g.height < cfg.rivers.level + cfg.rivers.floor + 0.05 && g.river.strength > 0)) return false;
+    if (g.snow > 0.05f || g.beach > 0.3f) return false;  // über der Baumgrenze (Schnee), am Sandstrand
     const auto& types = biomeTypes_[(size_t)g.biome];
     if (types.empty()) return false;
     double total = 0;

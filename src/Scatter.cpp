@@ -15,9 +15,9 @@ namespace {
 using glm::dvec3;
 
 constexpr double kPi = 3.14159265358979323846;
-constexpr int kVariants[kScatterKinds] = {16, 12, 10, 8};  // Vorlagen je Art
-// Schlankheit der Vorlagen (Stöcke, Stämme: Dicke / Länge; Stümpfe: Höhe / Breite), von .. bis
-constexpr double kAspectLo[kScatterKinds] = {0, 0.012, 0.03, 0.35}, kAspectHi[kScatterKinds] = {0, 0.07, 0.16, 1.1};
+constexpr int kVariants[kScatterKinds] = {16, 12, 10, 8, 10, 12};  // Vorlagen je Art
+// Schlankheit der Vorlagen (Stöcke, Stämme: Dicke / Länge; Stümpfe: Höhe / Breite; Kakteen: Dicke / Höhe), von .. bis
+constexpr double kAspectLo[kScatterKinds] = {0, 0.012, 0.03, 0.35, 0, 0.06}, kAspectHi[kScatterKinds] = {0, 0.07, 0.16, 1.1, 0, 1.0};
 
 struct Rng {
     uint64_t s;
@@ -115,6 +115,63 @@ ScatterShape stumpShape(Rng& r, double aspect) {
     return sh;
 }
 
+// Erzbrocken: rundlicher und kantiger als ein Feldstein (weniger Punkte), 1 m groß
+ScatterShape oreShape(Rng& r) {
+    const dvec3 axes(0.5, 0.5 * r.range(0.6, 0.9), 0.5 * r.range(0.7, 0.95));
+    std::vector<dvec3> pts;
+    const int n = 14 + (int)(r.next() * 8);
+    for (int i = 0; i < n; ++i) {
+        const double z = r.range(-1.0, 1.0), a = r.next() * 2.0 * kPi, s = std::sqrt(1.0 - z * z);
+        pts.push_back(dvec3(s * std::cos(a), z, s * std::sin(a)) * axes * r.range(0.78, 1.08));
+    }
+    ScatterShape sh;
+    sh.solid.pieces.push_back(solid::hullPiece(pts));
+    dvec3 mn, mx;
+    solid::bounds(sh.solid, mn, mx);
+    const dvec3 ext = mx - mn;
+    solid::transformAffine(sh.solid, glm::dmat3(1.0 / std::max({ext.x, ext.y, ext.z, 1e-6})));
+    finish(sh);
+    return sh;
+}
+
+// Kaktus: 1 m hoch, steht auf y = 0. aspect = Dicke / Höhe: schlank = Säulenkaktus (ab und zu mit Armen), dick = Kugel-
+// kaktus. Kanten statt Rinde (die Flächen bleiben eckig: Rippen)
+ScatterShape cactusShape(Rng& r, double aspect) {
+    ScatterShape sh;
+    const int seg = 10;
+    auto column = [&](const dvec3& a, double ra, const dvec3& b, double rb) {
+        solid::Piece p = barkFrustum(a, ra, b, rb, glm::normalize(b - a), seg);
+        for (solid::Face& f : p.faces) f.smooth = solid::Smooth::None;
+        sh.solid.pieces.push_back(std::move(p));
+    };
+    const double rad = 0.5 * aspect;
+    if (aspect > 0.45) {  // Kugelkaktus: unten schmaler, oben abgerundet
+        column(dvec3(0), rad * 0.8, dvec3(0, 0.2, 0), rad);
+        column(dvec3(0, 0.2, 0), rad, dvec3(0, 0.72, 0), rad * 0.95);
+        column(dvec3(0, 0.72, 0), rad * 0.95, dvec3(0, 1.0, 0), rad * 0.4);
+    } else {
+        // Säule mit runder Spitze
+        column(dvec3(0), rad * 0.92, dvec3(0, 0.9, 0), rad);
+        column(dvec3(0, 0.9, 0), rad, dvec3(0, 1.0, 0), rad * 0.45);
+        // Arme (nur schlanke, hohe): erst waagrecht hinaus, dann senkrecht nach oben
+        const int arms = aspect < 0.22 ? (int)(r.next() * 3.2) : 0;
+        double ang = r.next() * 2.0 * kPi;
+        for (int i = 0; i < arms; ++i) {
+            const double ar = rad * r.range(0.55, 0.75), h0 = r.range(0.3, 0.6), out = rad + ar * r.range(1.4, 2.0);
+            const dvec3 side(std::cos(ang), 0, std::sin(ang));
+            const dvec3 elbow = dvec3(0, h0, 0) + side * out;
+            const double top = std::min(0.92, h0 + r.range(0.18, 0.4));
+            column(dvec3(0, h0 - ar * 0.3, 0), ar, elbow + dvec3(0, ar * 0.4, 0), ar);
+            column(elbow, ar, dvec3(elbow.x, top - 0.05, elbow.z), ar * 0.95);
+            column(dvec3(elbow.x, top - 0.05, elbow.z), ar * 0.95, dvec3(elbow.x, top, elbow.z), ar * 0.45);
+            ang += r.range(0.7, 1.4) * kPi;  // nächster Arm auf einer anderen Seite
+        }
+    }
+    finish(sh);
+    sh.aspect = aspect;
+    return sh;
+}
+
 // Strahl (lokal, Richtung nicht normiert) gegen einen konvexen Körper aus Ebenen: Eintritt t (>= 0)
 bool rayConvex(const std::vector<solid::Plane>& planes, const dvec3& o, const dvec3& d, double maxT, double& t) {
     double t0 = 0, t1 = maxT;
@@ -148,7 +205,8 @@ ScatterField::ScatterField(std::shared_ptr<const WorldGen> gen, const Terrain* t
     seed_ = noise::subSeed(gen_->seed(), "scatter");
     // Biome ohne Angaben (Welten von vor diesem Zeug): die Werte der eingebauten biomes.json mit gleicher id
     const GenConfig& builtin = builtinGenConfig();
-    static const char* const fallback[kScatterKinds][2] = {{"fieldstone", "granite"}, {"spruce", "oak"}, {"spruce", "oak"}, {"spruce", "oak"}};
+    static const char* const fallback[kScatterKinds][2] = {{"fieldstone", "granite"}, {"spruce", "oak"}, {"spruce", "oak"},
+                                                           {"spruce", "oak"},         {"iron_ore", "granite"}, {"cactus", "oak"}};
     for (const GenConfig::Biome& b : gen_->config().biomes)
         for (int k = 0; k < kScatterKinds; ++k) {
             GenConfig::Biome::Scatter s = b.scatter[k];
@@ -170,7 +228,12 @@ ScatterField::ScatterField(std::shared_ptr<const WorldGen> gen, const Terrain* t
         for (int i = 0; i < kVariants[k]; ++i) {
             Rng r{noise::mix64(seed_ + 0x51A0E5ull * (uint64_t)(k * 64 + i + 1))};
             const double aspect = kAspectLo[k] * std::pow(kAspectHi[k] / std::max(kAspectLo[k], 1e-9), double(i) / (kVariants[k] - 1));
-            ScatterShape sh = k == kScatterStone ? stoneShape(r) : k == kScatterStick ? stickShape(r, aspect) : k == kScatterLog ? logShape(r, aspect) : stumpShape(r, aspect);
+            ScatterShape sh = k == kScatterStone    ? stoneShape(r)
+                              : k == kScatterStick  ? stickShape(r, aspect)
+                              : k == kScatterLog    ? logShape(r, aspect)
+                              : k == kScatterStump  ? stumpShape(r, aspect)
+                              : k == kScatterOre    ? oreShape(r)
+                                                    : cactusShape(r, aspect);
             sh.kind = k;
             if (renderer_) {
                 std::vector<solid::Vertex> v;
@@ -305,6 +368,20 @@ void ScatterField::compute(int64_t tx, int64_t tz, Tile& t) {
                 s.rot = fromUp(dvec3(along.x * std::cos(pitch), std::sin(pitch), along.z * std::cos(pitch))) * glm::angleAxis(roll, up);
                 s.pos = dvec3(x, 0.5 * (h1 + h2) + thick * 0.5 * 0.55, z);  // knapp die Hälfte eingesunken
                 if (!clearOfTrees(e1, e2, thick * 0.5 + 0.1)) continue;
+            } else if (kind == kScatterOre) {
+                // Erzbrocken: wie ein Stein, aber gut zur Hälfte im Boden (er gehört zum Fels darunter)
+                s.shape = kindShapes_[kind][std::min((size_t)(shapeR * kindShapes_[kind].size()), kindShapes_[kind].size() - 1)];
+                s.size = size;
+                s.rot = glm::angleAxis(yaw, up) * glm::angleAxis(0.25 * tilt, dvec3(std::cos(tiltAxis), 0, std::sin(tiltAxis)));
+                s.pos = dvec3(x, ground - shapes_[(size_t)s.shape].bottom * size * 0.45, z);
+                if (!clearOfTrees(s.pos, s.pos, size * 0.5)) continue;
+            } else if (kind == kScatterCactus) {
+                // Kaktus: steht senkrecht, Dicke / Höhe wie gewürfelt, ein paar cm im Boden
+                s.shape = pickShape(kind, thick / size, shapeR);
+                s.size = size;  // Höhe
+                s.rot = glm::angleAxis(yaw, up) * glm::angleAxis(0.04 * tilt, dvec3(std::cos(tiltAxis), 0, std::sin(tiltAxis)));
+                s.pos = dvec3(x, ground - std::min(0.08, 0.04 * size) - shapes_[(size_t)s.shape].bottom * size, z);
+                if (!clearOfTrees(s.pos, s.pos, thick)) continue;
             } else {
                 // Stumpf: steht, Höhe / Breite wie gewürfelt
                 s.shape = pickShape(kind, size / std::max(thick, 0.05), shapeR);

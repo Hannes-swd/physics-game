@@ -548,3 +548,57 @@ bool World::chop(uint32_t id, const glm::dvec3& p, glm::dvec3 toward, double* re
     fellHint_ = glm::dvec3(0);
     return ok;
 }
+
+// ============================================================================ Spitzhacke
+
+bool World::mine(uint32_t id, const glm::dvec3& p, glm::dvec3 toward, uint32_t* chunk, double* removed, std::string* err) {
+    if (chunk) *chunk = 0;
+    Object* o = solidPart(*this, id, err, "mined");
+    if (!o) return false;
+    const Material& m = materials()[(size_t)o->material];
+    if (m.cls != MaterialClass::Stone) {
+        if (err) *err = "the pickaxe only breaks stone and ore (" + std::string(m.name) + " is not)";
+        return false;
+    }
+    toward = glm::length(toward) > 1e-6 ? glm::normalize(toward) : glm::dvec3(0, 1, 0);
+    // Brocken: kantige Hülle um einen Punkt knapp im Stein, Form aus der Stelle (gleicher Hieb, gleicher Brocken)
+    uint64_t s = 0x9E3779B97F4A7C15ull ^ (uint64_t)(int64_t)std::llround(p.x * 1000.0) * 0xBF58476D1CE4E5B9ull ^
+                 (uint64_t)(int64_t)std::llround(p.y * 1000.0) * 0x94D049BB133111EBull ^ (uint64_t)(int64_t)std::llround(p.z * 1000.0);
+    auto rnd = [&]() {
+        s ^= s >> 30, s *= 0xBF58476D1CE4E5B9ull, s ^= s >> 27, s *= 0x94D049BB133111EBull, s ^= s >> 31;
+        return double(s >> 11) * (1.0 / 9007199254740992.0);
+    };
+    const glm::dvec3 center = p - toward * 0.025;
+    const glm::dvec3 radii(0.055 + 0.02 * rnd(), 0.045 + 0.015 * rnd(), 0.05 + 0.02 * rnd());
+    std::vector<glm::dvec3> pts;
+    for (int i = 0; i < 14; ++i) {
+        const double z = rnd() * 2.0 - 1.0, a = rnd() * 2.0 * kPi, r = std::sqrt(1.0 - z * z);
+        pts.push_back(center + glm::dvec3(r * std::cos(a), z, r * std::sin(a)) * radii * (0.8 + 0.25 * rnd()));
+    }
+    solid::Piece lump = solid::hullPiece(pts);
+    if (lump.faces.empty()) return false;
+    solid::transform(lump, glm::inverse(frameOf(*o)));
+    const std::vector<solid::Plane> tool = solid::planesOf(lump);
+    solid::Solid piece = solid::intersect(o->solid, tool);
+    double rem = 0;
+    solid::Solid rest = solid::subtract(o->solid, tool, &rem);
+    if (rem < 1e-7 || piece.pieces.empty() || solid::volume(piece) < 1e-7) {
+        if (err) *err = "the pickaxe misses (aim at the stone)";
+        return false;
+    }
+    if (removed) *removed = rem;
+    // Der Brocken wird ein eigenes Teil (im Rahmen des Steins, dann auf seinen Schwerpunkt gesetzt)
+    const glm::dvec3 framePos = o->pos;
+    const glm::dquat frameRot = o->rot;
+    const int mat = o->material;
+    if (!applyResult(*o, std::move(rest), nullptr, err)) return false;
+    solid::classifyInternalFaces(piece);
+    const uint32_t last = lastCreated_;
+    Object* c = addSolid(std::move(piece), mat, framePos, frameRot, std::string(m.label) + "-Brocken", "chunk");
+    if (!c) {
+        lastCreated_ = last;
+        return true;  // der Stein ist bearbeitet, nur der Brocken war zu klein
+    }
+    if (chunk) *chunk = c->id;
+    return true;
+}

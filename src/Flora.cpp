@@ -148,7 +148,11 @@ void Flora::sampleGrid(int64_t tx, int64_t tz, std::vector<Mix>& grid) const {
                 m.bushes += w * f.bushesPerHa / 10000.0, m.bMin += w * f.bushSizeMin, m.bMax += w * f.bushSizeMax;
             }
             m.grass *= plants_, m.flowers *= plants_;
-            if (g.wet) m.grass = m.flowers = m.bushes = 0;  // Flussbett
+            if (g.wet) m.grass = m.flowers = m.bushes = 0;  // Flussbett, See
+            if (g.snow > 0 || g.beach > 0) {  // Schnee (nach oben immer weniger) und Sandstrand: kein Bewuchs
+                const double keep = std::clamp(1.0 - 1.5 * (double)std::max(g.snow, g.beach), 0.0, 1.0);
+                m.grass *= keep, m.flowers *= keep, m.bushes *= keep;
+            }
         }
 }
 

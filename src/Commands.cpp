@@ -428,6 +428,7 @@ std::string commandHelp() {
         "TREES (trees.json; forests come from the seed, near players they are real fixed parts: saw the trunk to fell)\n"
         "  trees | tree plant <type> [form] [x z] [scale] | tree nearest [type] | scene trees (all types side by side)\n"
         "  chop <id> <x y z> [dx dz]                  axe: one blow cuts a notch into wood (play mode: X takes the axe, left mouse hits)\n"
+        "  mine <id> <x y z> [dx dy dz]               pickaxe: one blow breaks a chunk off stone or ore (play mode: 7, left mouse)\n"
         "  laser <id> <x y z> <nx ny nz> [kerf_mm]    laser: cuts through the part along a plane (play mode: 1 takes the laser)\n"
         "  trees reload                               trees.json again (this world takes it over)\n"
         "BLUEPRINTS (holograms you fill with real material; files in assets/blueprints and %APPDATA%\\Werkstatt\\blueprints)\n"
@@ -1649,6 +1650,26 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         }
         res.text = "chop: " + fmtNum(removed * 1e6, 0) + " cm3 of " + materials()[(size_t)o->material].name + " chipped off" +
                    (w.objects().size() > before ? " - it is through, the part falls" : "");
+    } else if (cmd == "mine" || cmd == "pickaxe") {
+        // Spitzhacke: mine <id> <x y z> [dx dy dz]  Stelle des Hiebs (cm), Richtung zum Schlagenden (ohne: zur Kamera)
+        Object* o = obj(1);
+        double x, y, z, dx = 0, dy = 0, dz = 0;
+        if (!o || !num(2, x) || !num(3, y) || !num(4, z))
+            return fail("mine <id> <x y z> [dx dy dz]   (cm: where the pickaxe hits; direction back to you)");
+        const glm::dvec3 p = glm::dvec3(x, y, z) / 100.0;
+        glm::dvec3 toward = host.spawnReference() - p;
+        if (num(5, dx) && num(6, dy) && num(7, dz)) toward = glm::dvec3(dx, dy, dz);
+        const std::string matName = materials()[(size_t)o->material].name;
+        w.pushUndo();
+        double removed = 0;
+        uint32_t chunk = 0;
+        std::string err;
+        if (!w.mine(o->id, p, toward, &chunk, &removed, &err)) {
+            w.dropUndo();
+            return fail(err);
+        }
+        res.text = "mine: " + fmtNum(removed * 1e6, 0) + " cm3 of " + matName + " broken off" +
+                   (chunk ? " (chunk " + std::to_string(chunk) + ")" : "");
     } else if (cmd == "laser") {
         // Laser: Schnittebene durch einen Punkt (cm) mit der Normale n, beides in Weltkoordinaten
         // (laser <id> <x y z> <nx ny nz> [kerf_mm])
@@ -1742,6 +1763,19 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
         // Gelände (Welt "normal"): Zustand, was an einer Stelle ist, Biome, ändern. Positionen in cm
         Terrain* tr = w.terrain();
         const std::string sub = word(1);
+        if (sub == "new" && !tr) {
+            // Gelände in eine flache Welt ohne Ordner (Skripte, --headless): terrain new <seed> [biome]; Biome aus assets/biomes.json
+            double seed = 0;
+            if (!num(2, seed)) return fail("terrain new <seed> [biome]   (only in a flat world: scripts, --headless; not saved)");
+            std::string report;
+            auto cfg = loadBiomesFile(&report);
+            int single = -1;
+            if (t.size() > 3 && (single = cfg->findBiome(word(3))) < 0) return fail("unknown biome '" + word(3) + "'");
+            w.setTerrain(std::make_shared<WorldGen>((uint64_t)(int64_t)seed, cfg, single), {});
+            res.text = "terrain from seed " + fmtNum(seed, 0) + (single >= 0 ? ", only " + cfg->biomes[(size_t)single].id : "") +
+                       (report.empty() ? "" : "\n" + report);
+            return res;
+        }
         if (!tr) return fail("this world is flat (no terrain). Create a world of type 'normal' in the main menu");
         const WorldGen& g = tr->gen();
         const GenConfig& cfg = g.config();
@@ -1795,11 +1829,15 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
                 for (int k = 0; k < kClimateCount; ++k)
                     if (b.lo[k] > 0 || b.hi[k] < 1) o << " " << kClimateNames[k] << " " << pct(b.lo[k]) << "-" << pct(b.hi[k]);
                 o << ", height " << fmtNum(b.height.base, 1) << " m +- " << fmtNum(b.height.amplitude, 1) << " m (scale " << fmtNum(b.height.scale, 0)
-                  << " m), material " << b.material << (cfg.rivers.enabled ? ", rivers " + fmtNum(b.rivers * 100, 0) + " %" : "") << "\n";
+                  << " m)" << (b.height.ridgeHeight > 0 ? ", ridges up to " + fmtNum(b.height.ridgeHeight, 0) + " m" : "")
+                  << (b.water ? ", lake (under water)" : "") << (b.snowFrom < 1e29 ? ", snow from " + fmtNum(b.snowFrom, 0) + " m" : "")
+                  << ", material " << b.material << (cfg.rivers.enabled ? ", rivers " + fmtNum(b.rivers * 100, 0) + " %" : "") << "\n";
             }
             if (cfg.rivers.enabled)
                 o << "rivers: level " << fmtNum(cfg.rivers.level * 100, 0) << " cm, lines every ~" << fmtNum(cfg.rivers.spacing, 0) << " m, "
-                  << fmtNum(cfg.rivers.presence * 100, 0) << " % with water, " << fmtNum(cfg.rivers.widthMin, 0) << "-" << fmtNum(cfg.rivers.widthMax, 0)
+                  << (cfg.rivers.endless ? std::string("all with water (they end only in lakes or start before biomes without rivers)")
+                                         : fmtNum(cfg.rivers.presence * 100, 0) + " % with water")
+                  << ", " << fmtNum(cfg.rivers.widthMin, 0) << "-" << fmtNum(cfg.rivers.widthMax, 0)
                   << " m wide, " << fmtNum(cfg.rivers.depthMin, 1) << "-" << fmtNum(cfg.rivers.depthMax, 1) << " m deep\n";
             else
                 o << "rivers: none (this world was made before rivers, or 'rivers' is missing in its generator.json)\n";
@@ -1844,11 +1882,12 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
                     biome[i] = (uint8_t)s.biome;
                     const RiverSample& r = s.river;
                     wet[i] = r.strength > 0.3 && r.dist < std::max(r.half * 0.9, 0.6 * cell);
+                    if (s.lake > 0 && s.wet && s.height < cfg.rivers.level) wet[i] = 2;  // See
                 }
             });
             std::vector<uint8_t> rgb(n * 3);
             std::vector<size_t> biomeCount(cfg.biomes.size(), 0);
-            size_t wetCount = 0;
+            size_t wetCount = 0, lakeCount = 0;
             const int grid = (int)std::round(1000.0 / cell);  // Linien je km
             for (int z = 0; z < P; ++z)
                 for (int x = 0; x < P; ++x) {
@@ -1857,13 +1896,15 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
                     const double dx = (h(x + 1, z) - h(x - 1, z)) / (2 * cell), dz = (h(x, z + 1) - h(x, z - 1)) / (2 * cell);
                     const double shade = std::clamp(1.0 - 1.5 * (dx + dz), 0.45, 1.5);  // Licht von links oben
                     glm::dvec3 v = glm::pow(glm::dvec3(col[i]), glm::dvec3(1 / 2.2)) * 1.25 * shade;
-                    if (wet[i]) v = glm::dvec3(0.15, 0.40, 0.85);
+                    if (wet[i] == 2) v = glm::dvec3(0.10, 0.28, 0.65) * (0.75 + 0.25 * shade);  // See: dunkler, mit Schatten des Grunds
+                    else if (wet[i]) v = glm::dvec3(0.15, 0.40, 0.85);
                     const int cx = x - P / 2, cz = z - P / 2;
                     if (grid >= 4 && (((cx % grid) + grid) % grid == 0 || ((cz % grid) + grid) % grid == 0)) v *= 0.8;
                     if ((std::abs(cx) <= 6 && std::abs(cz) <= 1) || (std::abs(cz) <= 6 && std::abs(cx) <= 1)) v = glm::dvec3(1, 0.1, 0.1);
                     for (int k = 0; k < 3; ++k) rgb[i * 3 + k] = (uint8_t)std::clamp(v[k] * 255.0, 0.0, 255.0);
                     ++biomeCount[biome[i]];
-                    wetCount += wet[i];
+                    wetCount += wet[i] == 1;
+                    lakeCount += wet[i] == 2;
                 }
             if (!writePng(t[2], (uint32_t)P, (uint32_t)P, rgb)) return fail("could not write " + t[2]);
             std::ostringstream o;
@@ -1872,6 +1913,10 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
             for (size_t b = 0; b < cfg.biomes.size(); ++b)
                 o << "  " << cfg.biomes[b].id << " " << fmtNum(100.0 * biomeCount[b] / n, 1) << " %";
             o << "\n  river water (drawn) " << fmtNum(100.0 * wetCount / n, 2) << " % of the area";
+            if (lakeCount) o << ", lake water " << fmtNum(100.0 * lakeCount / n, 2) << " %";
+            double highest = -1e30;
+            for (float v : hgt) highest = std::max(highest, (double)v);
+            o << ", highest point " << fmtNum(highest, 0) << " m";
             res.text = o.str();
         } else if (sub == "reset") {
             const size_t n = tr->editedChunks();

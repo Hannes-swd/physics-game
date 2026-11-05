@@ -30,12 +30,13 @@ void App::selectHandTool(HandTool t) {
     handTool_ = t;
     if (t != HandTool::None) planMode_ = false;  // Bauvorlagen und Werkzeug schließen sich aus
     switch (t) {
-    case HandTool::None: toast("Hand: Maus links nimmt Teile auf, rechts wirft sie (1-6 wählt ein Werkzeug)"); break;
+    case HandTool::None: toast("Hand: Maus links nimmt Teile auf, rechts wirft sie (1-7 wählt ein Werkzeug)"); break;
     case HandTool::Axe: toast("Axt: Linksklick auf Holz hackt (2 oder X legt sie zurück in die Hand)"); break;
     case HandTool::Laser: toast("Laser: Linksklick halten brennt dort, wo du hinzielst (bis 8 m), 1 legt ihn weg"); break;
     case HandTool::Drill: toast("Erdbohrer: Linksklick bohrt in Teile, auf Gelände halten gräbt er eine Grube"); break;
     case HandTool::Terra: toast("Planierer: Linksklick halten gräbt, rechts halten füllt auf"); break;
     case HandTool::Tractor: toast("Traktorstrahl: Linksklick zieht Steine, Stöcke und Stämme bis 10 m ins Inventar"); break;
+    case HandTool::Pickaxe: toast("Spitzhacke: Linksklick auf Stein oder Erz schlägt einen Brocken ab (er kommt ins Inventar)"); break;
     }
 }
 
@@ -47,6 +48,7 @@ std::string App::handToolHelp() const {
     case HandTool::Drill: return "ERDBOHRER: Maus links bohrt in Teile, halten gräbt im Gelände" + tail;
     case HandTool::Terra: return "PLANIERER: Maus links halten gräbt, rechts halten füllt auf" + tail;
     case HandTool::Tractor: return "TRAKTORSTRAHL: Maus links zieht ins Inventar (bis 10 m)" + tail;
+    case HandTool::Pickaxe: return "SPITZHACKE: Maus links schlägt Brocken aus Stein und Erz (bis 2,6 m)" + tail;
     case HandTool::None: break;
     }
     return "";
@@ -158,6 +160,34 @@ void App::handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbD
             else if (o) toast(o->name + " ist fest und lässt sich nicht einstecken", false);
         }
         break;
+    case HandTool::Pickaxe:
+        if (lmbPressed && ready) {
+            // Erst Zeug am Boden, das nur Bild ist (ein kleiner Stein), wird dabei ein Teil; dann der getroffene Stein
+            Object* o = hitPart && h.t < kAxeReach ? h.obj : nullptr;
+            glm::dvec3 at = h.point;
+            ScatterSpot spot;
+            double ts = 0;
+            if (!netClient() && world_->pickScatter(eye, fwd, o ? h.t : kAxeReach, spot, ts))
+                if (Object* s = world_->takeScatter(spot)) o = s, at = eye + fwd * ts;
+            if (!o) break;
+            toolReady_ = time_ + 0.45;  // ein Hieb braucht etwas Zeit
+            const glm::dvec3 back = eye - at;
+            if (netClient()) {  // der Gastgeber rechnet; der Brocken bleibt dort liegen
+                runLine("mine " + std::to_string(o->id) + " " + vecText(at, 100, 1) + " " + vecText(back, 1, 3), "pickaxe");
+                break;
+            }
+            world_->pushUndo();
+            uint32_t chunk = 0;
+            double removed = 0;
+            std::string err;
+            if (!world_->mine(o->id, at, back, &chunk, &removed, &err)) {
+                world_->discardUndo();
+                toast("Spitzhacke: " + err, false);
+                break;
+            }
+            if (chunk) invStore(chunk);  // passt er nicht mehr hinein, fällt er herunter
+        }
+        break;
     case HandTool::None: break;
     }
 }
@@ -172,7 +202,8 @@ void App::drawHandToolBar() {
     };
     static const Slot slots[] = {{HandTool::None, "Hand", "1"},          {HandTool::Axe, "Axt", "2"},
                                  {HandTool::Laser, "Laser", "3"},        {HandTool::Drill, "Erdbohrer", "4"},
-                                 {HandTool::Terra, "Planierer", "5"},    {HandTool::Tractor, "Traktorstrahl", "6"}};
+                                 {HandTool::Terra, "Planierer", "5"},    {HandTool::Tractor, "Traktorstrahl", "6"},
+                                 {HandTool::Pickaxe, "Spitzhacke", "7"}};
     const int n = (int)(sizeof(slots) / sizeof(slots[0]));
     const float size = 58, gap = 6;
     ImGuiIO& io = ImGui::GetIO();
@@ -226,6 +257,17 @@ void App::drawHandToolBar() {
             dl->AddCircleFilled(P(0.65f, 0.4f), 0.11f * r, IM_COL32(150, 140, 120, 255));
             dl->AddCircleFilled(P(0.3f, 0.55f), 0.12f * r, IM_COL32(150, 140, 120, 255));
             break;
+        case HandTool::Pickaxe: {  // Holzstiel, gebogener Stahlkopf mit zwei Spitzen, darunter ein Erzbrocken
+            dl->AddCircleFilled(P(0.55f, 0.7f), 0.24f * r, IM_COL32(110, 70, 50, 255));
+            dl->AddCircleFilled(P(0.48f, 0.64f), 0.07f * r, IM_COL32(200, 120, 70, 255));
+            dl->AddLine(P(-0.6f, 0.9f), P(0.15f, -0.55f), wood, 0.2f * r);
+            const ImVec2 head[] = {P(-0.85f, -0.35f), P(-0.3f, -0.72f), P(0.15f, -0.78f), P(0.6f, -0.72f), P(0.95f, -0.3f),
+                                   P(0.55f, -0.55f), P(0.15f, -0.58f), P(-0.25f, -0.55f)};
+            dl->AddPolyline(head, 8, steel, ImDrawFlags_Closed, 0.12f * r);
+            dl->AddConvexPolyFilled(head + 1, 3, steel);
+            dl->AddConvexPolyFilled(head + 5, 3, steel);
+            break;
+        }
         }
     };
 

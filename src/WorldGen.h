@@ -3,10 +3,13 @@
 //   Seed -> vier Klimafelder (Wärme, Feuchtigkeit, Kontinentalität, Zerklüftung; je 0..1, ändern sich nur langsam)
 //        -> an jedem Ort das Biom, dessen Klimabereiche (biomes.json) am besten passen; nahe der Grenze werden die
 //           Biome weich überblendet (Höhe und Farbe), das Biom selbst wechselt an einer scharfen Linie
-//        -> Höhe = Summe (Gewicht · Höhe des Bioms)
-//        -> Flüsse: die Nulllinien eines weiteren Rauschfelds (mit Schlingen). Ein Teil der Linien führt Wasser, wie viel,
-//           sagt das Biom ("rivers": Wüste 0). Entlang eines Flusses wird eine Rinne mit Tal ins Gelände gegraben. Alle
-//           Flüsse haben denselben Wasserspiegel; außerhalb der Flüsse bleibt das Gelände darüber (keine Pfützen)
+//        -> Höhe = Summe (Gewicht · Höhe des Bioms); Gebirge: Grate obendrauf, die hinter der Grenze erst wachsen
+//        -> Flüsse: die Nulllinien eines weiteren Rauschfelds (mit Schlingen). Mit "endless" führt jede Linie Wasser (sie
+//           enden nur im See oder entspringen vor einem Biom mit "rivers": 0, dem Gebirge), sonst ein Teil davon.
+//           Entlang eines Flusses wird eine Rinne mit Tal ins Gelände gegraben. Alle Flüsse und Seen haben denselben
+//           Wasserspiegel; außerhalb davon bleibt das Gelände darüber (keine Pfützen)
+//        -> Seen ("water": true): Land (mit Flüssen) und See getrennt gerechnet, dann zum Ufer hin überblendet (Strand)
+//        -> Schnee nach der fertigen Höhe (nur die Farbe ebener Stellen)
 //
 // Die Einstellungen (GenConfig) kommen aus assets/biomes.json; jede Welt hat ihre eigene Kopie (generator.json).
 // WorldGen ist nach dem Erstellen unveränderlich und darf von mehreren Threads gleichzeitig benutzt werden.
@@ -22,9 +25,12 @@ constexpr int kClimateCount = 4;
 enum ClimateParam { kTemperature = 0, kHumidity = 1, kContinentalness = 2, kErosion = 3 };
 extern const char* const kClimateNames[kClimateCount];  // "temperature", "humidity", "continentalness", "erosion"
 constexpr int kMaxBiomes = 32;
-// Zeug am Boden (Scatter.h): Steine, Stöcke, umgefallene Stämme, Baumstümpfe
-enum ScatterKind { kScatterStone = 0, kScatterStick = 1, kScatterLog = 2, kScatterStump = 3, kScatterKinds = 4 };
-extern const char* const kScatterNames[kScatterKinds];  // Schlüssel in biomes.json: "stones", "sticks", "logs", "stumps"
+// Zeug am Boden (Scatter.h): Steine, Stöcke, umgefallene Stämme, Baumstümpfe, Erzbrocken, Kakteen
+enum ScatterKind {
+    kScatterStone = 0, kScatterStick = 1, kScatterLog = 2, kScatterStump = 3, kScatterOre = 4, kScatterCactus = 5, kScatterKinds = 6
+};
+// Schlüssel in biomes.json: "stones", "sticks", "logs", "stumps", "ores", "cacti"
+extern const char* const kScatterNames[kScatterKinds];
 
 struct GenConfig {
     struct Climate {
@@ -40,11 +46,21 @@ struct GenConfig {
         struct Height {
             double base = 0, amplitude = 1, scale = 100, persistence = 0.5, lacunarity = 2.0;
             int octaves = 3;
+            // Gebirge ("ridges"): Grate (noise::ridged) obendrauf, bis zu "height" m hoch. Sie wachsen vom Rand des Bioms
+            // nach innen über "ramp" (Klimaeinheiten, wie der Score) auf volle Höhe: kein Steilhang an der Biomgrenze
+            double ridgeHeight = 0, ridgeScale = 1000, ridgePersistence = 0.5, ridgeSharpness = 2.0, ridgeRamp = 0.12;
+            int ridgeOctaves = 5;
         } height;
         glm::vec3 color{0.35f, 0.45f, 0.22f}, slopeColor{0.45f, 0.4f, 0.35f};
         float slopeStart = 0.35f, slopeEnd = 0.6f;
         std::string material = "soil";
         glm::vec3 borderColor{1.0f, 0.85f, 0.2f};
+        // See/Meer ("water": true): das Gelände liegt unter dem Wasserspiegel der Flüsse und wird nicht angehoben, dort ist
+        // Wasser. Am Ufer überblendet es weich ins Land (Strand in der Farbe "color" des Sees). Flüsse münden hinein
+        bool water = false;
+        // Schnee ("snow"): ab "from" m über "blend" m wird die ebene Oberfläche weiß (steile Hänge bleiben Fels)
+        double snowFrom = 1e30, snowBlend = 25;
+        glm::vec3 snowColor{0.86f, 0.88f, 0.92f};
         double rivers = 1.0;    // wie viele Flüsse hier Wasser führen (0 = keine, 1 = so viele wie "rivers.presence")
         double treesPerHa = 0;  // Bäume je Hektar
         std::vector<std::pair<std::string, double>> treeTypes;  // Art (trees.json) und Gewicht
@@ -65,8 +81,8 @@ struct GenConfig {
         struct Scatter {
             bool given = false;                        // steht in der Datei
             double perHa = 0;                          // je Hektar
-            double sizeMin = 0.05, sizeMax = 0.6;      // Steine: größte Ausdehnung, Stöcke/Stämme: Länge, Stümpfe: Höhe (m)
-            double thickMin = 0.02, thickMax = 0.05;   // Stöcke, Stämme, Stümpfe: Durchmesser (m)
+            double sizeMin = 0.05, sizeMax = 0.6;      // Steine, Erze: größte Ausdehnung, Stöcke/Stämme: Länge, Stümpfe, Kakteen: Höhe (m)
+            double thickMin = 0.02, thickMax = 0.05;   // Stöcke, Stämme, Stümpfe, Kakteen: Durchmesser (m)
             double skew = 1.0;                         // je größer, desto mehr kleine (1 = alle Größen gleich oft)
             std::vector<std::string> materials;        // eines davon, zufällig
         } scatter[kScatterKinds];
@@ -78,6 +94,9 @@ struct GenConfig {
         double level = 0.0;                     // Wasserspiegel aller Flüsse (m)
         double spacing = 2500;                 // Größe des Rauschens, dessen Nulllinien die Flüsse sind (m): größer = seltener
         double presence = 0.6;                  // Anteil der Linien, die Wasser führen (0..1)
+        // "endless": true: jede Linie führt Wasser (keine Lücken, presence zählt nicht). Ein Fluss endet nur in einem See
+        // oder läuft vor einem Biom ohne Flüsse aus (Gebirge: dort entspringt er). Fehlt es (alte Welten): Lücken
+        bool endless = false;
         double meander = 60, meanderScale = 260;  // Schlingen: Verschiebung und Größe der Bögen (m)
         double widthMin = 5, widthMax = 14;     // Breite der Rinne (m)
         double depthMin = 1.0, depthMax = 2.2;  // Tiefe in der Mitte (m)
@@ -132,8 +151,11 @@ struct GenSample {
     glm::vec3 color{0}, slopeColor{0};
     float slopeStart = 0.35f, slopeEnd = 0.6f;
     int material = 0;               // Material (Reibung) des gewinnenden Bioms
-    bool wet = false;               // im Flussbett (mit Rand): Wasser, wo der Boden unter dem Wasserspiegel liegt
+    bool wet = false;               // im Flussbett oder See (mit Rand): Wasser, wo der Boden unter dem Wasserspiegel liegt
     RiverSample river;              // der Fluss hier (strength 0: keiner)
+    double lake = 0;                // Anteil der See-Biome ("water": true) an diesem Ort, 0..1
+    float beach = 0;                // Sandstrand am See 0..1 (dort kein Gras und keine Büsche)
+    float snow = 0;                 // Schnee 0..1 (nur ebene Stellen sind weiß; kein Gras, keine Bäume)
 };
 
 class WorldGen {
@@ -151,12 +173,16 @@ public:
     int classify(const Climate& c, double* scores) const;
     void sample(double x, double z, GenSample& out) const;
     double height(double x, double z) const;
-    double biomeHeight(int biome, double x, double z) const;  // nur dieses Biom (ohne Überblenden)
+    // nur dieses Biom (ohne Überblenden); score: wie tief der Ort im Biom liegt (Grate wachsen damit, ohne Angabe: voll)
+    double biomeHeight(int biome, double x, double z, double score = 1e9) const;
 
     bool hasRivers() const { return cfg_->rivers.enabled; }
     double riverLevel() const { return cfg_->rivers.level; }
+    bool hasLakes() const { return hasLakes_; }  // ein Biom ist ein See ("water": true)
     // Wie viele Flüsse die Biome hier zulassen (0..1); scores aus classify. In einem Biom mit "rivers": 0 genau 0
     double riverFactor(const double* scores) const;
+    // Anteil der See-Biome (0..1) für diese Scores, wie beim Überblenden der Höhe
+    double lakeShare(const double* scores) const;
     void river(double x, double z, double factor, RiverSample& out) const;
     void river(double x, double z, RiverSample& out) const;  // rechnet das Klima selbst
 
@@ -168,6 +194,7 @@ private:
     int single_;
     uint64_t climateSeed_[kClimateCount];
     uint64_t riverSeed_[5] = {};  // Linien, Schlingen x, Schlingen z, Lücken, Breite
-    std::vector<uint64_t> heightSeed_;
+    std::vector<uint64_t> heightSeed_, ridgeSeed_;
     std::vector<int> material_;
+    bool hasLakes_ = false;
 };

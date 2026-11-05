@@ -341,6 +341,9 @@ public:
     // Axt: ein Hieb schlägt eine Kerbe (Keil) in ein Holzteil. p: getroffene Stelle, toward: waagrecht zum Schlagenden.
     // Ist ein Baum durch, fällt er vom Schlagenden weg. removed: weggeschlagenes Volumen (m³)
     bool chop(uint32_t id, const glm::dvec3& p, glm::dvec3 toward, double* removed, std::string* err);
+    // Spitzhacke: an der Stelle p (Welt) einen Brocken aus Stein oder Erz schlagen; toward = Richtung zum Schlagenden.
+    // Der Brocken wird ein loses Teil (chunk: seine Nummer), der Stein verliert ihn (Erzbrocken des Generators bleiben fest)
+    bool mine(uint32_t id, const glm::dvec3& p, glm::dvec3 toward, uint32_t* chunk, double* removed, std::string* err);
     // a minus b (intersect = false) oder Schnittmenge (true); b bleibt nur mit keepTool
     bool booleanCut(uint32_t a, uint32_t tool, bool intersect, bool keepTool, std::vector<uint32_t>* resultIds, double* removed,
                     std::string* err);

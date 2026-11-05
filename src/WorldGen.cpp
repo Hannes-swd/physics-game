@@ -14,7 +14,7 @@
 #include "Noise.h"
 
 const char* const kClimateNames[kClimateCount] = {"temperature", "humidity", "continentalness", "erosion"};
-const char* const kScatterNames[kScatterKinds] = {"stones", "sticks", "logs", "stumps"};
+const char* const kScatterNames[kScatterKinds] = {"stones", "sticks", "logs", "stumps", "ores", "cacti"};
 
 namespace {
 
@@ -159,6 +159,29 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
                 return fail(err);
             d.height.octaves = std::clamp((int)oct, 1, 10);
             if (d.height.scale < 0.5) return fail(wh + ".scale: must be at least 0.5 m");
+            if (const Json& rg = h["ridges"]; rg.type == Json::Object) {
+                const std::string wr = wh + ".ridges";
+                GenConfig::Biome::Height& t = d.height;
+                double roct = t.ridgeOctaves;
+                if (!num(rg, "height", t.ridgeHeight, err, wr) || !num(rg, "scale", t.ridgeScale, err, wr) ||
+                    !num(rg, "octaves", roct, err, wr) || !num(rg, "persistence", t.ridgePersistence, err, wr) ||
+                    !num(rg, "sharpness", t.ridgeSharpness, err, wr) || !num(rg, "ramp", t.ridgeRamp, err, wr))
+                    return fail(err);
+                t.ridgeOctaves = std::clamp((int)roct, 1, 10);
+                t.ridgeHeight = std::clamp(t.ridgeHeight, 0.0, 2000.0);
+                if (t.ridgeScale < 10) return fail(wr + ".scale: must be at least 10 m");
+                t.ridgeSharpness = std::clamp(t.ridgeSharpness, 0.5, 6.0);
+                t.ridgeRamp = std::clamp(t.ridgeRamp, 0.005, 1.0);
+            }
+        }
+        if (b.has("water")) {
+            if (b["water"].type != Json::Bool) return fail(w + ".water: true or false expected");
+            d.water = b["water"].num != 0;
+        }
+        if (const Json& sn = b["snow"]; sn.type == Json::Object) {
+            if (!num(sn, "from", d.snowFrom, err, w + ".snow") || !num(sn, "blend", d.snowBlend, err, w + ".snow")) return fail(err);
+            if (sn.has("color") && !readVec3(sn["color"], d.snowColor)) return fail(w + ".snow.color: [r, g, b] expected");
+            d.snowBlend = std::max(d.snowBlend, 0.5);
         }
         if (const Json& s = b["surface"]; s.type == Json::Object) {
             const std::string ws = w + ".surface";
@@ -213,14 +236,15 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
         if (f.grassColors.empty()) f.grassColors = {d.color * 1.3f};
         if (f.flowerColors.empty()) f.flowerColors = {glm::vec3(0.9f, 0.85f, 0.2f)};
         if (f.bushColors.empty()) f.bushColors = {glm::vec3(0.12f, 0.22f, 0.06f)};
-        // Zeug am Boden: "stones" (size), "sticks" und "logs" (length, thickness), "stumps" (height, thickness)
+        // Zeug am Boden: "stones" und "ores" (size), "sticks" und "logs" (length, thickness), "stumps" und "cacti"
+        // (height, thickness)
         for (int k = 0; k < kScatterKinds; ++k) {
             const Json& g = b[kScatterNames[k]];
             if (g.type != Json::Object) continue;
             const std::string ws = w + "." + kScatterNames[k];
             GenConfig::Biome::Scatter& st = d.scatter[k];
             st.given = true;
-            const char* sizeKey = k == kScatterStone ? "size" : k == kScatterStump ? "height" : "length";
+            const char* sizeKey = k == kScatterStone || k == kScatterOre ? "size" : k == kScatterStump || k == kScatterCactus ? "height" : "length";
             if (!num(g, "per_ha", st.perHa, err, ws) || !numRange(g, sizeKey, st.sizeMin, st.sizeMax, err, ws) ||
                 !numRange(g, "thickness", st.thickMin, st.thickMax, err, ws) || !num(g, "skew", st.skew, err, ws))
                 return fail(err);
@@ -255,6 +279,10 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
             return true;
         };
         double on = 1;
+        if (r.has("endless")) {
+            if (r["endless"].type != Json::Bool) return fail(w + ".endless: true or false expected");
+            v.endless = r["endless"].num != 0;
+        }
         if (!num(r, "enabled", on, err, w) || !num(r, "level", v.level, err, w) || !num(r, "spacing", v.spacing, err, w) ||
             !num(r, "presence", v.presence, err, w) || !num(r, "meander", v.meander, err, w) ||
             !num(r, "meander_scale", v.meanderScale, err, w) || !range("width", v.widthMin, v.widthMax) ||
@@ -342,8 +370,10 @@ WorldGen::WorldGen(uint64_t seed, std::shared_ptr<const GenConfig> config, int s
     for (int i = 0; i < 5; ++i) riverSeed_[i] = noise::subSeed(seed_, riverPurpose[i]);
     for (const GenConfig::Biome& b : cfg_->biomes) {
         heightSeed_.push_back(noise::subSeed(seed_, "height/" + b.id));  // je Biom nach seinem Namen: neue Biome ändern alte nicht
+        ridgeSeed_.push_back(noise::subSeed(seed_, "ridges/" + b.id));
         const int m = findMaterialIndex(b.material.c_str());
         material_.push_back(m >= 0 ? m : materialIndex("concrete"));
+        hasLakes_ |= b.water;
     }
 }
 
@@ -381,13 +411,35 @@ int WorldGen::classify(const Climate& c, double* scoresOut) const {
     return best;
 }
 
-double WorldGen::biomeHeight(int b, double x, double z) const {
+double WorldGen::biomeHeight(int b, double x, double z, double score) const {
     const GenConfig::Biome::Height& h = cfg_->biomes[(size_t)b].height;
-    return h.base + h.amplitude * noise::fbm(heightSeed_[(size_t)b], x / h.scale, z / h.scale, h.octaves, h.persistence, h.lacunarity);
+    double v = h.base + h.amplitude * noise::fbm(heightSeed_[(size_t)b], x / h.scale, z / h.scale, h.octaves, h.persistence, h.lacunarity);
+    if (h.ridgeHeight > 0) {
+        // Grate wachsen vom Rand des Bioms nach innen (score 0 .. ramp): am Übergang nur das Vorland
+        const double k = smooth01(score / h.ridgeRamp);
+        if (k > 0)
+            v += k * h.ridgeHeight *
+                 noise::ridged(ridgeSeed_[(size_t)b], x / h.ridgeScale, z / h.ridgeScale, h.ridgeOctaves, h.ridgePersistence, 2.0, h.ridgeSharpness);
+    }
+    return v;
 }
+
+namespace {
+// Gewicht eines Bioms beim Überblenden (weicher Anfang und weiches Ende über die Übergangsbreite)
+inline double blendWeight(double score, double blend) {
+    const double w = std::clamp(0.5 + score / (2.0 * blend), 0.0, 1.0);
+    return w * w * (3.0 - 2.0 * w);
+}
+} // namespace
 
 void WorldGen::sample(double x, double z, GenSample& out) const {
     const size_t n = cfg_->biomes.size();
+    const GenConfig::Rivers& rv = cfg_->rivers;
+    out.lake = 0;
+    out.snow = 0;
+    out.beach = 0;
+    out.wet = false;  // (applyRivers setzt es nur in der Nähe eines Flusses)
+    out.river = RiverSample();
     if (single_ >= 0) {  // nur ein Biom: die ganze Welt ist so
         const GenConfig::Biome& d = cfg_->biomes[(size_t)single_];
         out.biome = single_;
@@ -398,7 +450,16 @@ void WorldGen::sample(double x, double z, GenSample& out) const {
         out.slopeStart = d.slopeStart;
         out.slopeEnd = d.slopeEnd;
         out.material = material_[(size_t)single_];
-        applyRivers(x, z, out);
+        if (d.water) {  // eine Welt nur aus See: überall Wasser, wo der Grund unter dem Spiegel liegt
+            out.lake = 1;
+            out.wet = rv.enabled && out.height < rv.level + 0.3;
+        } else {
+            applyRivers(x, z, out);
+        }
+        if (d.snowFrom < 1e29) {
+            out.snow = (float)smooth01((out.height - d.snowFrom) / d.snowBlend);
+            out.color += (d.snowColor - out.color) * out.snow;
+        }
         return;
     }
     const Climate c = climate(x, z);
@@ -406,14 +467,16 @@ void WorldGen::sample(double x, double z, GenSample& out) const {
     // Gewichte: weich über die Übergangsbreite, nur Biome nahe genug werden ausgerechnet
     double w[kMaxBiomes], sum = 0;
     for (size_t b = 0; b < n; ++b) {
-        w[b] = std::clamp(0.5 + out.score[b] / (2.0 * cfg_->blend), 0.0, 1.0);
-        w[b] = w[b] * w[b] * (3.0 - 2.0 * w[b]);  // weicher Anfang und weiches Ende
+        w[b] = blendWeight(out.score[b], cfg_->blend);
         sum += w[b];
     }
     if (sum <= 1e-9) {
         for (size_t b = 0; b < n; ++b) w[b] = (int)b == out.biome ? 1.0 : 0.0;
         sum = 1.0;
     }
+    // Land und See getrennt: das Land wird angehoben und bekommt die Flüsse, dann wird zum See hin überblendet (Ufer)
+    double sumLand = 0, sumLake = 0, hLake = 0;
+    for (size_t b = 0; b < n; ++b) (cfg_->biomes[b].water ? sumLake : sumLand) += w[b];
     out.height = 0;
     out.color = out.slopeColor = glm::vec3(0);
     out.slopeStart = out.slopeEnd = 0;
@@ -421,14 +484,51 @@ void WorldGen::sample(double x, double z, GenSample& out) const {
         if (w[b] <= 0) continue;
         const double f = w[b] / sum;
         const GenConfig::Biome& d = cfg_->biomes[b];
-        out.height += f * biomeHeight((int)b, x, z);
+        const double hb = biomeHeight((int)b, x, z, out.score[b]);
+        if (d.water) hLake += w[b] / sumLake * hb;
+        else out.height += w[b] / sumLand * hb;
         out.color += (float)f * d.color;
         out.slopeColor += (float)f * d.slopeColor;
         out.slopeStart += (float)f * d.slopeStart;
         out.slopeEnd += (float)f * d.slopeEnd;
     }
     out.material = material_[(size_t)out.biome];
-    applyRivers(x, z, out);
+    if (sumLake <= 0) {  // kein See in der Nähe (und alle Welten ohne Seen): wie immer
+        applyRivers(x, z, out);
+    } else {
+        const double t = sumLake / sum;
+        out.lake = t;
+        if (sumLand > 0) applyRivers(x, z, out);
+        else out.height = rv.level + rv.floor;
+        out.height += (hLake - out.height) * t;
+        // Strand: knapp über und unter dem Wasser die Farbe des Sees (Sand), weich ab dem Rand des Übergangs
+        const glm::vec3 beach = [&] {
+            glm::vec3 col(0);
+            for (size_t b = 0; b < n; ++b)
+                if (cfg_->biomes[b].water) col += (float)(w[b] / sumLake) * cfg_->biomes[b].color;
+            return col;
+        }();
+        const float k = (float)(smooth01((rv.level + 1.0 - out.height) / 0.7) * std::min(1.0, t / 0.03));
+        out.color += (beach - out.color) * k;
+        out.slopeColor += (beach - out.slopeColor) * k;
+        out.beach = k;
+        // Wasser: wo der Grund unter dem Spiegel liegt, mit einem schmalen Rand (gräbt man direkt am Ufer, läuft es voll)
+        out.wet = out.wet || (rv.enabled && out.height < rv.level + 0.3);
+    }
+    // Schnee: ab einer Höhe (je Biom), nur auf ebenen Stellen (die Farbe für steile Hänge bleibt)
+    double snow = 0;
+    for (size_t b = 0; b < n; ++b) {
+        const GenConfig::Biome& d = cfg_->biomes[b];
+        if (w[b] > 0 && d.snowFrom < 1e29) snow += w[b] / sum * smooth01((out.height - d.snowFrom) / d.snowBlend);
+    }
+    if (snow > 0) {
+        glm::vec3 col(0);
+        double ws = 0;
+        for (size_t b = 0; b < n; ++b)
+            if (w[b] > 0 && cfg_->biomes[b].snowFrom < 1e29) col += (float)w[b] * cfg_->biomes[b].snowColor, ws += w[b];
+        out.snow = (float)snow;
+        out.color += (col / (float)ws - out.color) * out.snow;
+    }
 }
 
 // ============================================================================ Flüsse
@@ -446,26 +546,53 @@ double WorldGen::riverFactor(const double* scores) const {
     double f = 1.0;
     for (size_t b = 0; b < n; ++b) {
         const double r = cfg_->biomes[b].rivers;
-        if (r < 1.0) f = std::min(f, r + (1.0 - r) * smooth01((best - scores[b] - cfg_->blend) / wide));
+        if (r >= 1.0) continue;
+        if (cfg_->rivers.endless) {
+            // Endlose Flüsse: nur der Abstand zu diesem Biom zählt (sonst liefen sie in Gegenden aus, deren Klima zu keinem
+            // Biom recht passt). Sie führen bis kurz vor seinen Rand Wasser und laufen im Übergang aus (Quelle am Fuß)
+            f = std::min(f, r + (1.0 - r) * smooth01((-scores[b] - 0.25 * cfg_->blend) / (1.5 * cfg_->blend)));
+        } else {
+            f = std::min(f, r + (1.0 - r) * smooth01((best - scores[b] - cfg_->blend) / wide));
+        }
     }
     return f;
+}
+
+double WorldGen::lakeShare(const double* scores) const {
+    if (!hasLakes_) return 0.0;
+    if (single_ >= 0) return cfg_->biomes[(size_t)single_].water ? 1.0 : 0.0;
+    double sum = 0, lake = 0;
+    for (size_t b = 0; b < cfg_->biomes.size(); ++b) {
+        const double w = blendWeight(scores[b], cfg_->blend);
+        sum += w;
+        if (cfg_->biomes[b].water) lake += w;
+    }
+    return sum > 1e-9 ? lake / sum : 0.0;
 }
 
 void WorldGen::river(double x, double z, RiverSample& out) const {
     double s[kMaxBiomes] = {};
     if (single_ < 0) classify(climate(x, z), s);
     river(x, z, riverFactor(s), out);
+    // Im See verliert sich die Strömung (der Fluss ist dort zu Ende)
+    if (out.strength > 0 && hasLakes_) out.flow *= 1.0 - smooth01(lakeShare(s) / 0.6);
 }
 
 void WorldGen::river(double x, double z, double factor, RiverSample& out) const {
     out = RiverSample();
     const GenConfig::Rivers& rv = cfg_->rivers;
-    if (!rv.enabled || factor <= 0.0 || rv.presence <= 0.0) return;
-    // Lücken: nur wo ein weiteres Rauschfeld über der Schwelle liegt, führt die Linie Wasser. Weniger Flüsse im Biom heißt
-    // höhere Schwelle. Am Übergang läuft der Fluss aus (schmaler, flacher, bis das Bett über dem Wasser liegt)
-    const double ps = rv.spacing * 3.0;  // groß: lange Flüsse mit seltenen Lücken
-    const double p = std::clamp(0.5 + 0.8 * noise::fbm(riverSeed_[3], x / ps, z / ps, 2), 0.0, 1.0);
-    const double q = smooth01((p - (1.0 - rv.presence * factor)) / 0.12);
+    if (!rv.enabled || factor <= 0.0 || (!rv.endless && rv.presence <= 0.0)) return;
+    double q;
+    if (rv.endless) {
+        // Jede Linie führt Wasser: ein Fluss endet nur im See oder läuft vor einem Biom ohne Flüsse aus (dort entspringt er)
+        q = factor;
+    } else {
+        // Lücken: nur wo ein weiteres Rauschfeld über der Schwelle liegt, führt die Linie Wasser. Weniger Flüsse im Biom
+        // heißt höhere Schwelle. Am Übergang läuft der Fluss aus (schmaler, flacher, bis das Bett über dem Wasser liegt)
+        const double ps = rv.spacing * 3.0;  // groß: lange Flüsse mit seltenen Lücken
+        const double p = std::clamp(0.5 + 0.8 * noise::fbm(riverSeed_[3], x / ps, z / ps, 2), 0.0, 1.0);
+        q = smooth01((p - (1.0 - rv.presence * factor)) / 0.12);
+    }
     if (q <= 0.0) return;
     // Linien: wo das Rauschfeld 0 ist. Die zweite Oktave ist schwach (sonst viele kleine Schleifen statt langer Flüsse),
     // aber nötig: das Rauschen allein ist an jedem Gitterpunkt 0, die Linien gingen sonst durch ein regelmäßiges Gitter.

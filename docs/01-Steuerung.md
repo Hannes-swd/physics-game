@@ -89,6 +89,9 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **B** | Bauplan-Modus: Vorlage (Wand, Boden, Treppe …) als Hologramm setzen; mit Teil in der Hand auf ein Hologramm schauen + **E** = einsetzen; **Q** halten = abbauen ([20](20-Bauvorlagen.md)) |
 | **C** | Herstellen: Rezept (Steinaxt, Brett, Hocker …) als oranges Hologramm hinlegen; mit leerer Hand darauf schauen + **E** = aus dem Inventar füllen; fertig kommt es ins Inventar ([22](22-Herstellen.md)) |
 | **X** | Axt nehmen / weglegen. Mit der Axt hackt die linke Maustaste eine Kerbe in Holz (bis 2,6 m, ein Hieb alle 0,4 s); ist ein Stamm durch, fällt der Baum vom Hackenden weg ([17](17-Baeume.md)) |
+| Minimap (oben rechts) | Norden ist oben, man selbst ist der Pfeil in der Mitte (Spitze = Blickrichtung), Mitspieler im LAN sind Pfeile in ihrer Farbe (außerhalb der Karte klein am Rand). Etwa 240 m breit, Flüsse und Seen blau, Maßstab 50 m. Ein-/ausschalten: *Ansicht → Minimap* |
+| **1 … 7** | Hand und Werkzeuge (Leiste unten rechts): 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, **7 Spitzhacke** |
+| **7** Spitzhacke | Linksklick auf Stein oder Erz (bis 2,6 m, ein Hieb alle 0,45 s) schlägt einen Brocken ab, der direkt ins Inventar kommt (passt er nicht, fällt er herunter). So gewinnt man Eisenerz, Kupfererz und Steinkohle aus den Erzbrocken im Gebirge ([19](19-Steine-und-Holz.md#erze-und-kakteen)) |
 | **Esc** | Pausenfenster: Weiterspielen, Modus wechseln, Einstellungen, Beenden; die Welt steht so lange still ([15](15-Hauptmenue-und-Welten.md#pausenfenster-im-spiel)). Esc nochmal: weiterspielen |
 
 Die Spielfigur ist ein Bauarbeiter (Modell von Quaternius, CC0, siehe `assets/characters`). Sie steht, geht und rennt

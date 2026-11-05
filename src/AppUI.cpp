@@ -129,6 +129,7 @@ void App::drawUI() {
     } else {
         drawPlayHud();
         drawHandToolBar();
+        if (showMinimap_) drawMinimap();
     }
     drawStatusBar();
     drawToasts();
@@ -394,6 +395,7 @@ void App::drawMenuBar() {
         ImGui::MenuItem("Kanten", nullptr, &showEdges_);
         ImGui::MenuItem("Raster", nullptr, &showGrid_);
         if (world_->terrain()) ImGui::MenuItem("Biomgrenzen", nullptr, &showBiomeBorders_);
+        ImGui::MenuItem("Minimap (Spiel-Modus)", nullptr, &showMinimap_);
         if (world_->terrain()) ImGui::MenuItem("Gras und Büsche", nullptr, &showFlora_);
         ImGui::Separator();
         ImGui::MenuItem("Physik-Inspektor", "F3", &showInspector_);
@@ -1032,7 +1034,7 @@ void App::drawStatusBar() {
         left = handToolHelp();
     } else if (play_) {
         left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · F " +
-               std::string(heatTools()[heatTool_].label) + " · 1-6 Hand/Werkzeuge (unten rechts) · B Bauplan · C Herstellen" +
+               std::string(heatTools()[heatTool_].label) + " · 1-7 Hand/Werkzeuge (unten rechts) · B Bauplan · C Herstellen" +
                (cheats_ ? " · Tab Bauen" : "");
     } else if (Object* o = world_->find(hovered_)) {
         left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg";

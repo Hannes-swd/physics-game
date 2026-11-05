@@ -157,7 +157,7 @@ type commands.txt | Werkstatt.exe --headless
 | `--validate` | Vulkan-Fehlerprüfung einschalten (für Entwickler) |
 | `--send [command ...]` | Befehle an ein laufendes Spiel schicken (siehe oben) |
 | `--headless [--demo]` | ohne Fenster (siehe oben) |
-| `--selftest` | automatische Prüfungen von Geometrie, Bearbeitung, Physik, Kollision, Reibung, Befehlssprache, Verbindungen, Bruch, Luft, Zeichnung, Speichern, Wärme, Wasser (auch Meeresgrund und Land), Gelände, Flüsse, Bäume und der Beispielwelt (173 Prüfungen) |
+| `--selftest` | automatische Prüfungen von Geometrie, Bearbeitung, Physik, Kollision, Reibung, Befehlssprache, Verbindungen, Bruch, Luft, Zeichnung, Speichern, Wärme, Wasser (auch Meeresgrund und Land), Gelände, Flüsse, Bäume und der Beispielwelt (183 Prüfungen) |
 | `--bench [scene]` | Physik-Messung: Rechenzeit, Eindringtiefe, Rettungen und Messwerte in elf Szenen, alte gegen neue Einstellungen (mit Szene: nur Szenen, deren Name das Wort enthält) |
 
 Wird das Programm per Doppelklick gestartet, blendet es das leere Konsolenfenster aus.

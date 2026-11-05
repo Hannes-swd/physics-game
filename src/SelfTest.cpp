@@ -11,6 +11,7 @@
 #include "Avatar.h"
 #include "Commands.h"
 #include "Drawing.h"
+#include "Jobs.h"
 #include "Materials.h"
 #include "Noise.h"
 #include "Physics.h"
@@ -783,33 +784,45 @@ int runSelfTest() {
 
         auto cfg = std::make_shared<GenConfig>(builtinGenConfig());
         const int plains = cfg->findBiome("plains"), hills = cfg->findBiome("hills"), desert = cfg->findBiome("desert");
-        const int forest = cfg->findBiome("forest");
+        const int forest = cfg->findBiome("forest"), steppe = cfg->findBiome("steppe"), lake = cfg->findBiome("lake");
+        const int mountains = cfg->findBiome("mountains");
         WorldGen g1(4711, cfg, -1), g2(4711, cfg, -1), g3(4712, cfg, -1);
-        int equal = 0, differ = 0, plainsN = 0, hillsN = 0, desertN = 0, forestN = 0, wrong = 0;
-        for (int i = 0; i < 900; ++i) {
-            const double x = (i % 30) * 157.0 - 2300.0, z = (i / 30) * 163.0 - 2300.0;
+        int equal = 0, differ = 0, wrong = 0, negative = 0;
+        std::vector<int> count(cfg->biomes.size(), 0);
+        auto counted = [&](int b) { return b >= 0 ? count[(size_t)b] : 0; };
+        for (int i = 0; i < 3600; ++i) {  // 24 x 24 km
+            const double x = (i % 60) * 401.0 - 12000.0, z = (i / 60) * 397.0 - 12000.0;
             GenSample s1, s2, s3;
             g1.sample(x, z, s1);
             g2.sample(x, z, s2);
             g3.sample(x, z, s3);
             equal += s1.height == s2.height && s1.biome == s2.biome;
             differ += s1.height != s3.height;
-            (s1.biome == plains ? plainsN : s1.biome == hills ? hillsN : s1.biome == forest ? forestN : desertN)++;
-            // biomes.json: feucht -> wenig Zerklüftung Ebene (sehr feucht: Wald), viel Zerklüftung Hügel; heiß und trocken -> Wüste
+            ++count[(size_t)s1.biome];
+            negative += s1.score[s1.biome] < 0;  // das Klima passt zu keinem Biom (Lücke)
+            // biomes.json: Kontinentalität niedrig See, hoch Gebirge; dazwischen feucht -> wenig Zerklüftung Ebene (sehr
+            // feucht: Wald), viel Zerklüftung Hügel; trocken: heiß Wüste, kalt Steppe
             const Climate c = g1.climate(x, z);
-            const double e = c.v[kErosion], hum = c.v[kHumidity], tmp = c.v[kTemperature];
+            const double e = c.v[kErosion], hum = c.v[kHumidity], tmp = c.v[kTemperature], con = c.v[kContinentalness];
+            if (con < 0.22 && s1.biome != lake) ++wrong;
+            if (con > 0.74 && s1.biome != mountains) ++wrong;
+            if (con < 0.26 || con > 0.70) continue;
             if (hum > 0.37 && hum < 0.6 && e < 0.48 && s1.biome != plains) ++wrong;
             if (hum > 0.64 && e < 0.48 && s1.biome != forest) ++wrong;
             if (hum > 0.37 && e > 0.52 && s1.biome != hills) ++wrong;
             if (hum < 0.33 && tmp > 0.57 && s1.biome != desert) ++wrong;
+            if (hum < 0.33 && tmp < 0.53 && s1.biome != steppe) ++wrong;
             if (s1.biome == desert && hum > 0.37) ++wrong;
         }
-        check(plains >= 0 && hills >= 0 && desert >= 0 && equal == 900 && differ > 850, "same seed, same terrain and biomes; other seed, other terrain",
+        check(plains >= 0 && hills >= 0 && desert >= 0 && equal == 3600 && differ > 3400, "same seed, same terrain and biomes; other seed, other terrain",
               std::to_string(equal) + " equal, " + std::to_string(differ) + " different");
-        check(wrong == 0 && plainsN > 30 && hillsN > 60 && desertN > 20 && forestN > 30,
-              "biomes sit where their climate fits (plains, forest, hills by humidity and erosion; desert hot and dry)",
-              std::to_string(plainsN) + " plains, " + std::to_string(forestN) + " forest, " + std::to_string(hillsN) + " hills, " + std::to_string(desertN) + " desert, " +
-                  std::to_string(wrong) + " wrong");
+        std::string tally;
+        for (size_t b = 0; b < cfg->biomes.size(); ++b) tally += std::to_string(count[b]) + " " + cfg->biomes[b].id + ", ";
+        check(wrong == 0 && negative == 0 && counted(plains) > 120 && counted(hills) > 240 && counted(desert) > 80 && counted(forest) > 120 &&
+                  counted(steppe) > 40 && counted(lake) > 10 && counted(mountains) > 40,
+              "biomes sit where their climate fits (lake and mountains by continentalness; plains, forest, hills by humidity and erosion; "
+              "desert and steppe dry), no climate is left without a biome",
+              tally + std::to_string(wrong) + " wrong, " + std::to_string(negative) + " without a fitting biome");
         WorldGen only(4711, cfg, hills);
         int onlyHills = 0;
         for (int i = 0; i < 200; ++i) {
@@ -818,31 +831,62 @@ int runSelfTest() {
             onlyHills += s.biome == hills;
         }
         check(onlyHills == 200, "a world with one biome has only that biome");
-        // Grenze ohne Stufe: entlang einer Linie über mehrere Grenzen 0,5 m weit gehen
+        // Grenze ohne Stufe: entlang einer Linie über mehrere Grenzen 0,5 m weit gehen (im Gebirge selbst sind steile
+        // Grate erlaubt, gemessen wird bis kurz hinter seinen Rand)
         double steepest = 0;
         int borders = 0, last = -1;
-        for (int i = 0; i < 6000; ++i) {
-            GenSample s0, s1;
-            g1.sample(i * 0.5, 211.0, s0);
-            g1.sample(i * 0.5 + 0.5, 211.0, s1);
-            steepest = std::max(steepest, std::abs(s1.height - s0.height));
-            if (last >= 0 && s0.biome != last) ++borders;
-            last = s0.biome;
-        }
+        for (const double lineZ : {211.0, 3517.0})
+            for (int i = 0; i < 8000; ++i) {
+                GenSample s0, s1;
+                g1.sample(i * 0.5, lineZ, s0);
+                g1.sample(i * 0.5 + 0.5, lineZ, s1);
+                if (last >= 0 && s0.biome != last) ++borders;
+                last = s0.biome;
+                if (mountains >= 0 && std::max(s0.score[mountains], s1.score[mountains]) > 0.01) continue;
+                steepest = std::max(steepest, std::abs(s1.height - s0.height));
+            }
         check(borders > 0 && steepest < 0.6, "biome borders blend smoothly (no cliffs)",
               std::to_string(borders) + " borders crossed, steepest step " + num(steepest * 100) + " cm per 50 cm");
 
-        // Flüsse: nicht selten, nicht überall; nie in der Wüste; außerhalb der Flussbetten bleibt der Boden über dem Wasser
+        // Gebirge: hohe Grate (über 200 m), oben Schnee; sie wachsen erst hinter der Grenze (dort kein Steilhang)
+        if (mountains >= 0) {
+            glm::dvec2 m(0);
+            WorldGen& g = g1;
+            double score[kMaxBiomes];
+            // Mitte eines Gebirges: dort, wo sein Score am größten ist (grob gesucht)
+            double bestScore = -1;
+            for (int j = -40; j <= 40; ++j)
+                for (int i = -40; i <= 40; ++i) {
+                    const glm::dvec2 p(i * 250.0, j * 250.0);
+                    g.classify(g.climate(p.x, p.y), score);
+                    if (score[mountains] > bestScore) bestScore = score[mountains], m = p;
+                }
+            double highest = -1e9, edgeHighest = -1e9;
+            int snowy = 0;
+            for (int j = -60; j <= 60; ++j)
+                for (int i = -60; i <= 60; ++i) {
+                    GenSample s;
+                    g.sample(m.x + i * 25.0, m.y + j * 25.0, s);
+                    if (s.biome == mountains && s.score[mountains] < 0.01) edgeHighest = std::max(edgeHighest, s.height);
+                    highest = std::max(highest, s.height);
+                    snowy += s.snow > 0.5f;
+                }
+            check(highest > 200 && snowy > 20 && edgeHighest < 45, "mountains rise high (snow on top) and grow only behind their border",
+                  "highest " + num(highest) + " m, " + std::to_string(snowy) + " snowy spots, at the border at most " + num(edgeHighest) + " m");
+        }
+
+        // Flüsse: nicht selten, nicht überall; sie enden nicht mitten im Land (nur vor dem Gebirge oder im See); außerhalb
+        // der Flussbetten und Seen bleibt der Boden über dem Wasser
         {
             const GenConfig::Rivers& rv = cfg->rivers;
-            int crossings = 0, lowDry = 0, desertSamples = 0, desertRiver = 0;
+            int crossings = 0, lowDry = 0, fading = 0, fadingAway = 0;
             bool inRiver = false;
             double lowestDry = 1e9;
             for (const double lineZ : {-6234.0, -2234.0, 1234.0, 5234.0})  // vier Linien je 20 km, Schritte von 0,5 m
                 for (int i = 0; i < 40000; ++i) {
                     GenSample s;
                     g1.sample(-10000.0 + i * 0.5, lineZ, s);
-                    const bool water = s.wet && s.height < rv.level;
+                    const bool water = s.wet && s.height < rv.level && s.lake <= 0;
                     if (water && !inRiver) ++crossings;
                     inRiver = water;
                     if (!s.wet) {
@@ -850,19 +894,72 @@ int runSelfTest() {
                         lowDry += s.height < rv.level + rv.floor - 0.01;
                     }
                 }
-            for (int i = 0; i < 6400; ++i) {
+            // Wo ein Fluss schwächer wird (ausläuft), ist das Gebirge nah
+            for (int i = 0; i < 40000; ++i) {
                 GenSample s;
-                g1.sample((i % 80) * 75.0 - 3000.0, (i / 80) * 75.0 - 3000.0, s);
-                if (s.biome != desert) continue;
-                ++desertSamples;
-                desertRiver += s.river.strength > 0 || (s.wet && s.height < rv.level);
+                g1.sample((i % 200) * 50.0 - 5000.0, (i / 200) * 50.0 - 5000.0, s);
+                const RiverSample& r = s.river;
+                if (r.strength <= 0.0 || r.strength >= 0.999 || r.dist > r.half) continue;
+                ++fading;
+                fadingAway += mountains < 0 || s.score[mountains] < -2.0 * cfg->blend;
             }
-            check(rv.enabled && crossings >= 8 && crossings <= 60, "rivers: not rare, not everywhere",
+            check(rv.enabled && rv.endless && crossings >= 8 && crossings <= 70, "rivers: not rare, not everywhere",
                   std::to_string(crossings) + " rivers crossed on 80 km (about every " + num(80.0 / std::max(crossings, 1)) + " km)");
-            check(desertSamples > 100 && desertRiver == 0, "no rivers in the desert",
-                  std::to_string(desertSamples) + " desert spots, " + std::to_string(desertRiver) + " with a river");
-            check(lowDry == 0 && lowestDry >= rv.level + rv.floor - 0.01, "outside the river beds the ground stays above the water",
+            check(fadingAway == 0, "rivers never end in the open land (they start at the foot of the mountains or end in a lake)",
+                  std::to_string(fading) + " spots where a river fades out, " + std::to_string(fadingAway) + " of them far from mountains");
+            check(lowDry == 0 && lowestDry >= rv.level + rv.floor - 0.01, "outside the river beds and lakes the ground stays above the water",
                   "lowest dry ground " + num((lowestDry - rv.level) * 100) + " cm above the river level");
+            // See: tiefes Wasser in der Mitte, das Ufer steigt weich bis über den Wasserspiegel (Strand), Flüsse münden hinein
+            if (lake >= 0) {
+                Terrain probe(physics, nullptr, std::make_shared<WorldGen>(4711, cfg, -1), {});
+                glm::dvec2 f(0);
+                const bool found = probe.findBiome(lake, glm::dvec2(0, 0), 20000.0, f);
+                GenSample mid;
+                g1.sample(f.x, f.y, mid);
+                // vom Fund aus geradeaus weg vom Seeinneren, bis es trocken ist
+                double deep = 1e9, steepest = 0, prev = mid.height;
+                glm::dvec2 dir(1, 0), p = f;
+                {
+                    double sc[kMaxBiomes];
+                    g1.classify(g1.climate(f.x + 50, f.y), sc);
+                    const double ex = sc[lake];
+                    g1.classify(g1.climate(f.x, f.y + 50), sc);
+                    const double ez = sc[lake];
+                    g1.classify(g1.climate(f.x, f.y), sc);
+                    const glm::dvec2 grad(ex - sc[lake], ez - sc[lake]);
+                    if (glm::length(grad) > 1e-12) dir = -glm::normalize(grad);  // dorthin wird der See flacher
+                }
+                for (int k = 0; k < 400; ++k) {  // in den See hinein: tief
+                    GenSample s;
+                    g1.sample(f.x - dir.x * k * 5.0, f.y - dir.y * k * 5.0, s);
+                    deep = std::min(deep, s.height);
+                }
+                bool shore = false;
+                for (int k = 0; k < 8000 && !shore; ++k) {
+                    p += dir * 0.5;
+                    GenSample s;
+                    g1.sample(p.x, p.y, s);
+                    steepest = std::max(steepest, std::abs(s.height - prev));
+                    prev = s.height;
+                    shore = !s.wet && s.height > rv.level + 1.0;
+                }
+                // Mündungen: Stellen im Übergang zum See mitten in einem Fluss (20 x 20 km, alle 25 m)
+                std::vector<int> mouthRows(800, 0);
+                jobs::parallelFor(mouthRows.size(), [&](size_t j) {
+                    for (int i = 0; i < 800; ++i) {
+                        GenSample s;
+                        g1.sample(i * 25.0 - 10000.0, double(j) * 25.0 - 10000.0, s);
+                        mouthRows[j] += s.lake > 0.02 && s.lake < 0.9 && s.river.strength > 0.9 && s.river.dist < s.river.half;
+                    }
+                });
+                int mouths = 0;
+                for (int m : mouthRows) mouths += m;
+                const double waterDepth = rv.level - probe.waterBottom(f.x, f.y);  // das Gewässer des Geländes sieht ihn
+                check(found && mid.wet && deep < rv.level - 4.0 && shore && steepest < 0.6 && mouths > 0 && waterDepth > 2.0,
+                      "a lake: deep water inside, a soft shore up to dry land, rivers flow into it",
+                      "found " + num(glm::length(f)) + " m away, " + num(rv.level - deep) + " m deep (water " + num(waterDepth) + " m at the spot found), shore " + num(glm::length(p - f)) +
+                          " m out, steepest step " + num(steepest * 100) + " cm per 50 cm, " + std::to_string(mouths) + " river spots at lake shores within 20 km");
+            }
             GenConfig old;
             std::string perr;
             const bool parsed = parseGenConfig("{\"biomes\": [{\"id\": \"flat\", \"height\": {\"base\": -3, \"amplitude\": 0}}]}", old, &perr);
@@ -1196,6 +1293,67 @@ int runSelfTest() {
         Object* held = pickedStick ? wf.takeScatter(twig) : nullptr;
         check(held && !held->fixed && held->mass < 8.0 && held->name == "Ast", "a stick becomes a movable piece of wood when picked up",
               held ? num(held->mass) + " kg" : "nothing hit");
+
+        // Gebirge: Erzbrocken liegen herum, fest im Fels; die Spitzhacke schlägt Erz ab (ein loses Teil), der Rest bleibt fest
+        if (const int mountains = bcfg->findBiome("mountains"); mountains >= 0) {
+            World wm(physics, nullptr);
+            wm.setSimulating(true);
+            wm.setTerrain(std::make_shared<WorldGen>(4711, bcfg, mountains), {});
+            std::vector<ScatterSpot> ms;
+            wm.scatter()->around(glm::dvec2(0, 0), 150.0, ms);
+            int ores = 0;
+            ScatterSpot ore;
+            for (const ScatterSpot& s : ms)
+                if (s.kind == kScatterOre && ores++ == 0) ore = s;
+            wm.updateScatter({ore.pos}, 10000);
+            Object* rock = nullptr;
+            for (const auto& op : wm.objects())
+                if (op->treeKey == ore.key) rock = op.get();
+            const bool fixedOre = rock && rock->fixed;
+            const std::string oreMat = rock ? materials()[(size_t)rock->material].name : "";
+            const uint32_t rockId = rock ? rock->id : 0;
+            // von oben auf den Brocken schlagen
+            RayHit hit;
+            const bool aimed = rock && wm.raycast(ore.pos + glm::dvec3(0, 3.0, 0), glm::dvec3(0, -1, 0), hit) && hit.obj && hit.obj->id == rockId;
+            uint32_t chunk = 0;
+            double removed = 0;
+            std::string err;
+            const bool mined = aimed && wm.mine(rockId, hit.point, glm::dvec3(0, 1, 0), &chunk, &removed, &err);
+            Object* piece = chunk ? wm.find(chunk) : nullptr;
+            bool restFixed = false;
+            for (const auto& op : wm.objects())
+                if (op->treeKey == ore.key && op->fixed) restFixed = true;
+            check(ores > 3 && fixedOre && (oreMat == "iron_ore" || oreMat == "copper_ore" || oreMat == "coal") && mined && piece && !piece->fixed &&
+                      materials()[(size_t)piece->material].name == oreMat && piece->mass > 0.3 && piece->mass < 6.0 && restFixed,
+                  "ore lies in the mountains; the pickaxe breaks off a loose chunk of ore, the rest stays in the rock",
+                  std::to_string(ores) + " ore spots within 150 m, " + oreMat + (piece ? ", chunk " + num(piece->mass) + " kg" : ", " + err));
+        }
+        // Wüste: Kakteen stehen fest (sie wurzeln), große mit Armen
+        if (const int desertB = bcfg->findBiome("desert"); desertB >= 0) {
+            World wd(physics, nullptr);
+            wd.setSimulating(true);
+            wd.setTerrain(std::make_shared<WorldGen>(4711, bcfg, desertB), {});
+            std::vector<ScatterSpot> ds;
+            wd.scatter()->around(glm::dvec2(0, 0), 150.0, ds);
+            int cacti = 0, tall = 0;
+            ScatterSpot cactus;
+            for (const ScatterSpot& s : ds) {
+                if (s.kind != kScatterCactus) continue;
+                if (cacti++ == 0 || s.size > cactus.size) cactus = s;
+                tall += s.size > 2.5;
+            }
+            wd.updateScatter({cactus.pos}, 10000);
+            Object* part = nullptr;
+            for (const auto& op : wd.objects())
+                if (op->treeKey == cactus.key) part = op.get();
+            const bool fixedFirst = part && part->fixed;
+            if (part) wd.wakeScatter(*part);
+            check(cacti > 10 && tall > 0 && fixedFirst && part->fixed && part->name == "Kaktus" &&
+                      materials()[(size_t)part->material].name == std::string("cactus"),
+                  "cacti grow in the desert and stay rooted when touched",
+                  std::to_string(cacti) + " cacti within 150 m (" + std::to_string(tall) + " taller than 2.5 m), tallest " + num(cactus.size) + " m" +
+                      (part ? ", " + num(part->mass) + " kg" : ""));
+        }
     }
 
     std::printf("== Material file ==\n");

@@ -141,10 +141,13 @@ new box pine 80 10 2
 
 ## Hinweise
 
-- `soil` (Erde) und `sand` (Sand, Wüste) sind die Materialien des Geländes (Reibung, Rollreibung und Stoßzahl gegen den Boden). Welches Biom welches
+- `soil` (Erde), `sand` (Sand, Wüste und See) und `granite` (Gebirge) sind die Materialien des Geländes (Reibung, Rollreibung und Stoßzahl gegen den Boden). Welches Biom welches
   Material hat, steht in `assets/biomes.json` (`material`, siehe [16](16-Weltgenerierung.md)).
-- `fieldstone` (Feldstein) und `sandstone` (Sandstein) sind die Steine, die im Gelände liegen (Stöcke, Stämme und Stümpfe sind aus `spruce` und `oak`) ([19](19-Steine-und-Holz.md)); welches Biom
+- `fieldstone` (Feldstein), `sandstone` (Sandstein) und `granite` (Granit) sind die Steine, die im Gelände liegen (Stöcke, Stämme und Stümpfe sind aus `spruce` und `oak`) ([19](19-Steine-und-Holz.md)); welches Biom
   welches nimmt, steht in `biomes.json` (`stones.material`).
+- Erze im Gebirge: `iron_ore` (Eisenerz, rostbraun, 3900 kg/m³), `copper_ore` (Kupfererz, grün, 3600 kg/m³), `coal`
+  (Steinkohle, schwarz, 1350 kg/m³, brennt ab 450 °C). Alle sind Klasse `stone`: die Spitzhacke baut sie ab. In der
+  Wüste wachsen Kakteen aus `cactus` (Klasse `wood`, weich und wasserreich: die Axt geht hinein, brennt schlecht).
 - Der Selbsttest benutzt immer die eingebettete Kopie, damit eigene Änderungen ihn nicht stören.
 - Im LAN-Mehrspieler sollten alle dieselbe Datei haben (Teile werden mit der Nummer ihres Materials übertragen).
 - Schmierstoffe, Kleber und Wärme-Werkzeuge stehen noch im Code (`Materials.cpp`, `Joints.cpp`).

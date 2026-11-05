@@ -23,5 +23,8 @@ double hash01(uint64_t seed, int64_t x, int64_t z);
 double gradient(uint64_t seed, double x, double z);
 // Summe mehrerer Oktaven, auf [-1, 1] normiert. lacunarity: Frequenz je Oktave, persistence: Amplitude je Oktave
 double fbm(uint64_t seed, double x, double z, int octaves, double persistence = 0.5, double lacunarity = 2.0);
+// Grate (Gebirge): je Oktave 1 - |Rauschen| (scharfe Kämme dort, wo das Rauschen 0 ist), hoch sharpness; feinere Oktaven
+// zählen vor allem auf den Kämmen (dort zerklüftet, in den Tälern glatt). Wert in [0, 1]
+double ridged(uint64_t seed, double x, double z, int octaves, double persistence = 0.5, double lacunarity = 2.0, double sharpness = 2.0);
 
 } // namespace noise

@@ -1344,8 +1344,10 @@ Object* World::placeScatter(const ScatterSpot& s, bool fixed) {
     if (!scatter_ || s.shape < 0 || s.shape >= scatter_->shapes()) return nullptr;
     solid::Solid sol = scatter_->shape(s.shape).solid;
     solid::transformAffine(sol, glm::dmat3(s.size));
-    static const char* const names[kScatterKinds] = {"Stein", "Ast", "Baumstamm", "Baumstumpf"};
-    const char* name = s.kind == kScatterStone && scatter_->big(s) ? "Felsbrocken" : names[std::clamp(s.kind, 0, kScatterKinds - 1)];
+    static const char* const names[kScatterKinds] = {"Stein", "Ast", "Baumstamm", "Baumstumpf", "Erzbrocken", "Kaktus"};
+    std::string name = s.kind == kScatterStone && scatter_->big(s) ? "Felsbrocken" : names[std::clamp(s.kind, 0, kScatterKinds - 1)];
+    if (s.kind == kScatterOre && s.material >= 0 && s.material < (int)materials().size())  // "Eisenerz", "Kupfererz" ...
+        name = materials()[(size_t)s.material].label;
     const uint32_t last = lastCreated_;
     Object* o = addSolid(std::move(sol), s.material, s.pos, s.rot, name, kScatterNames[std::clamp(s.kind, 0, kScatterKinds - 1)]);
     lastCreated_ = last;  // Zeug des Generators ist nicht "last" für Befehle

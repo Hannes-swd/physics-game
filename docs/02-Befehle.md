@@ -736,7 +736,7 @@ Ein getragenes Teil bleibt zurück. Anderer Name: `teleport`.
 | `tp <biom>` | nächste Stelle, an der das Biom ganz es selbst ist (hinter dem Übergang, auf 0,5 m genau, bis 20 km). Name oder Bezeichnung: `tp hills`, `tp ebene`. Blick tiefer ins Biom hinein. Ist man schon drin: `Already in ...` |
 | `tp river` | ans Ufer des nächsten Flusses (die Flüsse des Geländes oder ein Gewässer mit Strömung), Blick aufs Wasser |
 | `tp tree [art]` | neben den nächsten Baum (eine Art oder jeder), Blick auf den Stamm ([17](17-Baeume.md)) |
-| `tp stone\|stick\|log\|stump` | neben das nächste Stück dieser Art am Boden (Stein, Stock, umgefallener Stamm, Baumstumpf), Blick darauf ([19](19-Steine-und-Holz.md)) |
+| `tp stone\|stick\|log\|stump\|ore\|cactus` | neben das nächste Stück dieser Art am Boden (Stein, Stock, umgefallener Stamm, Baumstumpf, Erzbrocken, Kaktus), Blick darauf ([19](19-Steine-und-Holz.md)) |
 | `tp water` | ans Ufer des nächsten Gewässers (Becken, Meer, Fluss). Auch `sea`, `pool`, `lake` |
 | `tp <spieler>` | zu einem Mitspieler im LAN (Name, Anfang des Namens oder Nummer aus `tp`): 1,5 m vor ihn, Blick auf ihn; ist dort kein Platz, daneben oder dahinter |
 | `tp spawn` | zum Ursprung der Welt (0, 0) |
@@ -857,6 +857,7 @@ Arten in `assets/trees.json`, Wald aus dem Seed. Alles dazu: [17-Baeume.md](17-B
 | `tree plant <art> [form] [x z] [größe]` | Baum als festes Teil aufstellen (ohne Ort: vor der Kamera) |
 | `tree nearest [art]` | nächster Baum des Generators |
 | `chop <id> <x y z> [dx dz]` | Axt: ein Hieb schlägt eine Kerbe in Holz (Stelle in cm, Richtung zum Hackenden); im Spiel-Modus **X** und Linksklick |
+| `mine <id> <x y z> [dx dy dz]` | Spitzhacke: ein Hieb schlägt einen Brocken (gut 1/2 Liter) aus Stein oder Erz, er wird ein loses Teil (Stelle in cm, Richtung zum Schlagenden); im Spiel-Modus **7** und Linksklick, der Brocken kommt dann ins Inventar |
 | `tp tree [art]` | neben den nächsten Baum |
 | `scene trees` | Baumschule: jede Art in jeder Form nebeneinander |
 | `trees reload` | `assets/trees.json` neu lesen und in die Welt übernehmen |

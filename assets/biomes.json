@@ -5,8 +5,10 @@
     "\"climate\", in welchen Bereichen es vorkommt (fehlt ein Wert: ganzer Bereich 0..1). An jedem Ort gewinnt das Biom,",
     "dessen Bereiche am besten passen. Darum liegen nur Biome mit ähnlichem Klima nebeneinander: die Wüste (heiß und",
     "trocken) grenzt an trockene Ebenen und Hügel, nie an feuchte Gegenden.",
-    "Flüsse folgen langen, gewundenen Linien aus dem Seed. Wie viele davon Wasser führen, bestimmt jedes Biom (\"rivers\");",
-    "in der Wüste keine: ein Fluss läuft vor ihrer Grenze aus.",
+    "Die Kontinentalität teilt die Welt: ganz niedrig liegen Seen (\"water\": true, unter dem Wasserspiegel), in der Mitte",
+    "das Land (Ebene, Wald, Hügel, Wüste), ganz hoch das Gebirge (Grate bis über 300 m, oben Schnee).",
+    "Flüsse folgen langen, gewundenen Linien aus dem Seed und führen überall Wasser (\"endless\"): sie entspringen vor dem",
+    "Gebirge (dort \"rivers\": 0) und münden in die Seen.",
     "Jede Welt bekommt beim Erstellen eine Kopie dieser Datei (generator.json im Weltordner) und sieht deshalb immer gleich",
     "aus. Änderungen hier gelten für neue Welten; 'terrain reload' übernimmt sie in die offene Welt."
   ],
@@ -15,9 +17,10 @@
     "climate.*.octaves":     "Feinheit der Ränder (mehr = unruhiger)",
     "climate.*.contrast":    "Streckung: größer = Werte nahe 0 und 1 häufiger",
     "border_blend":          "Übergangsbreite zwischen Biomen (in Klimaeinheiten, 0.04 = einige Dutzend Meter)",
-    "rivers.level":          "Wasserspiegel aller Flüsse (m). Außerhalb der Flüsse bleibt das Gelände mindestens 'floor' darüber",
+    "rivers.level":          "Wasserspiegel aller Flüsse und Seen (m). Außerhalb davon bleibt das Gelände mindestens 'floor' darüber",
     "rivers.spacing":        "Größe des Linienmusters (m): größer = Flüsse weiter auseinander (seltener)",
-    "rivers.presence":       "Anteil der Linien, die Wasser führen (0..1), in Biomen mit 'rivers': 1",
+    "rivers.endless":        "true: jede Linie führt Wasser, ein Fluss endet nur im See oder entspringt vor einem Biom ohne Flüsse. false: Lücken (presence)",
+    "rivers.presence":       "nur ohne endless: Anteil der Linien, die Wasser führen (0..1)",
     "rivers.meander":        "Schlingen: wie weit (m) und wie groß die Bögen sind (meander_scale, m)",
     "rivers.width":          "Breite der Rinne [schmal, breit] (m); depth: Tiefe in der Mitte [von, bis] (m)",
     "rivers.bank":           "Ufer über dem Wasser (m)",
@@ -26,8 +29,11 @@
     "rivers.bed_color":      "Farbe von Flussbett und Ufer",
     "biomes[].climate":      "Bereiche [von, bis] je Klimawert (temperature, humidity, continentalness, erosion)",
     "biomes[].height":       "Höhe: base (m) + amplitude (m) * Rauschen; scale = Größe der Formen (m), octaves, persistence",
+    "biomes[].height.ridges": "Gebirge: Grate bis height (m), scale = Abstand der Ketten (m), octaves, persistence, sharpness = wie spitz, ramp = über wie viel Klima (vom Biomrand nach innen) sie auf volle Höhe wachsen",
     "biomes[].surface":      "Oberfläche: Farbe, Farbe an steilen Hängen ab slope_start bis slope_end (1 - Normale.y), Material",
-    "biomes[].rivers":       "wie viele Flüsse hier Wasser führen: 0 = keine, 1 = alle (rivers.presence)",
+    "biomes[].water":        "true: See/Meer. Das Gelände liegt unter dem Wasserspiegel, dort ist Wasser; am Ufer ein Strand in der Farbe 'color'",
+    "biomes[].snow":         "Schnee: ab from (m) über blend (m) werden ebene Stellen weiß (color); dort kein Gras und keine Bäume",
+    "biomes[].rivers":       "wie viele Flüsse hier Wasser führen: 0 = keine (sie entspringen vorher), 1 = alle",
     "biomes[].trees":        "Bäume: per_ha = Bäume je Hektar (100 x 100 m), types = welche Arten aus trees.json, mit Gewicht",
     "biomes[].border_color": "Farbe der Biomgrenze auf diesem Biom (Ansicht -> Biomgrenzen)",
     "biomes[].grass":        "Gras: density = Büschel je m², height = Höhe [von, bis] (m), patches = 0 gleichmäßig .. 1 nur in Flecken, colors = Farben (zufällig gemischt)",
@@ -37,7 +43,9 @@
     "biomes[].sticks":       "Stöcke und Äste: per_ha, length = Länge [von, bis] (m), thickness = Dicke [von, bis] (m), skew, material = ein Holz oder eine Liste (zufällig)",
     "biomes[].logs":         "Umgefallene Stämme: per_ha, length (m), thickness = Durchmesser (m), skew, material",
     "biomes[].stumps":       "Baumstümpfe: per_ha, height = Höhe (m), thickness = Durchmesser (m), material",
-    "scatter":               "Zeug am Boden (Steine, Stöcke, Stämme, Stümpfe): distance = bis wohin gezeichnet (m, kleine Steine nur näher), stick_distance = bis wohin Stöcke (m), solid_distance = bis wohin große Stücke um die Spieler feste Teile sind (m), big_stone = ab diesem Durchmesser (m) ist ein Stein groß. Kleines ist nur Bild, bis man es aufhebt; Großes ist fest, bis man es anfasst (Stümpfe bleiben fest)",
+    "biomes[].ores":         "Erzbrocken: per_ha, size = Durchmesser (m), skew, material = Erz oder Liste (zufällig). Fest im Boden; mit der Spitzhacke (7) schlägt man Erz ab",
+    "biomes[].cacti":        "Kakteen: per_ha, height = Höhe (m), thickness = Durchmesser des Stamms (m), skew, material. Große bekommen Arme; sie wurzeln (bleiben stehen)",
+    "scatter":               "Zeug am Boden (Steine, Stöcke, Stämme, Stümpfe, Erze, Kakteen): distance = bis wohin gezeichnet (m, kleine Steine nur näher), stick_distance = bis wohin Stöcke (m), solid_distance = bis wohin große Stücke um die Spieler feste Teile sind (m), big_stone = ab diesem Durchmesser (m) ist ein Stein groß. Kleines ist nur Bild, bis man es aufhebt; Großes ist fest, bis man es anfasst (Stümpfe, Erze und Kakteen bleiben fest)",
     "flora":                 "Bewuchs nur im Bild (keine Physik): grass_distance = bis wohin volles Gras und Blumen (m; dahinter bis zum Dreifachen eine grobe Stufe), bush_distance = bis wohin Büsche (m)"
   },
   "version": 1,
@@ -53,7 +61,7 @@
   "rivers": {
     "level":         0.0,
     "spacing":       2500,
-    "presence":      0.6,
+    "endless":       true,
     "meander":       60,
     "meander_scale": 260,
     "width":         [5, 14],
@@ -69,7 +77,7 @@
     {
       "id":      "plains",
       "label":   "Ebene",
-      "climate": { "humidity": [0.35, 0.62], "erosion": [0.0, 0.5] },
+      "climate": { "humidity": [0.35, 0.62], "erosion": [0.0, 0.5], "continentalness": [0.24, 0.72] },
       "height":  { "base": 1.0, "amplitude": 1.2, "scale": 180, "octaves": 3, "persistence": 0.5 },
       "surface": {
         "color":       [0.19, 0.29, 0.10],
@@ -93,7 +101,7 @@
     {
       "id":      "forest",
       "label":   "Wald",
-      "climate": { "humidity": [0.62, 1.0], "erosion": [0.0, 0.5] },
+      "climate": { "humidity": [0.62, 1.0], "erosion": [0.0, 0.5], "continentalness": [0.24, 0.72] },
       "height":  { "base": 1.5, "amplitude": 2.5, "scale": 150, "octaves": 4, "persistence": 0.5 },
       "surface": {
         "color":       [0.11, 0.18, 0.06],
@@ -117,7 +125,7 @@
     {
       "id":      "hills",
       "label":   "Hügellandschaft",
-      "climate": { "humidity": [0.35, 1.0], "erosion": [0.5, 1.0] },
+      "climate": { "humidity": [0.35, 1.0], "erosion": [0.5, 1.0], "continentalness": [0.24, 0.72] },
       "height":  { "base": 4.0, "amplitude": 16.0, "scale": 140, "octaves": 5, "persistence": 0.45 },
       "surface": {
         "color":       [0.16, 0.25, 0.09],
@@ -141,7 +149,7 @@
     {
       "id":      "desert",
       "label":   "Wüste",
-      "climate": { "temperature": [0.55, 1.0], "humidity": [0.0, 0.35] },
+      "climate": { "temperature": [0.55, 1.0], "humidity": [0.0, 0.35], "continentalness": [0.24, 0.72] },
       "height":  { "base": 2.0, "amplitude": 4.0, "scale": 60, "octaves": 3, "persistence": 0.35 },
       "surface": {
         "color":       [0.58, 0.44, 0.24],
@@ -150,14 +158,84 @@
         "slope_end":   0.6,
         "material":    "sand"
       },
-      "rivers":       0.0,
+      "rivers":       1.0,
       "trees":        { "per_ha": 0 },
       "grass":        { "density": 0.6, "height": [0.2, 0.55], "patches": 0.9,
                         "colors": [[0.66, 0.56, 0.24], [0.58, 0.46, 0.20], [0.72, 0.62, 0.30]] },
       "flowers":      { "density": 0.0 },
       "bushes":       { "per_ha": 6, "size": [0.4, 1.0], "colors": [[0.40, 0.36, 0.20], [0.34, 0.33, 0.18]] },
       "stones":       { "per_ha": 250, "size": [0.04, 1.6], "skew": 2.8, "material": "sandstone" },
+      "cacti":        { "per_ha": 20, "height": [0.35, 4.5], "thickness": [0.2, 0.55], "skew": 1.6, "material": "cactus" },
       "border_color": [1.0, 0.2, 0.2]
+    },
+    {
+      "id":      "steppe",
+      "label":   "Steppe",
+      "climate": { "temperature": [0.0, 0.55], "humidity": [0.0, 0.35], "continentalness": [0.24, 0.72] },
+      "height":  { "base": 2.0, "amplitude": 3.0, "scale": 220, "octaves": 4, "persistence": 0.45 },
+      "surface": {
+        "color":       [0.36, 0.34, 0.17],
+        "slope_color": [0.38, 0.32, 0.22],
+        "slope_start": 0.3,
+        "slope_end":   0.55,
+        "material":    "soil"
+      },
+      "rivers":       1.0,
+      "trees":        { "per_ha": 1, "types": { "spruce_young": 2, "oak_young": 1 } },
+      "grass":        { "density": 4, "height": [0.15, 0.5], "patches": 0.5,
+                        "colors": [[0.42, 0.38, 0.17], [0.36, 0.34, 0.15], [0.48, 0.43, 0.22]] },
+      "flowers":      { "density": 0.04, "colors": [[0.95, 0.85, 0.3], [0.6, 0.45, 0.8]] },
+      "bushes":       { "per_ha": 12, "size": [0.4, 1.0], "colors": [[0.30, 0.31, 0.15], [0.26, 0.28, 0.13]] },
+      "stones":       { "per_ha": 200, "size": [0.04, 1.2], "skew": 3.0, "material": "fieldstone" },
+      "sticks":       { "per_ha": 10, "length": [0.3, 0.9], "thickness": [0.015, 0.035], "skew": 2, "material": "oak" },
+      "border_color": [0.85, 0.75, 0.45]
+    },
+    {
+      "id":      "lake",
+      "label":   "See",
+      "climate": { "continentalness": [0.0, 0.24] },
+      "water":   true,
+      "height":  { "base": -7.0, "amplitude": 3.5, "scale": 260, "octaves": 3, "persistence": 0.5 },
+      "surface": {
+        "color":       [0.56, 0.48, 0.32],
+        "slope_color": [0.42, 0.36, 0.26],
+        "slope_start": 0.3,
+        "slope_end":   0.55,
+        "material":    "sand"
+      },
+      "rivers":       1.0,
+      "trees":        { "per_ha": 0 },
+      "grass":        { "density": 0 },
+      "flowers":      { "density": 0 },
+      "bushes":       { "per_ha": 0 },
+      "border_color": [0.25, 0.55, 1.0]
+    },
+    {
+      "id":      "mountains",
+      "label":   "Gebirge",
+      "climate": { "continentalness": [0.72, 1.0] },
+      "height":  {
+        "base": 14.0, "amplitude": 12.0, "scale": 170, "octaves": 5, "persistence": 0.5,
+        "ridges": { "height": 340, "scale": 1500, "octaves": 6, "persistence": 0.5, "sharpness": 2.0, "ramp": 0.12 }
+      },
+      "surface": {
+        "color":       [0.19, 0.24, 0.11],
+        "slope_color": [0.37, 0.36, 0.34],
+        "slope_start": 0.12,
+        "slope_end":   0.3,
+        "material":    "granite"
+      },
+      "snow":         { "from": 230, "blend": 35, "color": [0.88, 0.90, 0.94] },
+      "rivers":       0.0,
+      "trees":        { "per_ha": 12, "types": { "spruce_big": 1, "spruce_mid": 2, "spruce_young": 2 } },
+      "grass":        { "density": 2.5, "height": [0.08, 0.25], "patches": 0.6,
+                        "colors": [[0.22, 0.26, 0.12], [0.26, 0.28, 0.14], [0.30, 0.30, 0.17]] },
+      "flowers":      { "density": 0.08, "colors": [[0.95, 0.95, 0.95], [0.55, 0.45, 0.90], [0.95, 0.75, 0.20]] },
+      "bushes":       { "per_ha": 10, "size": [0.4, 1.0], "colors": [[0.14, 0.19, 0.08], [0.17, 0.21, 0.10]] },
+      "stones":       { "per_ha": 600, "size": [0.05, 2.8], "skew": 2.2, "material": "granite" },
+      "ores":         { "per_ha": 12, "size": [0.45, 1.4], "skew": 1.6, "material": ["iron_ore", "iron_ore", "copper_ore", "coal"] },
+      "sticks":       { "per_ha": 15, "length": [0.3, 1.0], "thickness": [0.015, 0.04], "skew": 2, "material": "spruce" },
+      "border_color": [0.80, 0.80, 0.90]
     }
   ]
 }

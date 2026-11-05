@@ -1,6 +1,7 @@
 // Deterministisches Rauschen (siehe Noise.h)
 #include "Noise.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace noise {
@@ -51,6 +52,20 @@ double fbm(uint64_t seed, double x, double z, int octaves, double persistence, d
         // jede Oktave eigener Seed und leicht verschoben: keine sichtbaren Gittermuster an den Ursprüngen
         sum += amp * gradient(mix64(seed + (uint64_t)o * 0x9E3779B97F4A7C15ull), x * f + o * 17.31, z * f - o * 11.73);
         norm += amp;
+        amp *= persistence;
+        f *= lacunarity;
+    }
+    return norm > 0 ? sum / norm : 0.0;
+}
+
+double ridged(uint64_t seed, double x, double z, int octaves, double persistence, double lacunarity, double sharpness) {
+    double sum = 0, amp = 1, norm = 0, f = 1, weight = 1;
+    for (int o = 0; o < octaves; ++o) {
+        const double n = gradient(mix64(seed + (uint64_t)o * 0x9E3779B97F4A7C15ull), x * f + o * 17.31, z * f - o * 11.73);
+        const double r = std::pow(std::max(0.0, 1.0 - std::abs(n)), sharpness);
+        sum += amp * r * weight;
+        norm += amp;
+        weight = std::min(1.0, std::max(0.0, r * 1.5));  // die nächste Oktave vor allem auf den Kämmen
         amp *= persistence;
         f *= lacunarity;
     }
