@@ -352,26 +352,50 @@ TreeModel buildTreeModel(const TreeType& t, uint64_t seed) {
     // Krone
     const double cr = t.crownRadius;
     if (t.palm) {
-        // Palme: Wedel vom Stammende aus im Kreis, erst schräg hinauf, dann im Bogen nach unten; je Wedel eine Reihe
-        // flacher Büschel, die zur Spitze kleiner werden
-        const dvec3 top = center(H);
-        const int fronds = 8;
-        for (int f = 0; f < fronds; ++f) {
-            const double az = f * 2.0 * kPi / fronds + r.range(-0.25, 0.25), len = cr * r.range(0.85, 1.1);
-            const dvec3 out(std::cos(az), 0, std::sin(az));
-            const int n = 5;
-            for (int k = 0; k < n; ++k) {
-                const double s = (k + 0.5) / n;                      // 0 am Stamm .. 1 an der Spitze
-                const double rise = 0.55 * len * s - 0.95 * len * s * s;  // Bogen: hinauf, dann hängend
-                const dvec3 c = top + out * (len * s) + dvec3(0, rise + 0.2, 0);
-                const double w = cr * 0.2 * (1.0 - 0.6 * s);
-                const dvec3 radii(std::abs(out.x) * len / n * 0.75 + w * std::abs(out.z), w * 0.25, std::abs(out.z) * len / n * 0.75 + w * std::abs(out.x));
-                const uint64_t bs = noise::mix64(seed + 701 + (uint64_t)(f * 16 + k));
-                blob(m.leaves, c, radii, 1, bs);
-                if (k % 2 == 0) blob(m.leavesLow, c, radii * 1.3, 0, bs);
+        // Palme: Wedel vom Stammende aus im Kreis. Jeder Wedel ist ein durchgehendes Blatt: erst schräg hinauf, dann im
+        // Bogen hängend; am Stamm und an der Spitze schmal, in der Mitte breit, entlang der Mittelrippe nach unten
+        // geknickt. Beide Seiten werden gezeichnet (man sieht die Wedel auch von unten)
+        const dvec3 top = center(H) + dvec3(0, 0.1, 0);
+        const dvec3 up(0, 1, 0);
+        auto frond = [&](std::vector<solid::Vertex>& out, const dvec3& dir, double len, double lift, double width, int n) {
+            const dvec3 side = glm::normalize(glm::cross(dir, up));
+            std::vector<dvec3> mid, left, right;
+            for (int k = 0; k <= n; ++k) {
+                const double s = double(k) / n;  // 0 am Stamm .. 1 an der Spitze
+                const double rise = lift * len * s - (lift + 0.55) * len * s * s;
+                const dvec3 c = top + dir * (len * s * (1.0 - 0.12 * s)) + up * rise;
+                const double w = width * std::pow(std::sin(kPi * std::clamp(s * 0.92 + 0.04, 0.0, 1.0)), 0.6);
+                mid.push_back(c);
+                left.push_back(c + side * w - up * (w * 0.35));
+                right.push_back(c - side * w - up * (w * 0.35));
             }
+            auto quad = [&](const dvec3& a, const dvec3& b, const dvec3& c, const dvec3& d) {
+                dvec3 nrm = glm::cross(b - a, c - a);
+                nrm = glm::length(nrm) > 1e-9 ? glm::normalize(nrm) : up;
+                if (nrm.y < 0) nrm = -nrm;  // Licht wie von oben (beide Seiten gleich hell)
+                tri(out, a, b, c, nrm, nrm, nrm), tri(out, a, c, d, nrm, nrm, nrm);
+                tri(out, a, c, b, nrm, nrm, nrm), tri(out, a, d, c, nrm, nrm, nrm);  // Rückseite
+            };
+            for (int k = 0; k < n; ++k) {
+                quad(mid[k], left[k], left[k + 1], mid[k + 1]);
+                quad(mid[k], mid[k + 1], right[k + 1], right[k]);
+            }
+        };
+        const int fronds = 9;
+        for (int f = 0; f < fronds; ++f) {
+            const double az = f * 2.0 * kPi / fronds + r.range(-0.2, 0.2), len = cr * r.range(0.85, 1.1);
+            const double lift = r.range(0.25, 0.65);  // manche stehen höher, manche hängen schon früh
+            const dvec3 dir(std::cos(az), 0, std::sin(az));
+            frond(m.leaves, dir, len, lift, cr * 0.17, 10);
+            frond(m.leavesLow, dir, len, lift, cr * 0.17, 4);
         }
-        blob(m.leaves, top + dvec3(0, 0.15, 0), dvec3(R1 * 3.0 + 0.15), 1, noise::mix64(seed + 699));  // Herz der Krone
+        // zwei junge Wedel fast senkrecht in der Mitte
+        for (int f = 0; f < 2; ++f) {
+            const double az = r.range(0, 2 * kPi);
+            const dvec3 dir = glm::normalize(dvec3(std::cos(az) * 0.35, 0, std::sin(az) * 0.35) + dvec3(1e-3, 0, 0));
+            frond(m.leaves, dir, cr * 0.45, 2.2, cr * 0.08, 6);
+        }
+        blob(m.leaves, top, dvec3(R1 * 2.2 + 0.12), 1, noise::mix64(seed + 699));  // Herz der Krone
         m.crownAnchor = top;
     } else if (t.cone) {
         // Nadelbaum: überlappende Kegelstufen, unten breit, oben spitz
