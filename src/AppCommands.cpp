@@ -732,6 +732,27 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
                    (pauseStopped_ ? ", world paused" : "");
         return true;
     }
+    if (cmd == "map") {  // große Karte des Spiel-Modus (M)
+        const std::string v = t.size() > 1 ? t[1] : "";
+        if (!play_) {
+            out = "Error: the map belongs to play mode ('mode play')";
+            return true;
+        }
+        double x = 0, z = 0, mpp = 0;
+        if (v == "open" || v == "close") {
+            openMap(v == "open");
+        } else if (v == "zoom" && t.size() > 2 && parseNum(t, 2, mpp) && mpp > 0) {
+            mapMpp_ = std::clamp(mpp, 0.25, 80.0);
+        } else if (v == "center" && t.size() > 3 && parseNum(t, 2, x) && parseNum(t, 3, z)) {
+            mapCenter_ = glm::dvec2(x, z) / 100.0;
+        } else if (!v.empty()) {
+            out = "Error: map [open|close] | map zoom <m_per_pixel> | map center <x> <z> (cm)";
+            return true;
+        }
+        out = std::string("map ") + (mapOpen_ ? "open" : "closed") + ", center " + fmtNum(mapCenter_.x * 100, 0) + " " +
+              fmtNum(mapCenter_.y * 100, 0) + " cm, " + fmtNum(mapMpp_, 2) + " m per pixel";
+        return true;
+    }
     if (cmd == "inventory") {  // Inventar des Spiel-Modus (E), siehe docs/21
         const std::string v = t.size() > 1 ? t[1] : "";
         if (!play_) {

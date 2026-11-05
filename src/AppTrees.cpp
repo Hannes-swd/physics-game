@@ -35,7 +35,8 @@ ObjectGpuData leafData(const TreeType& t, float seed) {
 } // namespace
 
 bool App::addCrown(FrameDesc& fd, const Object& o, const glm::mat4& model, bool low, bool shadow) {
-    if (!o.crown || o.treeType.empty()) return false;
+    // nur am stehenden Baum (gefällte aus älteren Speicherständen haben die Krone noch: kein Laub mehr zeigen)
+    if (!o.crown || !o.rooted || o.treeType.empty()) return false;
     const TreeLibrary& lib = world_->trees();
     const int ti = lib.find(o.treeType);
     if (ti < 0) return false;

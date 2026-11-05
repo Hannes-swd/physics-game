@@ -167,7 +167,24 @@ World::~World() {
 
 void World::refreshPlacement(Object& o) {
     worldBounds(o, o.wMin, o.wMax);
-    grid_.place(o.id, o.wMin, o.wMax);
+    glm::dvec3 mn = o.wMin, mx = o.wMax;
+    addCrownBounds(o, mn, mx);  // das Raster dient dem Zeichnen: die Krone gehört dazu (sonst verschwindet sie zu früh)
+    grid_.place(o.id, mn, mx);
+}
+
+void World::addCrownBounds(const Object& o, glm::dvec3& mn, glm::dvec3& mx) {
+    if (!o.crown || !o.rooted || o.treeType.empty()) return;
+    const TreeLibrary& lib = trees();
+    const int ti = lib.find(o.treeType);
+    if (ti < 0) return;
+    const TreeModel& m = lib.model(ti, o.treeVariant);
+    const double s = o.treeScale, r = m.radius * s * 1.15, h = m.height * s * 1.05;
+    for (int k = 0; k < 8; ++k) {  // Quader um die Krone (Baumraum: Fuß im Ursprung, y nach oben), in die Welt gedreht
+        const glm::dvec3 local = o.treeOrigin + glm::dvec3(k & 1 ? r : -r, k & 2 ? h : 0.0, k & 4 ? r : -r);
+        const glm::dvec3 p = o.pos + o.rot * local;
+        mn = glm::min(mn, p);
+        mx = glm::max(mx, p);
+    }
 }
 
 std::string World::nextName(const std::string& base) const {
@@ -894,6 +911,8 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
                 crownPiece = (int)i;
             }
         }
+        // Gefällt: hängt die Krone nicht mehr am stehenden Stammfuß, ist das Laub weg (ein liegender Stamm ohne Krone)
+        if (wasRooted && crownPiece != rootPiece) crownPiece = -1;
     }
 
     // größtes Stück bleibt das ursprüngliche Teil
@@ -967,6 +986,7 @@ bool World::replaceWithParts(Object& o, std::vector<solid::Solid>& parts, std::v
             n->treeOrigin = treeOrigin - ci;
             n->rooted = rootPiece == (int)i;
             n->crown = crownPiece == (int)i;
+            if (n->crown) refreshPlacement(*n);
         }
         if (wasRooted ? rootPiece == (int)i : fixed || scatterRoot == (int)i) setFixed(*n, true);
         else if (wasRooted) topple(*n);
@@ -1289,6 +1309,7 @@ Object* World::plantTree(int type, int variant, double scale, const glm::dvec3& 
     setFixed(*o, true);
     o->treeSig = treeSignature(*o);
     if (key) treeObjects_[key] = o->id;
+    refreshPlacement(*o);  // jetzt mit Krone
     return o;
 }
 

@@ -128,8 +128,9 @@ void App::drawUI() {
         drawViewLabels();
     } else {
         drawPlayHud();
-        drawHandToolBar();
-        if (showMinimap_) drawMinimap();
+        if (!mapOpen_) drawHandToolBar();
+        if (mapOpen_) drawBigMap();
+        else if (showMinimap_) drawMinimap();
     }
     drawStatusBar();
     drawToasts();

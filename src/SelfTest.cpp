@@ -1149,10 +1149,13 @@ int runSelfTest() {
         for (const auto& op : w.objects()) {
             if (op->treeType.empty() || glm::length(glm::dvec2(op->pos.x - spot.pos.x, op->pos.z - spot.pos.z)) > 35.0) continue;
             if (op->rooted && op->fixed && op->wMax.y < spot.pos.y + 2.0) stump = op.get();
-            if (op->crown && !op->fixed && op->mass > treeMass * 0.3) trunk = op.get();
+            if (!op->fixed && op->mass > treeMass * 0.3) trunk = op.get();
         }
-        check(stump && trunk && trunk->wMax.y - trunk->wMin.y < 6.0 && !w.untouchedTree(*trunk),
-              "a cut tree falls: the stump stays rooted, the trunk with its crown lies on the ground",
+        bool leaves = false;  // nach dem Fällen hat kein Stück mehr Laub
+        for (const auto& op : w.objects())
+            if (op->treeKey == spot.key || (trunk && op.get() == trunk) || (stump && op.get() == stump)) leaves |= op->crown;
+        check(stump && trunk && trunk->wMax.y - trunk->wMin.y < 6.0 && !w.untouchedTree(*trunk) && !leaves,
+              "a cut tree falls: the stump stays rooted, the trunk lies on the ground without its leaves",
               trunk ? "trunk " + num(trunk->mass) + " kg, " + num(trunk->wMax.y - trunk->wMin.y) + " m high now" : std::string("no falling trunk"));
 
         // Weit weg: unveränderte Bäume verschwinden wieder, der gefällte bleibt; Speichern ohne die unveränderten

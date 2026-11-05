@@ -489,6 +489,8 @@ public:
     // Baumarten dieser Welt (ohne Aufruf: die eingebauten); mit Gelände entstehen daraus die Bäume des Generators
     void setTrees(std::shared_ptr<const TreeConfig> cfg);
     const TreeLibrary& trees();
+    // Begrenzung um die Krone eines stehenden Baum-Teils erweitern (Zeichnen: Krone sichtbar, auch wenn der Stamm es nicht ist)
+    void addCrownBounds(const Object& o, glm::dvec3& mn, glm::dvec3& mx);
     Forest* forest() { return forest_.get(); }
     // Einen Baum als festes Teil aufstellen (Stammfuß bei base, Drehung um Y). key: Platz des Generators (0: gepflanzt)
     Object* plantTree(int type, int variant, double scale, const glm::dvec3& base, double yaw, uint64_t key = 0);

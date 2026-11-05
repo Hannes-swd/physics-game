@@ -230,6 +230,14 @@ private:
     // Minimap oben rechts (AppMinimap.cpp): Norden oben, man selbst als Pfeil in der Mitte, Mitspieler als Pfeile in
     // ihrer Farbe. Das Gelände kommt aus dem Generator, je Zelle einmal gerechnet und behalten
     void drawMinimap();
+    // Große Karte (M): Rad zoomt, Maus ziehen verschiebt; die Welt läuft weiter, die Figur steht
+    void openMap(bool on);
+    void drawBigMap();
+    // Karte zeichnen: Rechteck a..b, Mitte (x, z), Meter je Pixel, höchstens budget neue Zellen
+    void drawMapView(struct ImDrawList* dl, struct ImVec2 a, struct ImVec2 b, glm::dvec2 center, double mpp, int budget, bool clampOthers);
+    bool mapOpen_ = false, mapDragging_ = false;
+    glm::dvec2 mapCenter_{0};
+    double mapMpp_ = 4.0;  // Meter je Pixel
     struct MapCell {
         glm::vec3 color{0};
         float height = 0;

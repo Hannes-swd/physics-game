@@ -31,7 +31,10 @@ Jede Art hat **3 Formen** (gleiche Werte, anders gewachsen: Krümmung, Äste, B�
 - **Fest durch die Wurzel:** Ein stehender Baum bewegt sich nicht und kostet in der Physik nichts.
 - **Fällen:** Wird das Teil zersägt (oder durchgebohrt), bleibt nur das Stück mit dem **Stammfuß** fest stehen (der
   Stumpf). Alles andere ist frei und fällt, mit einem kleinen Anstoß in Richtung seiner Neigung (ein gerader Stamm stünde
-  sonst auf dem Stumpf). Die Krone bleibt am Stück, an dem sie hängt (dem oberen). Ein abgesägter Ast fällt ebenso.
+  sonst auf dem Stumpf). Fällt das Stück, an dem die Krone hängt, ist das **Laub weg**: Am Boden liegt ein kahler
+  Stamm mit Ästen. Nur solange die Krone am stehenden Stammfuß bleibt (etwa wenn nur ein Ast abgesägt wird), hat der Baum
+  noch Laub. Ein abgesägter Ast fällt ebenso. Die Krone zählt beim Zeichnen zum Baum: Sie bleibt sichtbar, solange sie
+  im Bild ist, auch wenn der Stamm schon hinter dem Bildrand liegt.
   Schlägt ein langer Stamm hart auf, kann er brechen (wie jedes Teil, siehe [08](08-Verbindungen-und-Bruch.md)).
 - Danach ist alles normales Holz: sägen, bohren, hobeln, anzünden. Ein großer Stamm ist zum Tragen zu schwer: erst in
   Stücke sägen.

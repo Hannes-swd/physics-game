@@ -560,8 +560,10 @@ void App::buildFrame(FrameDesc& fd) {
             if (!o) continue;
             double px = 0;
             bool vis = false;
+            glm::dvec3 bmn = o->wMin, bmx = o->wMax;
+            if (o->crown) world_->addCrownBounds(*o, bmn, bmx);  // Baum: sichtbar, solange die Krone es ist
             for (size_t i = 0; i < views_.size(); ++i)
-                if (boxInFrustum(frusta[i], o->wMin - O, o->wMax - O)) {
+                if (boxInFrustum(frusta[i], bmn - O, bmx - O)) {
                     vis = true;
                     px = std::max(px, pixelSize(views_[i], *o));
                 }

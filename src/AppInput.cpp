@@ -125,6 +125,10 @@ void App::handleInput(float dt) {
             invOpen(false);
             escTaken_ = true;
         }
+        if (mapOpen_ && !escTaken_ && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {  // große Karte: zu
+            openMap(false);
+            escTaken_ = true;
+        }
         // ESC: offene Einstellungen schließen; im Spiel-Modus sonst das Pausenfenster auf bzw. zu
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !escTaken_ && (showSettings_ || play_)) {
             if (showSettings_) showSettings_ = false;
@@ -544,6 +548,7 @@ void App::enterPlay() {
 void App::leavePlay() {
     if (!play_) return;
     invOpen(false);
+    mapOpen_ = mapDragging_ = false;
     if (pause_ != Pause::None && opt_.pauseUi) {  // das Pausenfenster gehört zum Spiel-Modus
         opt_.pauseUi->close();
         glfwFocusWindow(window_);
@@ -581,6 +586,12 @@ void App::playInput(float dt) {
         return;
     }
     if (catalogOpen_) return;  // Auswahl der Bauvorlagen / Rezepte offen (Qt-Fenster, fängt B, C und Esc selbst ab)
+    // M: große Karte auf / zu. Offen: die Maus gehört der Karte (zoomen, ziehen), die Figur bleibt stehen
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_M, false) && !planMode_) {
+        openMap(!mapOpen_);
+        return;
+    }
+    if (mapOpen_) return;
     if (!cursorCaptured_) {
         if (glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !io.WantCaptureMouse) setCursorCaptured(true);
         return;
