@@ -622,6 +622,7 @@ void App::buildFrame(FrameDesc& fd) {
     addFlora(fd, visibleAny);  // Gras, Blumen, Büsche
     addScatter(fd, visibleAny); // Steine, Stöcke, Stämme, Stümpfe (die großen in der Nähe sind Teile, oben schon dabei)
     addPlans(fd);      // Bauvorlagen: Hologramme
+    addAnimals(fd, visibleAny);  // Tiere (AppAnimals.cpp)
     addAvatars(fd);    // andere Spieler im LAN
     addFireFx(fd);     // Flammen, Rauch, Feuerschein
     addWaterData(fd);  // Gewässer: Wellen, Farbe, Lichtflecken

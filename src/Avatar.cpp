@@ -259,9 +259,35 @@ bool AvatarModel::load(const uint8_t* data, size_t size, float height, std::stri
     fit_ = glm::scale(glm::mat4(1.0f), glm::vec3(scale)) * glm::rotate(glm::mat4(1.0f), glm::pi<float>(), glm::vec3(0, 1, 0)) *
            glm::translate(glm::mat4(1.0f), -glm::vec3(0.5f * (lo.x + hi.x), lo.y, 0.5f * (lo.z + hi.z)));
     unfit_ = glm::inverse(glm::mat3(fit_)) * scale;  // nur Drehung
+    measureSteps();
+    return true;
+}
 
+void AvatarModel::setFootNode(int node) {
+    if (node < 0 || node >= (int)nodes_.size() || node == foot_) return;
+    foot_ = node;
+    // Tiere: Knochen enden am Knie oder Fesselgelenk, nicht am Huf. Darum den untersten Punkt der Haut nehmen, der
+    // fast ganz an diesem Knochen hängt (Hufspitze, Pfote)
+    footVertex_ = -1;
+    float lowest = 1e30f;
+    for (size_t v = 0; v < vertices_.size(); ++v) {
+        const SkinVertex& sv = vertices_[v];
+        float w = 0;
+        for (int k = 0; k < 4; ++k)
+            if (joints_[sv.joint[k]] == node) w += sv.weight[k];
+        if (w < 0.8f) continue;
+        glm::vec4 p(0);
+        for (int k = 0; k < 4; ++k) p += sv.weight[k] * (rest_[joints_[sv.joint[k]]] * inverseBind_[sv.joint[k]] * glm::vec4(sv.p, 1));
+        const float y = glm::vec3(fit_ * p).y;
+        if (y < lowest) lowest = y, footVertex_ = (int)v;
+    }
+    measureSteps();
+}
+
+void AvatarModel::measureSteps() {
     // Schrittgeschwindigkeit je Ablauf: wie schnell gleitet ein aufgesetzter Fuß unter der Figur weg?
     // (in jede Richtung, damit auch Seitwärts- und Rückwärtslaufen passen)
+    std::vector<glm::mat4> global;
     for (size_t ci = 0; ci < clips_.size() && foot_ >= 0; ++ci) {
         Clip& c = clips_[ci];
         if (c.length <= 0) continue;
@@ -270,7 +296,14 @@ bool AvatarModel::load(const uint8_t* data, size_t size, float height, std::stri
         for (int i = 0; i <= n; ++i) {
             Layer l{(int)ci, c.length * i / n, 1.0f};
             evaluate(&l, 1, nullptr, 0, global);
-            foot[i] = glm::vec3(fit_ * global[foot_][3]);
+            if (footVertex_ >= 0) {
+                const SkinVertex& sv = vertices_[(size_t)footVertex_];
+                glm::vec4 p(0);
+                for (int k = 0; k < 4; ++k) p += sv.weight[k] * (global[joints_[sv.joint[k]]] * inverseBind_[sv.joint[k]] * glm::vec4(sv.p, 1));
+                foot[i] = glm::vec3(fit_ * p);
+            } else {
+                foot[i] = glm::vec3(fit_ * global[foot_][3]);
+            }
         }
         float low = 1e30f, high = -1e30f;
         for (int i = 0; i < n; ++i) {
@@ -280,13 +313,12 @@ bool AvatarModel::load(const uint8_t* data, size_t size, float height, std::stri
         double sum = 0, time = 0;
         const float dt = c.length / n;
         for (int i = 0; i < n; ++i)
-            if (foot[i].y < low + 0.03f && foot[i + 1].y < low + 0.03f) {
+            if (foot[i].y < low + 0.0167f * height_ && foot[i + 1].y < low + 0.0167f * height_) {
                 sum += glm::length(glm::vec2(foot[i + 1].x - foot[i].x, foot[i + 1].z - foot[i].z));
                 time += dt;
             }
         c.groundSpeed = time > 0 ? (float)(sum / time) : 0.0f;
     }
-    return true;
 }
 
 bool AvatarModel::loadBuiltin(float height, std::string* error) { return load(kWorkerGlb, sizeof(kWorkerGlb), height, error); }

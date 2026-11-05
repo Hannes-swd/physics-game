@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Animals.h"
 #include "Avatar.h"
 #include "Commands.h"
 #include "Drawing.h"
@@ -435,6 +436,11 @@ private:
     void drawPlayerTags();
     // Spielfiguren zeichnen: Mitspieler und in der Ansicht von hinten (F5) die eigene
     void addAvatars(FrameDesc& fd);
+    // Tiere (AppAnimals.cpp, Animals.h): erscheinen um den Spieler je Biom, Verhalten, Bild
+    void updateAnimals(float dt);
+    void addAnimals(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
+    void loadAnimalLooks();
+    std::string animalsCommand(const std::vector<std::string>& t);
     void addFigure(FrameDesc& fd, uint32_t key, const glm::dvec3& feet, double yaw, double pitch, bool onGround, const glm::vec3* tint,
                    float dt);
     // Blickrichtung vom Kopf aus zum Greifen und Werfen; von hinten gesehen zielt sie auf das, was mitten im Bild liegt
@@ -587,6 +593,23 @@ private:
     int clipIdle_ = -1, clipWalk_ = -1, clipRun_ = -1, clipLeft_ = -1, clipRight_ = -1, clipBack_ = -1;
     std::map<uint32_t, FigureAnim> figureAnim_;
     double figureTime_ = -1;
+    // Tiere: Modelle je Datei (Höhe 1 m), je Art Abläufe und Farben
+    struct AnimalLook {
+        AvatarModel* model = nullptr;  // null: Vogelform oder Modell fehlt
+        std::vector<int> idle;
+        int walk = -1, run = -1, fly = -1;
+        float walkPace = 1, runPace = 5;  // m/s bei Abspieltempo 1
+        std::vector<glm::vec3> colors;    // je Teil des Modells
+    };
+    std::unique_ptr<AnimalWorld> animals_;
+    std::map<std::string, std::unique_ptr<AvatarModel>> animalModels_;
+    std::vector<AnimalLook> animalLooks_;
+    bool showAnimals_ = true;
+    size_t animalsDrawn_ = 0;
+    float animalDt_ = 0;
+    glm::dvec3 animalFocus_{0};
+    double animalFocusSpeed_ = 0;
+    bool animalFocusInit_ = false;
 
     // Oberfläche
     bool showConsole_ = false, showHelp_ = false, focusConsole_ = false;

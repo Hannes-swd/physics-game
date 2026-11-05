@@ -32,6 +32,7 @@ Anleitung sind deutsch.
 | [21-Inventar.md](21-Inventar.md) | **Inventar**: E öffnet es, Teile bis 30 kg einstecken (E mit Teil in der Hand, F), Kästchen so groß wie ihr Gewicht, Rechtsklick nimmt heraus, drehen und mit Linksklick setzen; Befehl `inventory` |
 | [22-Herstellen.md](22-Herstellen.md) | **Herstellen**: Rezept wählen (C), als oranges Hologramm hinlegen, mit Material aus der Hand oder dem Inventar füllen (E), fertig kommt das Teil ins Inventar; Steinaxt, Spitzhacke, Hammer, Messer, Speer, Schaufel, Fackel, Brett, Kantholz, Mauerstein, Steinplatte, Schale, Kistchen, Hocker; eigene Rezepte als JSON; Befehl `craft` |
 | [23-Tag-und-Nacht.md](23-Tag-und-Nacht.md) | **Tag und Nacht**: ein Tag dauert 20 Minuten, Sonne mit Morgen- und Abendrot, Mond mit Phase und Mondschatten, echte Sternbilder und Milchstraße, die sich um den Polarstern drehen; helle Nächte wie früher ohne Lampen; Befehle `time`, `sky` |
+| [24-Tiere.md](24-Tiere.md) | **Tiere** je Biom: erscheinen um den Spieler und verschwinden außer Sicht (Eichhörnchen schnell, Gämsen am Berg und Adler am Himmel erst weit weg), scheu, ruhig, neugierig (Wolf), Herden und Einzelgänger, Vögel kreisen und ziehen im Schwarm; Modelle (Quaternius, CC0), `animals.json`, Befehl `animals` |
 
 ## Schnellstart
 

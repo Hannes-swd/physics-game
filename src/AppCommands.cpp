@@ -680,6 +680,10 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         out = reloadTrees();
         return true;
     }
+    if (cmd == "animals" || cmd == "animal") {  // Tiere (AppAnimals.cpp)
+        out = animalsCommand(t);
+        return true;
+    }
     if (cmd == "tp" || cmd == "teleport") {
         out = teleportCommand(t);
         return true;

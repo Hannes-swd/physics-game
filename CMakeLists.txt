@@ -135,7 +135,15 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -DIN=${TREES_SRC} -DOUT=${TREES_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
   DEPENDS ${TREES_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
   COMMENT "Bäume trees.json")
-add_custom_target(assets DEPENDS ${AVATAR_OUT} ${MATERIALS_OUT} ${BIOMES_OUT} ${TREES_OUT})
+# Tiere: das Spiel liest assets/animals.json (Modelle aus assets/animals); diese Kopie ist eingebaut, falls die Datei fehlt
+set(ANIMALS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/assets/animals.json)
+set(ANIMALS_OUT ${SHADER_OUT}/animals.json.inc)
+add_custom_command(
+  OUTPUT ${ANIMALS_OUT}
+  COMMAND ${CMAKE_COMMAND} -DIN=${ANIMALS_SRC} -DOUT=${ANIMALS_OUT} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  DEPENDS ${ANIMALS_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_file.cmake
+  COMMENT "Tiere animals.json")
+add_custom_target(assets DEPENDS ${AVATAR_OUT} ${MATERIALS_OUT} ${BIOMES_OUT} ${TREES_OUT} ${ANIMALS_OUT})
 
 # ---------------------------------------------------------------- Qt (Hauptmenü, qml/)
 # Qt 6 mit Quick und QuickControls2. Gefunden über CMAKE_PREFIX_PATH bzw. Qt6_DIR, sonst wird die neueste Version unter

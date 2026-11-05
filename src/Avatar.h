@@ -48,6 +48,11 @@ public:
     glm::vec3 restPosition(int node) const;      // Gelenk in Ruhelage, Raum der Figur (m)
     // Knochen, die nicht in der Kette hängen (z.B. Fuß-Ziele für IK unter der Wurzel), bewegen sich mit einem anderen mit
     void setFollow(int follower, int leader);
+    // Knochen, an dem clipGroundSpeed/clipSync gemessen werden (sonst der erste mit "Foot" im Namen; Tiere haben oft keinen)
+    void setFootNode(int node);
+    int clipCount() const { return (int)clips_.size(); }
+    const std::string& clipName(int clip) const { return clips_[(size_t)clip].name; }
+    size_t triangleCount() const { return triangles_.size() / 3; }
 
     // Figur in Lage setzen. Ausgabe: Dreiecke in Metern, Füße bei y = 0, Blick nach -z, Höhe wie bei load() gewählt.
     void pose(const Layer* layers, int count, const Bend* bends, int bendCount, std::vector<solid::Vertex>& out) const;
@@ -79,6 +84,7 @@ private:
     };
 
     void evaluate(const Layer* layers, int count, const Bend* bends, int bendCount, std::vector<glm::mat4>& global) const;
+    void measureSteps();
 
     std::vector<Node> nodes_;
     std::vector<std::string> names_;
@@ -93,6 +99,7 @@ private:
     glm::mat3 unfit_{1.0f};  // Richtungen aus dem Raum der Figur zurück ins Modell
     float height_ = 1.8f;
     int foot_ = -1;
+    int footVertex_ = -1;  // Hautpunkt statt Knochen (setFootNode)
     std::vector<std::pair<int, int>> follows_;  // (Folger, Führer)
     std::vector<glm::mat4> rest_;               // Ruhelage (Modellraum)
 };
