@@ -107,6 +107,8 @@ struct Animal {
     float hp = 1.0f;         // Lebenskraft 0..1: unter 0,5 humpelt es (kein Rennen), bei 0 ist es tot (erholt sich langsam)
     bool dead = false;
     float deadTime = 0;      // so lange (s) schon tot
+    float hitAnim = -1;      // Treffer-Ablauf (Zucken) läuft seit so vielen s (-1: keiner)
+    bool hitLeft = false;    // von links getroffen
     float timer = 0;
     int idleClip = 0, lastIdle = 0;
     float idleBlend = 1, idleTime = 0, phase = 0;
@@ -175,6 +177,15 @@ public:
     const Animal* find(uint32_t id) const;
     bool remove(uint32_t id);
     float toughness(const AnimalSpecies& s) const { return s.toughness > 0 ? s.toughness : 0.35f + s.height; }
+    // Trefferbox je Art (Modellmaße bei Höhe 1, x quer, y hoch, z längs), lebend und tot (liegend); vom Bild aus gemessen
+    void setHitBox(int species, bool dead, const glm::vec3& mn, const glm::vec3& mx);
+    glm::vec3 hitSize(int species, bool dead) const {  // Breite, Höhe, Länge der Trefferbox (m)
+        const auto& v = dead ? hitDead_ : hitAlive_;
+        const float h = cfg_->species[(size_t)species].height;
+        return (size_t)species < v.size() && v[(size_t)species].set ? (v[(size_t)species].mx - v[(size_t)species].mn) * h : glm::vec3(0);
+    }
+    // Strahl gegen die Trefferbox eines Tiers: Abstand t (m) bis reach
+    bool hitTest(const Animal& a, const glm::dvec3& eye, const glm::dvec3& dir, double reach, double& t) const;
 
 private:
     bool walkable(const Terrain& tr, const AnimalSpecies& s, double x, double z, double* y = nullptr, double* slope = nullptr) const;
@@ -197,5 +208,10 @@ private:
     size_t nextSpecies_ = 0;
     double viewScale_ = 1.0;
     double dayHours_ = 12.0;
+    struct HitBox {
+        glm::vec3 mn{-0.22f, 0.0f, -0.5f}, mx{0.22f, 1.0f, 0.5f};
+        bool set = false;
+    };
+    std::vector<HitBox> hitAlive_, hitDead_;  // je Art
     std::vector<AnimalBite> bites_;
 };

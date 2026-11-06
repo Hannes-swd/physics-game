@@ -715,6 +715,7 @@ Alle `player`-Befehle (außer der Abfrage) schalten bei Bedarf automatisch in de
 | `player grab [id]` | Teil aufnehmen (mit id: vorher hinschauen). Reichweite 3,5 m, nicht durch andere Teile hindurch |
 | `player release` | Teil fallen lassen. Anderer Name: `drop` |
 | `player throw [N·s]` | getragenes Teil in Blickrichtung werfen (Standard: 9 m/s, höchstens 45 N·s) |
+| `player charge [s]` | wie Maustaste halten: Wurf so lange aufladen (Standard 1 s, voll nach gut 1 s), dann werfen; der Streifen über dem Fadenkreuz zeigt es |
 
 ```
 > player

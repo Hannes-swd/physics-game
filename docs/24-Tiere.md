@@ -79,6 +79,12 @@ Tiere lassen sich mit Schlägen (linke Maustaste auf das Tier) verletzen und erl
 | Axt (2), Spitzhacke (7) | kräftig | 2,4 m |
 | Laser (3) | sehr kräftig | 3 m |
 
+- **Trefferbox:** Getroffen wird, was man wirklich anvisiert. Jede Art hat eine Box aus den Maßen ihres Modells
+  (stehend; tot die liegende Haltung am Ende des Sterbe-Ablaufs), die sich mit dem Tier dreht, neigt und kippt: ein
+  Pferd ist lang und schmal, ein Fuchs klein. `animals info <id>` zeigt sie.
+- **Treffer sieht man:** das Tier zuckt zur Seite, von der der Schlag kam (Treffer-Ablauf des Modells), am Fadenkreuz
+  blitzen vier kurze Striche auf (rot, wenn es dabei stirbt).
+- Mit der bloßen **Hand** geht es auch, nur schwach: ein Fuchs verliert etwa 13 % je Schlag, ein Reh 8 %.
 - Wie viel ein Tier aushält, hängt von seiner Größe ab (`toughness`, ohne Angabe 0,35 + Höhe): ein Reh braucht zwei,
   drei Axthiebe, ein Wisent viele.
 - Getroffene Tiere fliehen; Wehrhafte (Wolf, Wildschwein, Wisent) greifen erst recht an, bis sie schwer verwundet sind.

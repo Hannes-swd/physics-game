@@ -426,7 +426,9 @@ void App::netPeerMessage(Peer& p, net::Msg type, const std::string& payload) {
         const glm::dvec3 feet = r.dvec3();
         const int bandageKeys = r.u8();
         const int tool = r.u8();
+        const float throwPower = r.f32();
         if (!r.ok()) return;
+        in.throwPower = throwPower >= 0 ? std::min(throwPower, 1.0f) : -1.0f;
         p.bandageKeys += bandageKeys;
         p.tool = std::clamp(tool, 0, (int)HandTool::Pickaxe);
         p.camEye = camEye;
@@ -845,6 +847,7 @@ void App::netClientUpdate(float dt) {
         w.dvec3(netSpawnFeet_);
         w.u8((uint8_t)std::min(netBandageKeys_, 8));
         w.u8((uint8_t)handTool_);
+        w.f32(netHand_.throwPower);
         netBandageKeys_ = 0;
         netConn_->send(Msg::Input, w);
         netJump_ = netSpawn_ = false;

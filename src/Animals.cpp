@@ -547,6 +547,7 @@ void AnimalWorld::think(Animal& a, AnimalGroup& g, const Animal* lead, const Ter
     }
     a.attackCool = std::max(0.0f, a.attackCool - (float)dt);
     if (a.attackAnim >= 0 && (a.attackAnim += (float)dt) > 2.0f) a.attackAnim = -1;
+    if (a.hitAnim >= 0 && (a.hitAnim += (float)dt) > 2.0f) a.hitAnim = -1;
 
     // Angriff: Jäger (Wolf) kommen ab range heran (nachts von doppelt so weit) und geben nach "chase" s auf; Verteidiger
     // (Wildschwein, Schlange) greifen nur an, wer ihnen zu nahe kommt
@@ -716,16 +717,43 @@ void AnimalWorld::think(Animal& a, AnimalGroup& g, const Animal* lead, const Ter
     }
 }
 
-// Treffer-Kugel eines Tiers: um die Körpermitte, etwa so groß wie das Tier
-static bool hitAnimal(const Animal& a, const AnimalSpecies& s, const glm::dvec3& eye, const glm::dvec3& dir, double reach, double& t) {
-    const double r = std::max(0.22, s.height * 0.6);
-    const glm::dvec3 c = a.pos + glm::dvec3(0, a.dead ? std::min(0.25, s.height * 0.3) : s.height * 0.5, 0);
-    const glm::dvec3 oc = eye - c;
-    const double b = glm::dot(oc, dir), cc = glm::dot(oc, oc) - r * r, disc = b * b - cc;
-    if (disc < 0) return false;
-    t = -b - std::sqrt(disc);
-    if (t < 0) t = 0;  // schon drin
-    return t <= reach;
+void AnimalWorld::setHitBox(int species, bool dead, const glm::vec3& mn, const glm::vec3& mx) {
+    if (species < 0) return;
+    std::vector<HitBox>& v = dead ? hitDead_ : hitAlive_;
+    if ((size_t)species >= v.size()) v.resize((size_t)species + 1);
+    v[(size_t)species] = {mn, mx, true};
+}
+
+// Trefferbox: die Maße des Modells (lebend: stehend, tot: am Ende des Sterbe-Ablaufs), gedreht wie das Tier im Bild
+// (Blickrichtung, Hangneigung, auf die Seite gekippt), etwas großzügiger. Ohne gemessene Box: aus der Höhe geschätzt.
+bool AnimalWorld::hitTest(const Animal& a, const glm::dvec3& eye, const glm::dvec3& dir, double reach, double& t) const {
+    const AnimalSpecies& s = cfg_->species[(size_t)a.species];
+    const std::vector<HitBox>& v = a.dead && (size_t)a.species < hitDead_.size() && hitDead_[(size_t)a.species].set ? hitDead_ : hitAlive_;
+    HitBox b = (size_t)a.species < v.size() ? v[(size_t)a.species] : HitBox{};
+    if (!b.set && a.dead) b = HitBox{{-0.22f, 0.0f, -0.5f}, {0.22f, 0.35f, 0.5f}, false};  // liegt
+    const glm::vec3 pad = (b.mx - b.mn) * 0.06f + glm::vec3(0.06f / std::max(s.height, 0.05f));
+    // Welt -> Modell: Lage wie beim Zeichnen (Drehen um y, Neigen um x, Kippen um z), dann durch die Höhe teilen
+    const double cy = std::cos(a.yaw), sy = std::sin(a.yaw), cp = std::cos(a.pitch), sp = std::sin(a.pitch),
+                 cr = std::cos(-a.roll), sr = std::sin(-a.roll);
+    const glm::dmat3 ry(cy, 0, -sy, 0, 1, 0, sy, 0, cy), rx(1, 0, 0, 0, cp, sp, 0, -sp, cp), rz(cr, sr, 0, -sr, cr, 0, 0, 0, 1);
+    const glm::dmat3 inv = glm::transpose(ry * rx * rz);
+    const double h = std::max((double)s.height, 0.02);
+    const glm::dvec3 o = inv * (eye - a.pos) / h, d = inv * dir / h;
+    double t0 = 0, t1 = reach;
+    for (int k = 0; k < 3; ++k) {
+        const double lo = b.mn[k] - pad[k], hi = b.mx[k] + pad[k];
+        if (std::abs(d[k]) < 1e-12) {
+            if (o[k] < lo || o[k] > hi) return false;
+            continue;
+        }
+        double ta = (lo - o[k]) / d[k], tb = (hi - o[k]) / d[k];
+        if (ta > tb) std::swap(ta, tb);
+        t0 = std::max(t0, ta);
+        t1 = std::min(t1, tb);
+        if (t0 > t1) return false;
+    }
+    t = t0;
+    return true;
 }
 
 uint32_t AnimalWorld::strike(const glm::dvec3& eye, const glm::dvec3& dirIn, double reach, float damage, bool* killed) {
@@ -736,7 +764,7 @@ uint32_t AnimalWorld::strike(const glm::dvec3& eye, const glm::dvec3& dirIn, dou
     for (Animal& a : animals_) {
         const AnimalSpecies& s = cfg_->species[(size_t)a.species];
         double t;
-        if (a.dead || a.airborne || s.model == "bird" || !hitAnimal(a, s, eye, dir, reach, t) || t >= bestT) continue;
+        if (a.dead || a.airborne || s.model == "bird" || !hitTest(a, eye, dir, reach, t) || t >= bestT) continue;
         best = &a;
         bestT = t;
     }
@@ -745,6 +773,8 @@ uint32_t AnimalWorld::strike(const glm::dvec3& eye, const glm::dvec3& dirIn, dou
     const AnimalSpecies& s = cfg_->species[(size_t)a.species];
     a.hp -= damage / toughness(s);
     a.attackAnim = -1;
+    a.hitAnim = 0;  // zuckt (Treffer-Ablauf), von der Seite, von der der Schlag kam
+    a.hitLeft = glm::dot(glm::dvec2(eye.x - a.pos.x, eye.z - a.pos.z), glm::dvec2(std::cos(a.yaw), -std::sin(a.yaw))) < 0;
     AnimalGroup* g = findGroup(a.group);
     const glm::dvec2 from = xz(eye);
     if (a.hp <= 0) {  // tot: liegt da, die anderen fliehen
@@ -785,7 +815,7 @@ uint32_t AnimalWorld::pickDead(const glm::dvec3& eye, const glm::dvec3& dirIn, d
     uint32_t best = 0;
     double bestT = 1e30, t;
     for (const Animal& a : animals_)
-        if (a.dead && hitAnimal(a, cfg_->species[(size_t)a.species], eye, dir, reach, t) && t < bestT) best = a.id, bestT = t;
+        if (a.dead && hitTest(a, eye, dir, reach, t) && t < bestT) best = a.id, bestT = t;
     return best;
 }
 

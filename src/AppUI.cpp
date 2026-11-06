@@ -1034,7 +1034,7 @@ void App::drawStatusBar() {
     } else if (play_ && handTool_ != HandTool::None) {
         left = handToolHelp();
     } else if (play_) {
-        left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · rechts werfen · F " +
+        left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · Maustaste halten: Wurf aufladen · F " +
                std::string(heatTools()[heatTool_].label) + " · 1-7 Hand/Werkzeuge (unten rechts) · B Bauplan · C Herstellen" +
                (cheats_ ? " · Tab Bauen" : "");
     } else if (Object* o = world_->find(hovered_)) {
@@ -1164,6 +1164,28 @@ void App::drawPlayHud() {
     ImU32 col = lookAt_ ? IM_COL32(255, 200, 80, 230) : IM_COL32(255, 255, 255, 200);
     dl->AddLine(ImVec2(c.x - 8, c.y), ImVec2(c.x + 8, c.y), col, 2);
     dl->AddLine(ImVec2(c.x, c.y - 8), ImVec2(c.x, c.y + 8), col, 2);
+    // Treffer (Schlag auf ein Tier): vier kurze Striche schräg um das Fadenkreuz, erlegt: rot und etwas länger
+    if (hitMarkTime_ >= 0 && time_ - hitMarkTime_ < 0.35) {
+        const float age = (float)(time_ - hitMarkTime_) / 0.35f, k = std::clamp(io.DisplaySize.y / 1080.0f, 0.75f, 2.0f);
+        const float r0 = (10.0f + 4.0f * age) * k, r1 = r0 + (hitMarkKill_ ? 9.0f : 6.0f) * k;
+        const ImU32 mc = hitMarkKill_ ? IM_COL32(255, 90, 80, (int)(240 * (1 - age))) : IM_COL32(255, 255, 255, (int)(230 * (1 - age)));
+        for (int q = 0; q < 4; ++q) {
+            const float sx = q & 1 ? 0.7071f : -0.7071f, sy = q & 2 ? 0.7071f : -0.7071f;
+            dl->AddLine(ImVec2(c.x + sx * r0, c.y + sy * r0), ImVec2(c.x + sx * r1, c.y + sy * r1), mc, 2.0f * k);
+        }
+    }
+    // Wurf aufladen: schmaler Streifen über dem Fadenkreuz, füllt sich von weiß nach orange, voll pulsiert er
+    if (chargeStart_ >= 0 && hand_.grabbed && time_ - chargeStart_ > 0.12) {
+        const float p = (float)throwCharge(time_ - chargeStart_);
+        const float k = std::clamp(io.DisplaySize.y / 1080.0f, 0.75f, 2.0f);
+        const float w = 150.0f * k, h = 5.0f * k, y = c.y - 34.0f * k;
+        const ImVec2 a(c.x - w / 2, y), b(c.x + w / 2, y + h);
+        dl->AddRectFilled(ImVec2(a.x - 1, a.y - 1), ImVec2(b.x + 1, b.y + 1), IM_COL32(0, 0, 0, 90), h);
+        dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, 45), h);
+        const float glow = p >= 1.0f ? 0.75f + 0.25f * std::cos((float)time_ * 9.0f) : 1.0f;
+        const ImU32 fill = IM_COL32(255, (int)(235 - 85 * p), (int)(215 - 165 * p), (int)(235 * glow));
+        if (p > 0.01f) dl->AddRectFilled(a, ImVec2(a.x + w * p, b.y), fill, h);
+    }
     std::string info;
     if (Object* g = world_->find(hand_.grabbed)) {
         info = "Trägt: " + g->name + " (" + fmtNum(g->mass, 2) + " kg)";

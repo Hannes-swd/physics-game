@@ -360,6 +360,16 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         else hand_.grabbed = 0;
         return g ? "Released: " + g->name : "Player holds nothing";
     }
+    if (sub == "charge") {  // wie Maustaste halten: Wurf aufladen, nach <s> Sekunden loslassen (wirft)
+        if (!hand_.grabbed) return "Error: player holds nothing";
+        double s = 1.0;
+        parseNum(t, 2, s);
+        s = std::clamp(s, 0.0, 10.0);
+        chargeStart_ = time_;
+        chargeRight_ = true;
+        chargeHoldUntil_ = time_ + s;
+        return "charging for " + fmtNum(s, 2) + " s (throw strength " + fmtNum(throwCharge(s) * 100.0, 0) + " %)";
+    }
     if (sub == "throw") {
         Object* g = world_->find(hand_.grabbed);
         if (!g) return "Error: player holds nothing";

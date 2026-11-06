@@ -116,6 +116,29 @@ void App::loadAnimalLooks() {
                 const std::string tail = n.substr(n.rfind('|') == std::string::npos ? 0 : n.rfind('|') + 1);
                 if (tail == "Death" || (tail.size() > 6 && tail.compare(tail.size() - 6, 6, "_Death") == 0)) look.death = c;
             }
+            // Zucken nach einem Treffer: "Idle_HitReact_Left/Right", sonst ein Ablauf mit "Hit" (HitRecieve, Bat_Hit)
+            look.hitL = m->clip("Idle_HitReact_Left");
+            look.hitR = m->clip("Idle_HitReact_Right");
+            for (int c = 0; look.hitL < 0 && c < m->clipCount(); ++c)
+                if (m->clipName(c).find("Hit") != std::string::npos) look.hitL = c;
+            if (look.hitR < 0) look.hitR = look.hitL;
+            if (look.hitL < 0) look.hitL = look.hitR;
+            // Trefferbox: Maße des Modells stehend (erster Ruhe-Ablauf) und tot (Ende des Sterbe-Ablaufs)
+            auto measure = [&](int clip, float time, bool dead) {
+                if (clip < 0) return;
+                const AvatarModel::Layer l{clip, time, 1.0f};
+                std::vector<solid::Vertex> v;
+                m->pose(&l, 1, nullptr, 0, v);
+                if (v.empty()) return;
+                glm::vec3 mn(1e9f), mx(-1e9f);
+                for (const solid::Vertex& q : v) {
+                    mn = glm::min(mn, glm::vec3(q.px, q.py, q.pz));
+                    mx = glm::max(mx, glm::vec3(q.px, q.py, q.pz));
+                }
+                animals_->setHitBox((int)animalLooks_.size(), dead, mn, mx);
+            };
+            measure(look.idle.empty() ? -1 : look.idle[0], 0.0f, false);
+            measure(look.death, std::max(0.0f, m->clipLength(look.death) - 0.001f), true);
             // Schrittweite aus dem Modell (m/s bei Abspieltempo 1), sonst die Geschwindigkeit aus der Datei
             const float gw = m->clipGroundSpeed(look.walk) * s.height, gr = m->clipGroundSpeed(look.run) * s.height;
             look.walkPace = gw > 0.05f ? gw : s.walkSpeed;
@@ -302,6 +325,16 @@ void App::addAnimals(FrameDesc& fd, const std::function<bool(const glm::dvec3&, 
                         layers.push_back({look.attack, t, w});
                     }
                 }
+                // getroffen: kurz zur Seite zucken
+                const int hit = a.hitLeft ? look.hitL : look.hitR;
+                if (hit >= 0 && a.hitAnim >= 0) {
+                    const float len = std::max(look.model->clipLength(hit), 0.1f), t = a.hitAnim;
+                    const float w = t >= len ? 0.0f : std::min({1.0f, t / 0.05f, (len - t) / 0.2f});
+                    if (w > 0) {
+                        for (AvatarModel::Layer& l : layers) l.weight *= 1.0f - w;
+                        layers.push_back({hit, t, w});
+                    }
+                }
             }
             a.pose.clear();
             look.model->pose(layers.data(), (int)layers.size(), nullptr, 0, a.pose);
@@ -355,6 +388,8 @@ std::string App::animalsCommand(const std::vector<std::string>& t) {
         const uint32_t id = best->id;
         std::string msg;
         if (!animalStrike(eye, aim, tool, &msg)) return "Error: missed";
+        hitMarkTime_ = time_;  // wie ein eigener Schlag: Treffer-Zeichen
+        if (const Animal* k = animals_->find(id)) hitMarkKill_ = k->dead;
         const Animal* a = animals_->find(id);
         return s.id + (a && a->dead ? " killed" : " hit, strength " + fmtNum(a ? a->hp * 100.0 : 0.0, 0) + " %") + (msg.empty() ? "" : " (" + msg + ")");
     }
@@ -396,6 +431,9 @@ std::string App::animalsCommand(const std::vector<std::string>& t) {
             for (int c = 0; c < look.model->clipCount(); ++c) o << " " << look.model->clipName(c);
             o << "\nstride: walk " << look.walkPace << " m/s, run " << look.runPace << " m/s at normal pace (moves at " << s.walkSpeed << " / "
               << s.runSpeed << " m/s)";
+            const glm::vec3 hb = animals_->hitSize(si, false), hd = animals_->hitSize(si, true);
+            o << "\nhitbox: " << fmtNum(hb.x, 2) << " x " << fmtNum(hb.y, 2) << " x " << fmtNum(hb.z, 2) << " m (wide x high x long)";
+            if (hd.x > 0) o << ", dead " << fmtNum(hd.x, 2) << " x " << fmtNum(hd.y, 2) << " x " << fmtNum(hd.z, 2) << " m";
         }
         return o.str();
     }
@@ -441,6 +479,10 @@ bool App::animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool to
     bool killed = false;
     const uint32_t id = animals_->strike(eye, fwd, reach, damage, &killed);
     if (!id) return false;
+    if (!msg) {  // eigener Schlag (Mitspieler: msg): Treffer-Zeichen am Fadenkreuz
+        hitMarkTime_ = time_;
+        hitMarkKill_ = killed;
+    }
     if (const Animal* a = animals_->find(id)) {
         const AnimalSpecies& s = animals_->config().species[(size_t)a->species];
         std::string text;

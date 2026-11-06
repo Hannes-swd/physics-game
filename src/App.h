@@ -51,6 +51,7 @@ struct HandInput {
     int lmbPresses = 0, rmbPresses = 0, ePresses = 0;
     int turns = 0, tilts = 0;  // R / Shift+R
     double scroll = 0;
+    float throwPower = -1;  // >= 0: Getragenes werfen, so fest (0..1, aufgeladen mit gehaltener Maustaste)
 };
 
 // Eine Spielfigur, wie alle sie sehen (der Gastgeber verteilt die Liste)
@@ -396,6 +397,13 @@ private:
     bool animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool tool, std::string* msg = nullptr);
     bool animalHarvest(const glm::dvec3& eye, const glm::dvec3& fwd);
     double strikeReady_ = 0;  // nächster Schlag frühestens dann (time_)
+    double hitMarkTime_ = -1;  // Treffer-Zeichen am Fadenkreuz seit dann (time_)
+    bool hitMarkKill_ = false; // ... und das Tier ist dabei gestorben
+    // Wurf aufladen (AppInput.cpp): Maustaste halten, solange etwas getragen wird; loslassen wirft
+    double chargeStart_ = -1;  // seit dann (time_), -1: lädt nicht
+    bool chargeRight_ = false; // mit der rechten Taste (Teil mit gehaltener linker Taste getragen)
+    double chargeHoldUntil_ = -1;  // Befehl "player charge <s>": so lange gilt die Taste als gehalten
+    static double throwCharge(double held) { return std::clamp((held - 0.15) / 1.2, 0.0, 1.0); }
     bool takeBandage();       // einen Verband aus dem Inventar verbrauchen (false: keiner da)
     void drawHealthHud();
     std::string healthCommand(const std::vector<std::string>& t);
@@ -646,7 +654,7 @@ private:
     struct AnimalLook {
         AvatarModel* model = nullptr;  // null: Vogelform oder Modell fehlt
         std::vector<int> idle;
-        int walk = -1, run = -1, fly = -1, attack = -1, death = -1;
+        int walk = -1, run = -1, fly = -1, attack = -1, death = -1, hitL = -1, hitR = -1;  // hit: Zucken nach einem Treffer
         float walkPace = 1, runPace = 5;  // m/s bei Abspieltempo 1
         std::vector<glm::vec3> colors;    // je Teil des Modells
     };

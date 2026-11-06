@@ -637,10 +637,31 @@ void App::playInput(float dt) {
     }
     // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
     planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
-    const bool lmbPressed = lmbDown && !prevLmb_;
+    const bool lmbPressed = lmbDown && !prevLmb_, rmbPressed = rmbDown && !prevRmb_;
+    // Wurf aufladen: trägt man etwas (mit leeren Händen sonst), lädt eine gehaltene Maustaste den Wurf auf (Streifen
+    // unter dem Fadenkreuz), loslassen wirft – je länger, desto fester. Links für mit E Aufgehobenes (ein kurzer Klick legt
+    // es wie bisher ab), rechts für alles (auch was man mit gehaltener linker Taste trägt)
+    bool lmbClick = lmbPressed, rmbClick = rmbPressed;
+    float throwPower = -1;
+    const bool carrying = hand_.grabbed != 0 && handTool_ == HandTool::None && !planMode_;
+    if (chargeStart_ < 0 && carrying && (lmbPressed || rmbPressed)) {
+        chargeStart_ = time_;
+        chargeRight_ = !lmbPressed;
+        lmbClick = rmbClick = false;
+    } else if (chargeStart_ >= 0) {
+        lmbClick = rmbClick = false;
+        if (!carrying) {
+            chargeStart_ = -1;  // nichts mehr in der Hand (fallen gelassen, eingesetzt)
+        } else if (!(chargeRight_ ? rmbDown : lmbDown) && time_ >= chargeHoldUntil_) {
+            const double held = time_ - chargeStart_;
+            chargeStart_ = -1;
+            if (!chargeRight_ && held < 0.2) lmbClick = true;  // kurzer Klick: absetzen
+            else throwPower = (float)throwCharge(held);
+        }
+    }
     // Schlag (linke Maustaste): ein Tier im Blick wird getroffen (Werkzeug: fester, weiter), sonst lassen Tiere direkt vor
     // der Figur ab und fliehen
-    if (lmbPressed && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_) {
+    if (lmbPressed && !carrying && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_) {
         strikeReady_ = time_ + 0.4;
         if (!animalStrike(eye, fwd, handTool_)) {
             const glm::dvec3 hit = playerEye() + glm::normalize(glm::dvec3(fwd.x, 0, fwd.z) + glm::dvec3(1e-9)) * 1.2 - glm::dvec3(0, 1.0, 0);
@@ -651,8 +672,9 @@ void App::playInput(float dt) {
     const bool inHand = handTool_ != HandTool::None;
     HandInput in;
     in.lmbDown = lmbDown && !inHand;
-    in.lmbPresses = lmbPressed && !inHand;
-    in.rmbPresses = rmbDown && !prevRmb_;
+    in.lmbPresses = lmbClick && !inHand;
+    in.rmbPresses = rmbClick;
+    in.throwPower = throwPower;
     prevLmb_ = lmbDown;
     prevRmb_ = rmbDown;
     in.ePresses = !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false);
@@ -662,6 +684,7 @@ void App::playInput(float dt) {
         in.lmbDown = false;
         in.lmbPresses = in.rmbPresses = in.turns = in.tilts = 0;
         in.scroll = 0;
+        in.throwPower = -1;
     }
     if (netClient()) {  // Tragen und Werfen rechnet der Gastgeber: sammeln, netUpdate schickt es
         netHand_.lmbDown = in.lmbDown;
@@ -671,6 +694,7 @@ void App::playInput(float dt) {
         netHand_.turns += in.turns;
         netHand_.tilts += in.tilts;
         netHand_.scroll += in.scroll;
+        netHand_.throwPower = std::max(netHand_.throwPower, in.throwPower);
         return;
     }
     handActions(hand_, eye, fwd, playYaw_, in);
@@ -758,10 +782,14 @@ void App::handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, 
         tryGrab(true);
     }
     if (hand.grabbed && hand.heldByMouse && !in.lmbDown) hand.grabbed = 0;
-    if (in.rmbPresses > 0 && hand.grabbed) {  // werfen
+    // werfen: aufgeladen (throwPower 0..1) oder ein einzelner Klick rechts (mittelfest, wie früher). Ein leichtes Teil
+    // fliegt mit 3 m/s (kurz angetippt) bis 18 m/s (voll aufgeladen); mehr Schwung als 20..80 N·s schafft der Arm nicht,
+    // schwere Teile fliegen also kaum weiter
+    const double power = in.throwPower >= 0 ? in.throwPower : in.rmbPresses > 0 ? 0.4 : -1.0;
+    if (power >= 0 && hand.grabbed) {
         if (Object* o = world_->find(hand.grabbed)) {
-            double m = std::max(0.01, (double)physics_.mass(o->body));
-            double j = std::min(m * 9.0, 45.0);
+            const double m = std::max(0.01, (double)physics_.mass(o->body));
+            const double j = std::min(m * (3.0 + 15.0 * power), 20.0 + 60.0 * power);
             physics_.addImpulseAt(o->body, glm::vec3(fwd * j), o->pos + o->rot * hand.grabLocal);
         }
         hand.grabbed = 0;

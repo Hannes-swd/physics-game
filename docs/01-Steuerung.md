@@ -81,7 +81,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | Linke Maustaste **halten** | angeschautes Teil tragen (loslassen = fallen lassen) |
 | **E** | **Inventar** auf / zu. Mit einem Teil in der Hand: es ins Inventar stecken (auf ein Hologramm geschaut: dort einsetzen) ([21](21-Inventar.md)) |
 | **F** | das Teil, auf das man schaut, direkt ins Inventar (auch Kiesel und Stöcke am Boden, [19](19-Steine-und-Holz.md)) |
-| Rechte Maustaste | getragenes Teil werfen |
+| Maustaste **halten**, während man etwas trägt | Wurf **aufladen**: über dem Fadenkreuz füllt sich ein Streifen (weiß → orange, voll pulsiert er, nach gut 1 s), **loslassen wirft** – je länger, desto fester (ein Stein fliegt kurz angetippt etwa 4 m, voll aufgeladen über 30 m; schwere Teile kaum weiter, mehr schafft der Arm nicht). Mit **E** Aufgehobenes: linke Taste (ein kurzer Klick legt es ab), mit gehaltener linker Taste Getragenes: rechte Taste |
 | Mausrad | Abstand des getragenen Teils ändern |
 | **F** halten | Wärme-Werkzeug (Brenner, Kälte; Auswahl im Bau-Modus unter H) auf das angeschaute Teil richten |
 | im Wasser | Waten bremst; ab der Brust schwimmt die Figur: **W** in Blickrichtung (nach unten schauen = tauchen), **Leertaste** hoch, **Strg** runter |
