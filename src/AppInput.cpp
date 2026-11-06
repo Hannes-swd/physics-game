@@ -879,7 +879,16 @@ void App::updatePlay(float dt) {
             jump = false;
         }
     }
-    if (glm::length(wish) > 0) wish = glm::normalize(wish) * (run ? 7.0f : 4.0f) * (netClient() ? 1.0f : (float)me_.health.moveFactor());
+    // Schleichen: linke Strg halten (im Wasser taucht Strg ab). Langsam (1,8 m/s), kein Rennen und Springen, geduckt
+    {
+        const bool ctrl = play_ && cursorCaptured_ && !io.WantTextInput && glfwGetKey(window_, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+        const bool inWater = swimDepth(netClient() ? netFeet_ : physics_.characterPosition()) > 0.5f;
+        sneaking_ = play_ && (ctrl || sneakCmd_) && !inWater && me_.deadUntil < 0;
+        if (sneaking_) run = jump = false;
+        crouch_ += ((sneaking_ ? 1.0f : 0.0f) - crouch_) * (1.0f - std::exp(-dt / 0.12f));
+    }
+    if (glm::length(wish) > 0)
+        wish = glm::normalize(wish) * (run ? 7.0f : sneaking_ ? 1.8f : 4.0f) * (netClient() ? 1.0f : (float)me_.health.moveFactor());
     // Wasser: Waten bremst, ab der Brust schwimmt die Figur. W mit Blick nach unten taucht, Leertaste hoch, Strg hinunter
     const float swim = swimDepth(netClient() ? netFeet_ : physics_.characterPosition());
     if (swim > 0.5f) {

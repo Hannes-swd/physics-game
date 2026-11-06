@@ -77,6 +77,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **W A S D** | laufen |
 | **Shift** | rennen |
 | **Leertaste** | springen (ca. 1,1 m hoch) |
+| **Strg** (links) halten | **schleichen**: geduckt (Blick 45 cm tiefer), langsam (1,8 m/s statt 4), kein Rennen und Springen; Tiere bemerken einen erst auf halbe Entfernung ([24](24-Tiere.md#verhalten)). Unten steht „SCHLEICHEN“. Im Wasser taucht Strg weiter ab |
 | Maus | umschauen |
 | Linke Maustaste **halten** | angeschautes Teil tragen (loslassen = fallen lassen) |
 | **E** | **Inventar** auf / zu. Mit einem Teil in der Hand: es ins Inventar stecken (auf ein Hologramm geschaut: dort einsetzen) ([21](21-Inventar.md)) |

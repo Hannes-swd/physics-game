@@ -369,7 +369,7 @@ std::string App::cameraLook(const glm::dvec3& target, double dist) {
 
 glm::dvec3 App::playerEye() const {
     // Mitspieler: die Figur läuft beim Gastgeber, hier steht ihre zuletzt gemeldete (geglättete) Lage
-    return (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, 1.65 + eyeLag_, 0);
+    return (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, 1.65 - 0.45 * crouch_ + eyeLag_, 0);  // geduckt: tiefer
 }
 
 glm::dvec3 App::playerForward() const {

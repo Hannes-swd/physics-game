@@ -193,7 +193,7 @@ void App::updateAnimals(float dt) {
     // wer gebissen werden kann: nur beim Gastgeber (bzw. allein), lebende Figuren, Verletzungen an
     std::vector<uint32_t> who;  // je Eintrag: 0 = eigene Figur, sonst Nummer des Mitspielers
     if (play_) {
-        scarers.push_back({focus, animalFocusSpeed_, !netClient() && healthOn_ && me_.deadUntil < 0});
+        scarers.push_back({focus, animalFocusSpeed_, !netClient() && healthOn_ && me_.deadUntil < 0, sneaking_});
         who.push_back(0);
     } else if (focus.y - tr->surfaceHeight(focus.x, focus.z) < 3.0) {  // Bau-Modus: nur eine Kamera dicht am Boden
         scarers.push_back({focus, animalFocusSpeed_});
@@ -202,7 +202,7 @@ void App::updateAnimals(float dt) {
     for (const NetPlayer& p : netPlayers_) {
         if (p.id == netSelfId_ || !p.play) continue;
         const Peer* peer = netRole_ == NetRole::Host ? findPeer(p.id) : nullptr;
-        scarers.push_back({p.feet, 2.0, peer && healthOn_ && peer->vitals.deadUntil < 0});
+        scarers.push_back({p.feet, 2.0, peer && healthOn_ && peer->vitals.deadUntil < 0, peer && peer->sneak});
         who.push_back(p.id);
     }
     animals_->update(dt, *tr, focus, view, scarers, dayHours_, settings_.viewDistance);

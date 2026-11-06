@@ -41,7 +41,9 @@ andere. Sie sind nur Bild und Verhalten (keine Physik) und werden nicht gespeich
 - **Einzelgänger und Herden:** Ein Rothirsch oder Fuchs ist allein, Rehe zu ein bis drei, Wölfe im Rudel (3–6),
   Wildpferde, Wisente und Rentiere in Herden. Eine Herde zieht gemeinsam umher (die Tiere folgen dem ersten), und
   erschrickt eines, flieht die ganze Gruppe.
-- **Wer rennt, erschreckt weiter** (1,5-fache Fluchtdistanz), wer still steht oder schleicht, kommt näher heran.
+- **Wer rennt, erschreckt weiter** (1,5-fache Fluchtdistanz), wer still steht, kommt etwas näher heran (0,75-fach).
+- **Schleichen** (linke Strg halten): Tiere bemerken einen erst auf **halbe Entfernung**, beim Hinschauen, Fliehen und
+  auch beim Jagen (ein Wolfsrudel greift erst auf 7 m an statt 14 m). Dafür ist man langsam (1,8 m/s).
 - Tiere laufen nicht ins Wasser (außer Frösche und Krabben ins flache) und nicht zu steile Hänge hinauf; Gämsen und
   Mufflons klettern auch im Steilen und erscheinen bevorzugt an Hängen – so sieht man sie von unten am Berg.
 - Stehend wechseln sie zwischen Abläufen (stehen, fressen, Kopf senken). Beim Laufen folgen die Schritte der

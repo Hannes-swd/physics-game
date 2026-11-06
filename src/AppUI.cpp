@@ -1034,7 +1034,7 @@ void App::drawStatusBar() {
     } else if (play_ && handTool_ != HandTool::None) {
         left = handToolHelp();
     } else if (play_) {
-        left = "WASD laufen · Leertaste springen · Shift rennen · Maus links tragen · E aufnehmen · Maustaste halten: Wurf aufladen · F " +
+        left = "WASD laufen · Leertaste springen · Shift rennen · Strg schleichen · Maus links tragen · E aufnehmen · Maustaste halten: Wurf aufladen · F " +
                std::string(heatTools()[heatTool_].label) + " · 1-7 Hand/Werkzeuge (unten rechts) · B Bauplan · C Herstellen" +
                (cheats_ ? " · Tab Bauen" : "");
     } else if (Object* o = world_->find(hovered_)) {
@@ -1164,6 +1164,16 @@ void App::drawPlayHud() {
     ImU32 col = lookAt_ ? IM_COL32(255, 200, 80, 230) : IM_COL32(255, 255, 255, 200);
     dl->AddLine(ImVec2(c.x - 8, c.y), ImVec2(c.x + 8, c.y), col, 2);
     dl->AddLine(ImVec2(c.x, c.y - 8), ImVec2(c.x, c.y + 8), col, 2);
+    // Schleichen: ein leises Wort unten in der Mitte (ohne Kasten), blendet mit dem Ducken ein und aus
+    if (crouch_ > 0.05f) {
+        const float k = std::clamp(io.DisplaySize.y / 1080.0f, 0.75f, 2.0f), size = 19.0f * k;
+        ImFont* f = hudSmall_ ? hudSmall_ : ImGui::GetFont();
+        const char* label = "SCHLEICHEN";
+        const ImVec2 ts = f->CalcTextSizeA(size, FLT_MAX, 0, label);
+        const ImVec2 p(c.x - ts.x / 2, io.DisplaySize.y - ImGui::GetFrameHeight() - 6 - 46.0f * k);
+        dl->AddText(f, size, ImVec2(p.x + 1, p.y + 1), IM_COL32(0, 0, 0, (int)(170 * crouch_)), label);
+        dl->AddText(f, size, p, IM_COL32(236, 242, 236, (int)(235 * crouch_)), label);
+    }
     // Treffer (Schlag auf ein Tier): vier kurze Striche schräg um das Fadenkreuz, erlegt: rot und etwas länger
     if (hitMarkTime_ >= 0 && time_ - hitMarkTime_ < 0.35) {
         const float age = (float)(time_ - hitMarkTime_) / 0.35f, k = std::clamp(io.DisplaySize.y / 1080.0f, 0.75f, 2.0f);

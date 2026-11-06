@@ -92,6 +92,7 @@ struct Peer {
     Vitals vitals;                // Leben seiner Figur (rechnet der Gastgeber)
     int bandageKeys = 0;          // H gedrückt (seit dem letzten Bild)
     int tool = 0;                 // Werkzeug in der Hand (App::HandTool), für Schläge auf Tiere
+    bool sneak = false;           // schleicht (Tiere bemerken ihn erst auf halbe Entfernung)
     std::unique_ptr<net::Connection> conn;
     bool greeted = false;         // hat sich vorgestellt
     bool accepted = false;        // vom Gastgeber zugelassen
@@ -617,6 +618,9 @@ private:
     uint32_t dismantleId_ = 0;
     double toolReady_ = 0;        // nächste Werkzeug-Aktion frühestens dann (Spielzeit)
     bool autoRun_ = false, jumpRequest_ = false;
+    // Schleichen (linke Strg halten, Befehl "player sneak"): langsam, geduckt, Tiere bemerken einen erst auf halbe Entfernung
+    bool sneaking_ = false, sneakCmd_ = false;
+    float crouch_ = 0;            // 0 stehend .. 1 geduckt (weich, für Kamera und Anzeige)
     double playYaw_ = 0, playPitch_ = 0;
     Hand hand_;
     uint32_t lookAt_ = 0;

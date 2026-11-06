@@ -142,6 +142,7 @@ struct AnimalScarer {
     glm::dvec3 pos{0};
     double speed = 0;
     bool prey = false;  // kann angegriffen werden (eigene Figur, lebt)
+    bool sneak = false; // schleicht: Tiere bemerken ihn erst auf halbe Entfernung
 };
 
 // Ein Tier hat zugebissen (gestoßen, gestochen): wer, und welcher Spieler (Index in scarers)

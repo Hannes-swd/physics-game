@@ -537,13 +537,14 @@ void AnimalWorld::think(Animal& a, AnimalGroup& g, const Animal* lead, const Ter
     const AnimalSpecies& s = cfg_->species[(size_t)a.species];
     // der nächste Spieler
     double d = 1e30, scSpeed = 0;
+    bool scSneak = false;
     glm::dvec2 from(0);
     int nearest = -1;
     for (size_t i = 0; i < scarers.size(); ++i) {
         const AnimalScarer& sc = scarers[i];
         if (std::abs(sc.pos.y - a.pos.y) > 40) continue;
         const double dd = glm::length(xz(sc.pos) - xz(a.pos));
-        if (dd < d) d = dd, from = xz(sc.pos), scSpeed = sc.speed, nearest = (int)i;
+        if (dd < d) d = dd, from = xz(sc.pos), scSpeed = sc.speed, scSneak = sc.sneak, nearest = (int)i;
     }
     a.attackCool = std::max(0.0f, a.attackCool - (float)dt);
     if (a.attackAnim >= 0 && (a.attackAnim += (float)dt) > 2.0f) a.attackAnim = -1;
@@ -554,7 +555,7 @@ void AnimalWorld::think(Animal& a, AnimalGroup& g, const Animal* lead, const Ter
     bool attacking = false;
     if (s.attack != AnimalAttack::None && !a.airborne && nearest >= 0 && scarers[(size_t)nearest].prey && g.calmUntil < clock_) {
         const bool night = dayHours_ < 6.0 || dayHours_ > 20.5;
-        const double range = s.attackRange * (s.attack == AnimalAttack::Hunt && night ? 2.0 : 1.0);
+        const double range = s.attackRange * (s.attack == AnimalAttack::Hunt && night ? 2.0 : 1.0) * (scSneak ? 0.5 : 1.0);  // Schleichen: erst auf halbe Entfernung
         if (d < range) {
             if (g.attackUntil < clock_) g.attackStart = clock_;
             g.attackUntil = std::max(g.attackUntil, clock_ + (s.attack == AnimalAttack::Hunt ? 4.0 : 1.5));
@@ -570,7 +571,8 @@ void AnimalWorld::think(Animal& a, AnimalGroup& g, const Animal* lead, const Ter
     if (!attacking && a.state == Animal::Attack) a.state = Animal::Idle;
 
     // wer rennt, erschreckt weiter; wer steht oder schleicht, kommt näher heran
-    const double scare = scSpeed > 4.0 ? 1.5 : scSpeed < 0.4 ? 0.75 : 1.0;
+    // wer schleicht, wird erst auf halbe Entfernung bemerkt
+    const double scare = scSneak ? 0.5 : scSpeed > 4.0 ? 1.5 : scSpeed < 0.4 ? 0.75 : 1.0;
     if (attacking) {
         g.fleeUntil = -1;
         a.state = Animal::Attack;

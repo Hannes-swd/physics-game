@@ -427,7 +427,9 @@ void App::netPeerMessage(Peer& p, net::Msg type, const std::string& payload) {
         const int bandageKeys = r.u8();
         const int tool = r.u8();
         const float throwPower = r.f32();
+        const bool sneak = r.u8() != 0;
         if (!r.ok()) return;
+        p.sneak = sneak;
         in.throwPower = throwPower >= 0 ? std::min(throwPower, 1.0f) : -1.0f;
         p.bandageKeys += bandageKeys;
         p.tool = std::clamp(tool, 0, (int)HandTool::Pickaxe);
@@ -848,6 +850,7 @@ void App::netClientUpdate(float dt) {
         w.u8((uint8_t)std::min(netBandageKeys_, 8));
         w.u8((uint8_t)handTool_);
         w.f32(netHand_.throwPower);
+        w.u8(sneaking_);
         netBandageKeys_ = 0;
         netConn_->send(Msg::Input, w);
         netJump_ = netSpawn_ = false;

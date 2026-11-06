@@ -360,6 +360,11 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         else hand_.grabbed = 0;
         return g ? "Released: " + g->name : "Player holds nothing";
     }
+    if (sub == "sneak") {  // wie linke Strg halten: schleichen an/aus
+        const std::string v = arg(t, 2);
+        sneakCmd_ = v.empty() ? !sneakCmd_ : (v == "on" || v == "an" || v == "1");
+        return sneakCmd_ ? "sneaking (slow, animals notice you at half the distance)" : "walking normally";
+    }
     if (sub == "charge") {  // wie Maustaste halten: Wurf aufladen, nach <s> Sekunden loslassen (wirft)
         if (!hand_.grabbed) return "Error: player holds nothing";
         double s = 1.0;
