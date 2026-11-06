@@ -253,6 +253,7 @@ bool readInfo(const fs::path& dir, WorldInfo& w, std::string* err) {
         w.view.feet = vec3Of(v["feet"], w.view.feet);
         w.view.yaw = numOf(v["yaw"], 0);
         w.view.pitch = numOf(v["pitch"], 0);
+        w.view.health = strOf(v["health"], "");
     }
     if (const Json& e = j["environment"]; e.type == Json::Object) {
         w.env.valid = true;
@@ -295,6 +296,7 @@ bool writeInfo(const WorldInfo& w, std::string* err) {
         v.set("feet", vec3(w.view.feet));
         v.set("yaw", Json::makeNumber(w.view.yaw));
         v.set("pitch", Json::makeNumber(w.view.pitch));
+        if (!w.view.health.empty()) v.set("health", Json::makeString(w.view.health));
         j.set("view", std::move(v));
     }
     if (w.env.valid) {

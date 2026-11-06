@@ -16,6 +16,7 @@
 #include "Commands.h"
 #include "Drawing.h"
 #include "Flora.h"
+#include "Health.h"
 #include "Net.h"
 #include "CatalogUi.h"
 #include "InventoryUi.h"
@@ -62,16 +63,34 @@ struct NetPlayer {
     uint32_t grabbed = 0;
     bool tooHeavy = false;
     bool onGround = true;  // sonst in der Luft (Sprung, Fall)
+    // Leben (der Gastgeber rechnet es, jeder Mitspieler zeigt seins): Health::save, tot (Ursache), Restzeiten in s
+    std::string health, deathCause;
+    float deadLeft = -1, bandageLeft = -1;
 };
 
 glm::vec3 playerColor(uint32_t id);  // Erkennungsfarbe eines Spielers im LAN
 
 class App;
 
+// Leben einer Spielfigur (AppHealth.cpp): Verletzungen und was dazu gehört
+struct Vitals {
+    Health health;
+    double clock = 0;             // Spielzeit der Gesundheit (s)
+    double envAccum = 0;          // Hitze und Kälte werden alle 0,1 s gerechnet
+    double bandageUntil = -1;     // H: Verbinden läuft bis dahin (clock)
+    bool bandageItem = false;     // mit Verband aus dem Inventar (sonst nur Druck auf die Wunde)
+    double deadUntil = -1;        // tot: bis dahin dunkel, dann Neustart am Startpunkt
+    double fallPeakVy = 0;        // schnellste Fallgeschwindigkeit seit dem Abheben (m/s, negativ)
+    std::unordered_map<uint32_t, double> hitTime;  // letzter Treffer je Teil (Körper), gegen Doppelzählung
+};
+
 // Ein Mitspieler aus Sicht des Gastgebers
 struct Peer {
     uint32_t id = 0;              // Spielernummer, zugleich Nummer seiner Spielfigur in der Physik
     std::string name;
+    Vitals vitals;                // Leben seiner Figur (rechnet der Gastgeber)
+    int bandageKeys = 0;          // H gedrückt (seit dem letzten Bild)
+    int tool = 0;                 // Werkzeug in der Hand (App::HandTool), für Schläge auf Tiere
     std::unique_ptr<net::Connection> conn;
     bool greeted = false;         // hat sich vorgestellt
     bool accepted = false;        // vom Gastgeber zugelassen
@@ -359,6 +378,33 @@ private:
     void updateWaterFx(float dt);
     float swimDepth(const glm::dvec3& feet) const;  // Anteil der Figur unter Wasser (0..1)
 
+    // Leben (AppHealth.cpp): Verletzungen je Körperteil, Körperkarte im HUD. Der Gastgeber rechnet alle Figuren (die eigene:
+    // me_, Mitspieler: Peer::vitals), der Mitspieler bekommt seinen Zustand mit der Spielerliste.
+    void updateHealth(float dt, bool wasOnGround, double vyBefore, float swim);  // eigene Figur (Mitspieler: nur die Uhr)
+    // eine Figur: who = Nummer in der Physik, bandageKey = H gedrückt, own = eigene (Inventar, Meldungen, Startpunkt)
+    void updateVitals(Vitals& v, int who, double yaw, Hand& hand, float dt, bool wasOnGround, double vyBefore, float swim,
+                      int bandageKeys, bool own);
+    void healthDamage(Vitals& v, BodyPart p, Injury t, int sev, const char* why, bool own);
+    BodyPart bodyPartAt(int who, double yaw, const glm::dvec3& point) const;  // welcher Körperteil an dieser Stelle
+    glm::dvec3 bodyPartPos(int who, double yaw, BodyPart p) const;            // ungefähre Mitte eines Körperteils (Welt)
+    double airTemperature(const glm::dvec3& p) const;     // Luft an einem Ort (Umgebung, Klima, Schnee)
+    void healthDied(Vitals& v, bool own);
+    void respawnPeer(Peer& p);
+    // ein Tier beißt/stößt eine Figur (who 0: die eigene)
+    void animalBite(Vitals& v, int who, double yaw, int species, const glm::dvec3& from);
+    // Jagd (AppAnimals.cpp): Schlag auf ein Tier (false: keins getroffen), totes Tier im Blick zerlegen (Fell ins Inventar)
+    bool animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool tool, std::string* msg = nullptr);
+    bool animalHarvest(const glm::dvec3& eye, const glm::dvec3& fwd);
+    double strikeReady_ = 0;  // nächster Schlag frühestens dann (time_)
+    bool takeBandage();       // einen Verband aus dem Inventar verbrauchen (false: keiner da)
+    void drawHealthHud();
+    std::string healthCommand(const std::vector<std::string>& t);
+    Vitals me_;                   // die eigene Figur
+    bool healthOn_ = true;        // "health off": keine Verletzungen (z. B. zum Bauen), gilt für alle Figuren
+    float hudHealthAlpha_ = 0;
+    struct ImFont* hudBold_ = nullptr;
+    struct ImFont* hudSmall_ = nullptr;
+
     // AppUI.cpp
     void setupStyle();
     void drawUI();
@@ -406,6 +452,9 @@ private:
     bool netHost(std::string* err);
     bool netJoin(const std::string& address, std::string* err);
     void netEvent(const std::string& text, bool ok);  // Meldung an alle Mitspieler
+    void netEventTo(Peer& p, const std::string& text, bool ok = true);  // Meldung an einen Mitspieler
+    int netBandageKeys_ = 0;  // Mitspieler: H seit der letzten Eingabe an den Gastgeber
+    int bandageCmd_ = 0;      // Befehl "health use": wie H
     bool peersPlaying() const;
     Peer* findPeer(uint32_t id);
     void netHostUpdate(float dt);
@@ -597,7 +646,7 @@ private:
     struct AnimalLook {
         AvatarModel* model = nullptr;  // null: Vogelform oder Modell fehlt
         std::vector<int> idle;
-        int walk = -1, run = -1, fly = -1;
+        int walk = -1, run = -1, fly = -1, attack = -1, death = -1;
         float walkPace = 1, runPace = 5;  // m/s bei Abspieltempo 1
         std::vector<glm::vec3> colors;    // je Teil des Modells
     };

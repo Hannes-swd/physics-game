@@ -39,6 +39,7 @@ struct WorldInfo {
         int viewMode = 0;
         glm::dvec3 feet{0};             // Spielfigur
         double yaw = 0, pitch = 0;
+        std::string health;             // Verletzungen der Spielfigur (Health::save), leer: gesund
     } view;
     // Umgebung (gehört nicht zur Szene, aber zur Welt)
     struct Environment {

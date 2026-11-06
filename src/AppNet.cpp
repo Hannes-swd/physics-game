@@ -83,6 +83,18 @@ void writePlayer(net::Writer& w, const NetPlayer& p) {
     w.u32(p.grabbed);
     w.u8(p.tooHeavy);
     w.u8(p.onGround);
+    w.str(p.health);
+    w.str(p.deathCause);
+    w.f32(p.deadLeft);
+    w.f32(p.bandageLeft);
+}
+
+// Leben einer Figur für die Spielerliste (der Gastgeber rechnet es)
+void fillVitals(NetPlayer& np, const Vitals& v) {
+    np.health = v.health.save();
+    np.deathCause = v.health.dead() ? v.health.deathCause() : std::string();
+    np.deadLeft = v.deadUntil >= 0 ? (float)(v.deadUntil - v.clock) : -1.0f;
+    np.bandageLeft = v.bandageUntil >= 0 ? (float)(v.bandageUntil - v.clock) : -1.0f;
 }
 
 NetPlayer readPlayer(net::Reader& r) {
@@ -97,6 +109,10 @@ NetPlayer readPlayer(net::Reader& r) {
     p.grabbed = r.u32();
     p.tooHeavy = r.u8() != 0;
     p.onGround = r.u8() != 0;
+    p.health = r.str();
+    p.deathCause = r.str();
+    p.deadLeft = r.f32();
+    p.bandageLeft = r.f32();
     return p;
 }
 
@@ -220,6 +236,14 @@ void App::netEvent(const std::string& text, bool ok) {
     w.u8(ok);
     for (auto& p : peers_)
         if (p->accepted && p->closeAt < 0) p->conn->send(Msg::Event, w);
+}
+
+void App::netEventTo(Peer& p, const std::string& text, bool ok) {
+    if (netRole_ != NetRole::Host || !p.accepted || p.closeAt >= 0) return;
+    net::Writer w;
+    w.str(text);
+    w.u8(ok);
+    p.conn->send(Msg::Event, w);
 }
 
 bool App::peersPlaying() const {
@@ -400,7 +424,11 @@ void App::netPeerMessage(Peer& p, net::Msg type, const std::string& payload) {
         in.scroll = std::clamp((double)r.f32(), -50.0, 50.0);
         const bool spawn = r.u8() != 0;
         const glm::dvec3 feet = r.dvec3();
+        const int bandageKeys = r.u8();
+        const int tool = r.u8();
         if (!r.ok()) return;
+        p.bandageKeys += bandageKeys;
+        p.tool = std::clamp(tool, 0, (int)HandTool::Pickaxe);
         p.camEye = camEye;
         p.spawnRef = spawnRef;
         if (play && (spawn || !physics_.hasCharacter((int)p.id))) {  // Figur absetzen, immer auf der Oberfläche
@@ -420,7 +448,18 @@ void App::netPeerMessage(Peer& p, net::Msg type, const std::string& payload) {
         if (glm::length(wish) > 7.5f) wish = glm::normalize(wish) * 7.5f;
         p.wish = play ? wish : glm::vec3(0);
         p.jump = p.jump || (play && jump);
-        if (play) handActions(p.hand, peerEye(p), forwardOf(p.yaw, p.pitch), p.yaw, in);
+        // Schlag auf ein Tier (wie beim Gastgeber), sonst lassen Tiere direkt davor ab
+        if (play && in.lmbPresses > 0 && animals_ && p.vitals.deadUntil < 0) {
+            const glm::dvec3 eye = peerEye(p), fwd = forwardOf(p.yaw, p.pitch);
+            std::string m;
+            if (animalStrike(eye, fwd, (HandTool)p.tool, &m)) {
+                if (!m.empty()) netEventTo(p, m);
+            } else {
+                const glm::dvec3 at = eye + glm::normalize(glm::dvec3(fwd.x, 0, fwd.z) + glm::dvec3(1e-9)) * 1.2 - glm::dvec3(0, 1.0, 0);
+                if (animals_->scare(at, p.tool != 0 ? 2.4 : 1.8) > 0) netEventTo(p, "Vertrieben");
+            }
+        }
+        if (play && p.vitals.deadUntil < 0) handActions(p.hand, peerEye(p), forwardOf(p.yaw, p.pitch), p.yaw, in);
     }
 }
 
@@ -646,6 +685,7 @@ void App::netPlayerList() {
     me.grabbed = hand_.grabbed;
     me.tooHeavy = hand_.tooHeavy;
     me.onGround = physics_.characterOnGround();
+    fillVitals(me, me_);
     netPlayers_.push_back(me);
     for (const auto& p : peers_) {
         if (!p->accepted || p->closeAt >= 0) continue;
@@ -660,6 +700,7 @@ void App::netPlayerList() {
         np.grabbed = p->hand.grabbed;
         np.tooHeavy = p->hand.tooHeavy;
         np.onGround = physics_.characterOnGround((int)p->id);
+        fillVitals(np, p->vitals);
         netPlayers_.push_back(np);
     }
 }
@@ -676,8 +717,29 @@ void App::updatePeerFigures(float dt) {
         if (!p->accepted || !p->play || !physics_.hasCharacter((int)p->id)) continue;
         BodyHandle ignore = kNoBody;
         if (Object* g = world_->find(p->hand.grabbed)) ignore = g->body;
-        physics_.updateCharacter(dt, p->wish, p->jump, ignore, (int)p->id, swimDepth(physics_.characterPosition((int)p->id)));
+        // Verletzungen bremsen auch Mitspieler (wie die eigene Figur in updatePlay)
+        const Health& h = p->vitals.health;
+        glm::vec3 wish = p->wish;
+        bool jump = p->jump && h.canJump();
+        if (p->vitals.deadUntil >= 0) {
+            wish = glm::vec3(0);
+            jump = false;
+        } else {
+            const float flat = glm::length(glm::vec2(wish.x, wish.z));
+            const float cap = (h.canRun() && p->vitals.bandageUntil < 0 ? 7.0f : 4.0f) * (float)h.moveFactor();
+            if (flat > cap) {
+                wish.x *= cap / flat;
+                wish.z *= cap / flat;
+            }
+        }
+        const int who = (int)p->id;
+        const float swim = swimDepth(physics_.characterPosition(who));
+        const bool wasOnGround = physics_.characterOnGround(who);
+        const double vyBefore = physics_.characterVelocity(who).y;
+        physics_.updateCharacter(dt, wish, jump, ignore, who, swim);
         p->jump = false;
+        updateVitals(p->vitals, who, p->yaw, p->hand, dt, wasOnGround, vyBefore, swim, p->bandageKeys, false);
+        p->bandageKeys = 0;
     }
 }
 
@@ -781,6 +843,9 @@ void App::netClientUpdate(float dt) {
         w.f32((float)netHand_.scroll);
         w.u8(netSpawn_);
         w.dvec3(netSpawnFeet_);
+        w.u8((uint8_t)std::min(netBandageKeys_, 8));
+        w.u8((uint8_t)handTool_);
+        netBandageKeys_ = 0;
         netConn_->send(Msg::Input, w);
         netJump_ = netSpawn_ = false;
         netHand_ = HandInput();
@@ -901,6 +966,17 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
             }
             hand_.grabbed = play_ ? p.grabbed : 0;
             hand_.tooHeavy = p.tooHeavy;
+            // Leben: rechnet der Gastgeber. Was schlimmer wurde, blitzt in der Körperkarte kurz auf
+            const Health before = me_.health;
+            me_.health.load(p.health, true);
+            me_.health.setDeath(p.deathCause);
+            for (int k = 0; k < kBodyParts; ++k) {
+                const Health::Part &a = before.part((BodyPart)k), &b = me_.health.part((BodyPart)k);
+                if (b.sev > a.sev || (b.sev > 0 && b.type != a.type)) me_.health.touch((BodyPart)k, me_.clock);
+            }
+            me_.deadUntil = p.deadLeft >= 0 ? me_.clock + p.deadLeft : -1.0;
+            me_.bandageUntil = p.bandageLeft >= 0 ? me_.clock + p.bandageLeft : -1.0;
+            me_.bandageItem = true;  // Mitspieler verbinden ohne Inventar
         }
         break;
     }
@@ -1136,7 +1212,7 @@ bool App::localCommand(const std::string& line) const {
     static const char* local[] = {"help",   "?",        "materials", "mode",    "view",      "camera", "screenshot",
                                   "photo",  "tool",     "window",    "display", "log",       "select", "drawing",
                                   "threeview", "quit",  "exit",      "save",    "edges",     "list",   "ls",
-                                  "chunks", "lan",      "player",    "menu",    "world",     "tp",     "teleport", "pause", "map", "snow"};
+                                  "chunks", "lan",      "player",    "menu",    "world",     "tp",     "teleport", "pause", "map", "snow", "health", "leben"};
     const std::string w = firstWord(line);
     if (w.empty() || w[0] == '#') return true;
     for (const char* l : local)

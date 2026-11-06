@@ -420,6 +420,8 @@ public:
     std::string heatText(Object& o);
     const std::vector<Fire>& fires() const { return fires_; }
     int burningParts() const;
+    // Form eines Teils an einer Stelle, wenn es in Richtung n (Welt) stößt: 0 stumpf, 1 Spitze, 2 Schneide (Impact.cpp)
+    int strikeForm(const Object& o, const glm::dvec3& nWorld, const glm::dvec3& point) const;
 
     // ---------------------------------------------------------- Wasser (Water.cpp)
     uint32_t addWater(WaterBody b);                  // neue Nummer; weckt Teile darin auf

@@ -279,6 +279,8 @@ bool App::openWorld(std::string* err) {
     dayLength_ = std::clamp(w.env.dayLength, 10.0, 864000.0);
     dayRunning_ = w.env.dayRunning;
     starLines_ = w.env.starLines;
+    me_.health.healAll();  // jede Welt hat ihre eigene Figur
+    me_.deadUntil = me_.bandageUntil = -1;
     if (w.view.valid) {
         orbitTarget_ = w.view.orbitTarget;
         orbitYaw_ = w.view.orbitYaw;
@@ -296,6 +298,7 @@ bool App::openWorld(std::string* err) {
             }
             playYaw_ = w.view.yaw;
             playPitch_ = w.view.pitch;
+            me_.health.load(w.view.health);
         }
     } else if (world_->terrain()) {  // neue Welt mit Gelände: die Kamera schaut auf die Oberfläche
         orbitTarget_.y = world_->groundHeight(orbitTarget_.x, orbitTarget_.z) + 0.6;
@@ -336,6 +339,7 @@ bool App::saveWorld(bool quiet, bool evenAsClient) {
         w.view.feet = physics_.characterPosition();
         w.view.yaw = playYaw_;
         w.view.pitch = playPitch_;
+        w.view.health = me_.health.injured() ? me_.health.save() : std::string();
     }
     w.env.valid = true;
     w.env.airDensity = world_->airDensity();

@@ -684,6 +684,10 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         out = animalsCommand(t);
         return true;
     }
+    if (cmd == "health" || cmd == "leben") {  // Verletzungen (AppHealth.cpp)
+        out = healthCommand(t);
+        return true;
+    }
     if (cmd == "tp" || cmd == "teleport") {
         out = teleportCommand(t);
         return true;

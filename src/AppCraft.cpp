@@ -80,15 +80,15 @@ bool App::craftFill(uint32_t planId) {
     // Was fehlt noch?
     std::string missing;
     if (const BuildPlan* p = world_->findPlan(planId)) {
-        double vol[4] = {0, 0, 0, 0};
-        std::string label[4];
+        double vol[kPlanMats] = {};
+        std::string label[kPlanMats];
         for (const PlanPiece& pc : p->pieces) {
             if (p->pieceDone(pc)) continue;
-            const int m = std::clamp(pc.mat, 0, 3);
+            const int m = std::clamp(pc.mat, 0, kPlanMats - 1);
             vol[m] += pc.volume() - pc.filled;
             label[m] = pc.material >= 0 ? materials()[(size_t)pc.material].label : planMatLabel((PlanMat)pc.mat);
         }
-        for (int m = 0; m < 4; ++m)
+        for (int m = 0; m < kPlanMats; ++m)
             if (vol[m] > 0) missing += (missing.empty() ? "" : ", ") + label[m] + " " + fmtNum(vol[m] * 1e6, 0) + " cm³";
     }
     if (used) toast(std::to_string(used) + " Stück aus dem Inventar eingesetzt, es fehlt noch: " + missing);
@@ -98,14 +98,14 @@ bool App::craftFill(uint32_t planId) {
 
 std::string App::craftNeeds(const PlanTemplate& tp) const {
     // Bedarf je Materialart und was davon im Inventar ist
-    double need[4] = {0, 0, 0, 0}, have[4] = {0, 0, 0, 0};
-    for (const PlanPieceDef& d : tp.pieces) need[std::clamp((int)d.mat, 0, 3)] += 8.0 * d.half.x * d.half.y * d.half.z;
+    double need[kPlanMats] = {}, have[kPlanMats] = {};
+    for (const PlanPieceDef& d : tp.pieces) need[std::clamp((int)d.mat, 0, kPlanMats - 1)] += 8.0 * d.half.x * d.half.y * d.half.z;
     for (const InvItem& it : inv_)
-        for (int m = 0; m < 4; ++m)
+        for (int m = 0; m < kPlanMats; ++m)
             if (m != (int)PlanMat::Any && planMatFits((PlanMat)m, it.state.material)) have[m] += it.mass / density(it.state.material);
     for (const InvItem& it : inv_) have[(int)PlanMat::Any] += it.mass / density(it.state.material);
     std::string s;
-    for (int m : {(int)PlanMat::Wood, (int)PlanMat::Stone, (int)PlanMat::Metal, (int)PlanMat::Any}) {
+    for (int m : {(int)PlanMat::Wood, (int)PlanMat::Stone, (int)PlanMat::Metal, (int)PlanMat::Hide, (int)PlanMat::Any}) {
         if (need[m] <= 0) continue;
         s += (s.empty() ? "" : " + ") + std::string(planMatLabel((PlanMat)m)) + " " + fmtNum(need[m] * 1e6, 0) + " cm³" +
              (have[m] >= need[m] * 0.97 ? " (da)" : " (im Inventar " + fmtNum(have[m] * 1e6, 0) + ")");

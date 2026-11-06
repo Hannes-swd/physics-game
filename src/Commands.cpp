@@ -418,6 +418,10 @@ std::string commandHelp() {
         "  window inspector|drawing|console|help|materials [on|off] | display shadows|edges|grid [on|off] | log [n]  (last messages)\n"
         "  time | time <hh:mm>|dawn|sunrise|morning|noon|afternoon|sunset|dusk|night|midnight | time add <hours>   time of day\n"
         "      (a day lasts 20 min) | time stop|run | time length <minutes per day> | sky   sun, moon, stars | sky lines [on|off]\n"
+        "  health | health use (= H: bandage from the inventory, else press the wound) | health hurt <part> <burn|frost|cut|bruise|break> [1-3]\n"
+        "      | health heal | health bandage (free) | health blood <0..1> | health on|off   injuries of the own figure\n"
+        "      (parts: head neck chest belly hand_l lowerarm_r foot_l ...; co-players: only 'health' and 'health use')\n"
+        "  animals hit [hand|axe|pickaxe|laser] | animals harvest   strike the nearest animal within 3 m / skin a dead one (hide)\n"
         "TERRAIN (world type normal, lengths in cm)\n"
         "  terrain | terrain at [x z] | terrain biomes   state, height, biome and climate at a spot, all biomes\n"
         "  terrain find <biome> | terrain goto <biome>   nearest spot of a biome (goto: the camera looks there)\n"
@@ -2286,7 +2290,7 @@ CommandResult runCommand(CommandHost& host, const std::string& lineIn) {
     } else if (cmd == "quit" || cmd == "exit") {
         host.requestQuit();
         res.text = "Bye";
-    } else if (cmd == "player" || cmd == "tp" || cmd == "teleport" || cmd == "tool" || cmd == "window" || cmd == "display" || cmd == "lan") {
+    } else if (cmd == "player" || cmd == "health" || cmd == "tp" || cmd == "teleport" || cmd == "tool" || cmd == "window" || cmd == "display" || cmd == "lan") {
         return fail("'" + t[0] + "' only works in the game window");
     } else {
         return fail("unknown command '" + t[0] + "'. 'help' shows all commands.");

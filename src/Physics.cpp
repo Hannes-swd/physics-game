@@ -184,6 +184,39 @@ public:
     std::mutex impactMutex;
     std::vector<ImpactInfo> impacts;
 
+    // Treffer auf Spielfiguren: CharHitListener (aus Physics::updateCharacter) und hier über den inneren Körper der Figur
+    // (Physikschritt). Je nachdem, wer das Teil zuerst bremst, sieht nur einer die volle Geschwindigkeit.
+    std::mutex charMutex;
+    std::vector<CharacterHit> charHits;
+    std::vector<std::pair<uint32, int>> innerBodies;  // innerer Körper -> Figur (who)
+    std::atomic<int> innerCount{0};
+
+    void characterHit(const Body& b1, const Body& b2, const ContactManifold& m) {
+        if (m.mRelativeContactPointsOn1.empty()) return;
+        const uint32 i1 = b1.GetID().GetIndexAndSequenceNumber(), i2 = b2.GetID().GetIndexAndSequenceNumber();
+        std::lock_guard<std::mutex> lock(charMutex);
+        for (const auto& [inner, who] : innerBodies) {
+            const bool is1 = inner == i1;
+            if (!is1 && inner != i2) continue;
+            const Body& other = is1 ? b2 : b1;
+            if (!other.IsDynamic()) return;
+            const RVec3 p = is1 ? m.GetWorldSpaceContactPointOn2(0) : m.GetWorldSpaceContactPointOn1(0);
+            const Vec3 into = is1 ? -m.mWorldSpaceNormal : m.mWorldSpaceNormal;  // vom Teil in die Figur
+            const float speed = other.GetPointVelocity(p).Dot(into);
+            if (speed < 1.5f) return;
+            CharacterHit h;
+            h.who = who;
+            h.other = other.GetID().GetIndexAndSequenceNumber();
+            h.point = glm::dvec3(p.GetX(), p.GetY(), p.GetZ());
+            h.into = glm::dvec3(into.GetX(), into.GetY(), into.GetZ());
+            h.speed = speed;
+            const float im = other.GetMotionProperties()->GetInverseMass();
+            h.mass = im > 0 ? 1.0 / im : 1e6;
+            if (charHits.size() < 256) charHits.push_back(h);
+            return;
+        }
+    }
+
     // Teilpaare ohne Kontakt (sortiert), siehe Physics::setNoContactPairs
     std::mutex noContactMutex;
     std::vector<uint64_t> noContact;
@@ -263,6 +296,7 @@ public:
     void OnContactAdded(const Body& b1, const Body& b2, const ContactManifold& m, ContactSettings& s) override {
         record(b1, b2, m, s);
         impact(b1, b2, m, -0.3f);
+        if (innerCount.load(std::memory_order_relaxed) > 0) characterHit(b1, b2, m);
     }
     // Aufprall: Annäherung schneller als minApproach (negativ, m/s) an der Kontaktstelle
     void impact(const Body& b1, const Body& b2, const ContactManifold& m, float minApproach) {
@@ -294,6 +328,37 @@ public:
     }
 };
 
+// Treffer auf eine Spielfigur: Jolt meldet jede neue Berührung der Figur, bevor sie das Teil wegdrückt (danach wäre es
+// schon abgebremst). Zählt nur die Bewegung des Teils auf sie zu: läuft die Figur gegen ein ruhendes Teil, tut das nicht weh.
+class CharHitListener final : public CharacterContactListener {
+public:
+    CharHitListener(PhysicsSystem* s, Listener* l, int w) : system(s), listener(l), who(w) {}
+    void OnContactAdded(const CharacterVirtual*, const BodyID& body, const SubShapeID&, RVec3Arg pos, Vec3Arg normal,
+                        CharacterContactSettings&) override {
+        BodyLockRead lock(system->GetBodyLockInterfaceNoLock(), body);
+        if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) return;
+        const Body& b = lock.GetBody();
+        const Vec3 into = -normal;  // normal zeigt von der Figur zum Teil
+        const float speed = b.GetPointVelocity(pos).Dot(into);
+        if (speed < 1.5f) return;
+        CharacterHit h;
+        h.who = who;
+        h.other = handleOf(b);
+        h.point = fromR(pos);
+        h.into = glm::dvec3(into.GetX(), into.GetY(), into.GetZ());
+        h.speed = speed;
+        const float im = b.GetMotionProperties()->GetInverseMass();
+        h.mass = im > 0 ? 1.0 / im : 1e6;
+        std::lock_guard<std::mutex> g(listener->charMutex);
+        if (listener->charHits.size() < 256) listener->charHits.push_back(h);
+    }
+
+private:
+    PhysicsSystem* system;
+    Listener* listener;
+    int who;
+};
+
 } // namespace
 
 struct Physics::Impl {
@@ -316,6 +381,7 @@ struct Physics::Impl {
     struct Figure {
         Ref<CharacterVirtual> c;
         Vec3 ground = Vec3::sZero();  // übernommene (gefederte) Bodengeschwindigkeit
+        std::shared_ptr<CharHitListener> hits;
     };
     std::map<int, Figure> characters;  // 0 = eigene Figur, sonst Mitspieler
     CharacterVirtual* character(int who) const {
@@ -390,6 +456,11 @@ void Physics::shutdown() {
     ContactConstraintManager::sContactImpulseCallback = nullptr;
     gImpulses = nullptr;
     m->characters.clear();
+    {
+        std::lock_guard<std::mutex> lock(m->listener.charMutex);
+        m->listener.innerBodies.clear();
+        m->listener.innerCount = 0;
+    }
     for (auto& [id, c] : m->constraints) m->system->RemoveConstraint(c);
     m->constraints.clear();
     m->system.reset();
@@ -1186,6 +1257,13 @@ void Physics::setNoContactPairs(std::vector<uint64_t> pairs) {
 
 std::vector<ContactInfo> Physics::watchedContacts() const { return m->lastContacts; }
 
+std::vector<CharacterHit> Physics::takeCharacterHits() {
+    std::lock_guard<std::mutex> lock(m->listener.charMutex);
+    std::vector<CharacterHit> r;
+    r.swap(m->listener.charHits);
+    return r;
+}
+
 std::vector<ImpactInfo> Physics::takeImpacts() {
     std::lock_guard<std::mutex> lock(m->listener.impactMutex);
     std::vector<ImpactInfo> r;
@@ -1291,10 +1369,31 @@ void Physics::createCharacter(const glm::dvec3& feet, int who) {
     s->mPredictiveContactDistance = 0.1f;
     s->mInnerBodyShape = capsule;
     s->mInnerBodyLayer = Layers::MOVING;
-    m->characters[who] = {new CharacterVirtual(s, toR(feet), Quat::sIdentity(), 0, m->system.get())};
+    Physics::Impl::Figure f;
+    f.c = new CharacterVirtual(s, toR(feet), Quat::sIdentity(), 0, m->system.get());
+    f.hits = std::make_shared<CharHitListener>(m->system.get(), &m->listener, who);
+    f.c->SetListener(f.hits.get());
+    destroyCharacter(who);
+    m->characters[who] = f;
+    std::lock_guard<std::mutex> lock(m->listener.charMutex);
+    m->listener.innerBodies.push_back({f.c->GetInnerBodyID().GetIndexAndSequenceNumber(), who});
+    m->listener.innerCount = (int)m->listener.innerBodies.size();
 }
 
-void Physics::destroyCharacter(int who) { m->characters.erase(who); }
+void Physics::destroyCharacter(int who) {
+    {
+        std::lock_guard<std::mutex> lock(m->listener.charMutex);
+        auto& v = m->listener.innerBodies;
+        v.erase(std::remove_if(v.begin(), v.end(), [&](const std::pair<uint32, int>& e) { return e.second == who; }), v.end());
+        m->listener.innerCount = (int)v.size();
+    }
+    m->characters.erase(who);
+}
+
+glm::dvec3 Physics::characterVelocity(int who) const {
+    const CharacterVirtual* c = m->character(who);
+    return c ? glm::dvec3(fromV(c->GetLinearVelocity())) : glm::dvec3(0);
+}
 bool Physics::hasCharacter(int who) const { return m->character(who) != nullptr; }
 
 void Physics::updateCharacter(float dt, const glm::vec3& wish, bool jump, BodyHandle ignore, int who, float swim) {

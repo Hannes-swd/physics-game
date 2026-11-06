@@ -11,7 +11,8 @@
 class World;
 
 // Welches Material ein Bauteil annimmt
-enum class PlanMat : int { Wood = 0, Stone = 1, Any = 2, Metal = 3 };
+enum class PlanMat : int { Wood = 0, Stone = 1, Any = 2, Metal = 3, Hide = 4 };  // Hide: nur das Material "hide" (Fell)
+constexpr int kPlanMats = 5;
 
 // Ein Bauteil der Vorlage (lokal zur Vorlage: Ursprung = Mitte unten, y oben, Breite entlang x)
 struct PlanPieceDef {

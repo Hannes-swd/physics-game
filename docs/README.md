@@ -33,6 +33,7 @@ Anleitung sind deutsch.
 | [22-Herstellen.md](22-Herstellen.md) | **Herstellen**: Rezept wählen (C), als oranges Hologramm hinlegen, mit Material aus der Hand oder dem Inventar füllen (E), fertig kommt das Teil ins Inventar; Steinaxt, Spitzhacke, Hammer, Messer, Speer, Schaufel, Fackel, Brett, Kantholz, Mauerstein, Steinplatte, Schale, Kistchen, Hocker; eigene Rezepte als JSON; Befehl `craft` |
 | [23-Tag-und-Nacht.md](23-Tag-und-Nacht.md) | **Tag und Nacht**: ein Tag dauert 20 Minuten, Sonne mit Morgen- und Abendrot, Mond mit Phase und Mondschatten, echte Sternbilder und Milchstraße, die sich um den Polarstern drehen; helle Nächte wie früher ohne Lampen; Befehle `time`, `sky` |
 | [24-Tiere.md](24-Tiere.md) | **Tiere** je Biom: erscheinen um den Spieler und verschwinden außer Sicht (Eichhörnchen schnell, Gämsen am Berg und Adler am Himmel erst weit weg), scheu, ruhig, neugierig (Wolf), Herden und Einzelgänger, Vögel kreisen und ziehen im Schwarm; Modelle (Quaternius, CC0), `animals.json`, Befehl `animals` |
+| [25-Leben.md](25-Leben.md) | **Leben**: keine Lebenspunkte, sondern Verletzungen je Körperteil (Verbrennung, Erfrierung, Schnitt, Prellung, Bruch), Körperkarte links unten nur bei Verletzung, Blutung und Verbinden (H), Sturz, Treffer, Feuer, Kälte, Tierangriffe, Tod und Neustart; Befehl `health` |
 
 ## Schnellstart
 

@@ -50,6 +50,45 @@ andere. Sie sind nur Bild und Verhalten (keine Physik) und werden nicht gespeich
 - **Vögel:** Adler, Geier und Möwen kreisen und gleiten mit seltenen Flügelschlägen und legen sich in die Kurve;
   Krähen, Stare und Papageien ziehen im Schwarm umher; Fledermäuse flattern im Zickzack.
 
+## Angriffe
+
+Manche Tiere greifen die eigene Spielfigur an (Verletzungen siehe [25](25-Leben.md)). Dabei spielen sie ihren
+Angriffs-Ablauf aus dem Modell (Biss, Kopfstoß, Zuschnappen).
+
+| Tier | Art (`attack.mode`) | was es tut |
+|---|---|---|
+| Wolf, Polarwolf | jagt (`hunt`) | das Rudel kommt ab 14 m (Polarwolf 16 m) heran, **nachts schon aus doppelter Entfernung**, beißt in Beine und Arme, weicht nach jedem Biss ein paar Sprünge zurück und kommt wieder. Nach 25 s (30 s) gibt es auf und lässt einen 90 s in Ruhe |
+| Wildschwein | verteidigt (`defend`) | wer näher als 5 m kommt, wird umgestoßen (Prellung), danach zieht es sich zurück |
+| Wisent | verteidigt | ab 6 m: Kopfstoß in den Rumpf, kann Rippen brechen |
+| Schlangen | verteidigt | beißen in Fuß oder Schienbein, wer fast drauftritt (Sandotter fester) |
+| Spinnen, Krabben | verteidigt | stechen bzw. zwicken in den Fuß |
+
+- **Wehren:** ein Schlag mit der linken Maustaste vor sich (mit Werkzeug in der Hand weiter) vertreibt die Tiere dort;
+  sie fliehen und lassen einen 45 s in Ruhe.
+- Ein erneuter Biss in eine schon verletzte Stelle kann sie verschlimmern: ein langer Kampf mit einem Rudel wird
+  gefährlich.
+- Tot oder mit `health off` greifen sie nicht an. Im LAN greifen sie auch Mitspieler an (der Gastgeber rechnet es).
+
+## Jagd
+
+Tiere lassen sich mit Schlägen (linke Maustaste auf das Tier) verletzen und erlegen:
+
+| in der Hand | Schaden je Schlag | Reichweite |
+|---|---|---|
+| nichts | gering (ein Fuchs braucht viele Schläge) | 1,9 m |
+| Axt (2), Spitzhacke (7) | kräftig | 2,4 m |
+| Laser (3) | sehr kräftig | 3 m |
+
+- Wie viel ein Tier aushält, hängt von seiner Größe ab (`toughness`, ohne Angabe 0,35 + Höhe): ein Reh braucht zwei,
+  drei Axthiebe, ein Wisent viele.
+- Getroffene Tiere fliehen; Wehrhafte (Wolf, Wildschwein, Wisent) greifen erst recht an, bis sie schwer verwundet sind.
+- Unter halber Kraft **humpeln** sie und können nicht mehr rennen, man holt sie also ein. Wunden heilen in etwa 4 min.
+- Erlegt spielt das Tier seinen Sterbe-Ablauf und bleibt liegen (Tiere ohne Ablauf kippen auf die Seite), 10 min lang.
+- **F** auf ein erlegtes Tier **zerlegt** es: das **Fell** kommt ins Inventar (Größe je Art, `hide` in m²: Reh 0,8,
+  Wolf 0,9, Wisent 4; ein Reh-Fell wiegt etwa 3,3 kg). Kleine Tiere (Schlange, Spinne, Frosch, Krabbe) haben keins.
+- Aus Fell wird ein **Verband** ([22](22-Herstellen.md), [25](25-Leben.md)).
+- Vögel am Himmel lassen sich nicht treffen. Mitspieler können jagen, aber noch nicht zerlegen (kein Inventar).
+
 ## Arten je Biom
 
 | Biom | Tiere |
@@ -99,6 +138,8 @@ Alles steht in `assets/animals.json` (die Schlüssel sind dort unter `_keys` erk
 | `active` | `always`, `day`, `night` |
 | `motion` | `ground`, `soar`, `flock`, `flutter` |
 | `slope`, `move_slope`, `altitude` | wo es erscheint (Steilheit, Höhe) und wie steil es laufen darf |
+| `hide`, `toughness`, `clips.death` | Fell beim Zerlegen (m²), wie viel es aushält, Sterbe-Ablauf (ohne Angabe: „Death“) |
+| `attack` | Angriff: `mode` (`hunt`, `defend`), `range`, `reach` (m), `cooldown` (s), `power` (Schwere 1..3), `chase` (s, Jäger geben auf), `kind` (`bite`, `gore`, `sting`, `pinch`), `clip` (Angriffs-Ablauf) |
 | `biomes` | je Biom: Art → Gruppen in Sichtweite |
 
 Nach einer Änderung übernimmt `animals reload` die Datei sofort.
@@ -111,6 +152,8 @@ Nach einer Änderung übernimmt `animals reload` die Datei sofort.
 | `animals list` | alle Arten mit Modell und Sichtweite |
 | `animals info <id>` | Modell, Dreiecke, Abläufe, Schrittweite |
 | `animals spawn <id> [Anzahl] [Abstand m]` | eine Gruppe vor dem Spieler (Standard 15 m), ohne Rücksicht auf Biom |
+| `animals hit [hand\|axe\|pickaxe\|laser]` | das nächste Tier bis 3 m schlagen (Antwort: Kraft in %, erlegt) |
+| `animals harvest` | das nächste erlegte Tier bis 3 m zerlegen |
 | `animals clear` | alle weg (neue erscheinen gleich wieder) |
 | `animals reload` | `animals.json` neu lesen |
 | `animals on` / `off` | Tiere ein- und ausschalten |

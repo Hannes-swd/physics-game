@@ -108,6 +108,14 @@ void App::loadAnimalLooks() {
             look.run = m->clip(s.runClip);
             if (look.run == look.walk) look.run = -1;
             look.fly = s.flyClip.empty() ? -1 : m->clip(s.flyClip);
+            look.attack = s.attackClip.empty() ? -1 : m->clip(s.attackClip);
+            // Sterben: aus der Datei, sonst ein Ablauf namens "Death" oder "..._Death" (Rat_Death, Spider_Death)
+            look.death = s.deathClip.empty() ? -1 : m->clip(s.deathClip);
+            for (int c = 0; look.death < 0 && c < m->clipCount(); ++c) {
+                const std::string& n = m->clipName(c);
+                const std::string tail = n.substr(n.rfind('|') == std::string::npos ? 0 : n.rfind('|') + 1);
+                if (tail == "Death" || (tail.size() > 6 && tail.compare(tail.size() - 6, 6, "_Death") == 0)) look.death = c;
+            }
             // Schrittweite aus dem Modell (m/s bei Abspieltempo 1), sonst die Geschwindigkeit aus der Datei
             const float gw = m->clipGroundSpeed(look.walk) * s.height, gr = m->clipGroundSpeed(look.run) * s.height;
             look.walkPace = gw > 0.05f ? gw : s.walkSpeed;
@@ -159,14 +167,29 @@ void App::updateAnimals(float dt) {
     animalFocusSpeed_ += (speed - animalFocusSpeed_) * (1.0 - std::exp(-dt / 0.3));
     animalFocus_ = focus;
     animalFocusInit_ = true;
+    // wer gebissen werden kann: nur beim Gastgeber (bzw. allein), lebende Figuren, Verletzungen an
+    std::vector<uint32_t> who;  // je Eintrag: 0 = eigene Figur, sonst Nummer des Mitspielers
     if (play_) {
-        scarers.push_back({focus, animalFocusSpeed_});
+        scarers.push_back({focus, animalFocusSpeed_, !netClient() && healthOn_ && me_.deadUntil < 0});
+        who.push_back(0);
     } else if (focus.y - tr->surfaceHeight(focus.x, focus.z) < 3.0) {  // Bau-Modus: nur eine Kamera dicht am Boden
         scarers.push_back({focus, animalFocusSpeed_});
+        who.push_back(UINT32_MAX);
     }
-    for (const NetPlayer& p : netPlayers_)
-        if (p.id != netSelfId_ && p.play) scarers.push_back({p.feet, 2.0});
+    for (const NetPlayer& p : netPlayers_) {
+        if (p.id == netSelfId_ || !p.play) continue;
+        const Peer* peer = netRole_ == NetRole::Host ? findPeer(p.id) : nullptr;
+        scarers.push_back({p.feet, 2.0, peer && healthOn_ && peer->vitals.deadUntil < 0});
+        who.push_back(p.id);
+    }
     animals_->update(dt, *tr, focus, view, scarers, dayHours_, settings_.viewDistance);
+    // Bisse und Stöße: auf die eigene Figur oder (als Gastgeber) auf einen Mitspieler
+    for (const AnimalBite& b : animals_->takeBites()) {
+        if (b.target < 0 || b.target >= (int)who.size()) continue;
+        const uint32_t id = who[(size_t)b.target];
+        if (id == 0 && play_) animalBite(me_, 0, playYaw_, b.species, b.from);
+        else if (Peer* peer = id != 0 && id != UINT32_MAX ? findPeer(id) : nullptr) animalBite(peer->vitals, (int)id, peer->yaw, b.species, b.from);
+    }
     animalDt_ = dt;
 }
 
@@ -191,6 +214,7 @@ void App::addAnimals(FrameDesc& fd, const std::function<bool(const glm::dvec3&, 
         if (a.species < 0 || a.species >= (int)animalLooks_.size()) continue;
         const AnimalSpecies& s = cfg.species[(size_t)a.species];
         const AnimalLook& look = animalLooks_[(size_t)a.species];
+        if (a.dead && look.death < 0) a.roll = std::min(a.deadTime * 3.0f, 1.5f);  // ohne Sterbe-Ablauf: auf die Seite kippen
         // Abläufe weiterzählen (auch wenn es gerade nicht zu sehen ist)
         // Gehen -> Rennen überblenden; die Schritte folgen der Geschwindigkeit, damit die Hufe nicht rutschen
         const float run = look.run >= 0 ? smooth01((a.speed - s.walkSpeed * 1.3f) / std::max(s.runSpeed * 0.55f - s.walkSpeed * 1.3f, 0.1f)) : 0.0f;
@@ -250,7 +274,9 @@ void App::addAnimals(FrameDesc& fd, const std::function<bool(const glm::dvec3&, 
             a.poseTime = time_;
             layers.clear();
             const float still = 1.0f - move;
-            if (a.airborne && look.fly < 0) {
+            if (a.dead && look.death >= 0) {  // tot: Sterbe-Ablauf einmal, dann liegen bleiben
+                layers.push_back({look.death, std::min(a.deadTime, look.model->clipLength(look.death) - 0.001f), 1.0f});
+            } else if (a.airborne && look.fly < 0) {
                 layers.push_back({look.idle[0], a.idleTime, 1.0f});
             } else if (look.fly >= 0 && a.airborne) {
                 layers.push_back({look.fly, a.idleTime * 1.4f, 1.0f});
@@ -267,6 +293,15 @@ void App::addAnimals(FrameDesc& fd, const std::function<bool(const glm::dvec3&, 
                 };
                 cycle(look.walk, move * (1.0f - run));
                 cycle(look.run, move * run);
+                // Biss/Stoß: Angriffs-Ablauf einmal über alles andere legen (sanft ein- und ausblenden)
+                if (look.attack >= 0 && a.attackAnim >= 0) {
+                    const float len = std::max(look.model->clipLength(look.attack), 0.1f), t = a.attackAnim;
+                    const float w = t >= len ? 0.0f : std::min({1.0f, t / 0.08f, (len - t) / 0.15f});
+                    if (w > 0) {
+                        for (AvatarModel::Layer& l : layers) l.weight *= 1.0f - w;
+                        layers.push_back({look.attack, t, w});
+                    }
+                }
             }
             a.pose.clear();
             look.model->pose(layers.data(), (int)layers.size(), nullptr, 0, a.pose);
@@ -289,6 +324,40 @@ std::string App::animalsCommand(const std::vector<std::string>& t) {
     }
     if (!tr) return "Error: animals live only in worlds with terrain";
     if (!animals_) updateAnimals(0);
+    // Jagd per Befehl: das nächste Tier bis 3 m anvisieren und schlagen bzw. ein totes zerlegen
+    if (sub == "hit" || sub == "harvest") {
+        if (!play_ || netClient()) return "Error: only for the own figure in play mode";
+        const bool dead = sub == "harvest";
+        const glm::dvec3 eye = playerEye();
+        const Animal* best = nullptr;
+        double bestD = 3.0;
+        for (const Animal& a : animals_->animals()) {
+            const AnimalSpecies& s = animals_->config().species[(size_t)a.species];
+            if (a.dead != dead || a.airborne || s.model == "bird") continue;
+            const double d = glm::length(glm::dvec2(a.pos.x - eye.x, a.pos.z - eye.z));
+            if (d < bestD) bestD = d, best = &a;
+        }
+        if (!best) {
+            double nearest = 1e9;
+            for (const Animal& a : animals_->animals())
+                if (a.dead == dead) nearest = std::min(nearest, glm::length(glm::dvec2(a.pos.x - eye.x, a.pos.z - eye.z)));
+            return std::string(dead ? "no dead animal" : "no animal") + " within 3 m" + (nearest < 1e8 ? " (nearest " + fmtNum(nearest, 1) + " m)" : "");
+        }
+        const AnimalSpecies& s = animals_->config().species[(size_t)best->species];
+        const glm::dvec3 aim = best->pos + glm::dvec3(0, dead ? std::min(0.25, s.height * 0.3) : s.height * 0.5, 0) - eye;
+        if (dead) return animalHarvest(eye, aim) ? "harvested " + s.id : "Error: could not harvest";
+        HandTool tool = handTool_;
+        const std::string w = t.size() > 2 ? t[2] : "";
+        if (w == "hand") tool = HandTool::None;
+        if (w == "axe") tool = HandTool::Axe;
+        if (w == "pickaxe") tool = HandTool::Pickaxe;
+        if (w == "laser") tool = HandTool::Laser;
+        const uint32_t id = best->id;
+        std::string msg;
+        if (!animalStrike(eye, aim, tool, &msg)) return "Error: missed";
+        const Animal* a = animals_->find(id);
+        return s.id + (a && a->dead ? " killed" : " hit, strength " + fmtNum(a ? a->hp * 100.0 : 0.0, 0) + " %") + (msg.empty() ? "" : " (" + msg + ")");
+    }
     if (!animals_) return "Error: animals are off ('animals on')";
     if (sub.empty() || sub == "status") return animals_->status(animalFocus_);
     if (sub == "reload") {
@@ -348,5 +417,59 @@ std::string App::animalsCommand(const std::vector<std::string>& t) {
         if (glm::length(f) > 1e-6) at += glm::normalize(f) * dist;
         return animals_->spawnAt(*tr, t[2], n, at);
     }
-    return "Error: animals [status|list|info <id>|spawn <id> [count] [distance m]|clear|reload|on|off]";
+    return "Error: animals [status|list|info <id>|spawn <id> [count] [distance m]|hit [hand|axe|pickaxe|laser]|harvest|clear|reload|on|off]";
+}
+
+// ============================================================================ Jagd
+
+// Schlag mit dem, was man in der Hand hat: die Hand allein kaum (ein Fuchs braucht viele Schläge), Axt und Spitzhacke
+// kräftig. Getroffene Tiere fliehen, Wehrhafte (Wolf, Wildschwein) greifen erst recht an, bis sie schwer verwundet sind.
+// Unter halber Kraft humpeln sie und können nicht mehr rennen.
+bool App::animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool tool, std::string* msg) {
+    if (!animals_) return false;
+    float damage = 0.12f;
+    double reach = 1.9;
+    switch (tool) {
+    case HandTool::Axe: damage = 0.55f, reach = 2.4; break;
+    case HandTool::Pickaxe: damage = 0.5f, reach = 2.4; break;
+    case HandTool::Laser: damage = 0.8f, reach = 3.0; break;
+    case HandTool::Drill: damage = 0.3f, reach = 2.2; break;
+    case HandTool::Terra: damage = 0.15f, reach = 2.2; break;
+    case HandTool::Tractor: return false;
+    default: break;
+    }
+    bool killed = false;
+    const uint32_t id = animals_->strike(eye, fwd, reach, damage, &killed);
+    if (!id) return false;
+    if (const Animal* a = animals_->find(id)) {
+        const AnimalSpecies& s = animals_->config().species[(size_t)a->species];
+        std::string text;
+        if (killed) text = s.label + " erlegt" + (s.hide > 0 ? " - F zum Zerlegen" : "");
+        else if (a->hp < 0.5f) text = s.label + " ist verwundet und humpelt";
+        if (msg) *msg = text;
+        else if (!text.empty()) toast(text);
+    }
+    return true;
+}
+
+// Totes Tier im Blick zerlegen: das Fell (Größe je Art, "hide" in animals.json) kommt ins Inventar, der Kadaver ist weg
+bool App::animalHarvest(const glm::dvec3& eye, const glm::dvec3& fwd) {
+    if (!animals_) return false;
+    const uint32_t id = animals_->pickDead(eye, fwd, 3.0);
+    const Animal* a = id ? animals_->find(id) : nullptr;
+    if (!a) return false;
+    const AnimalSpecies& s = animals_->config().species[(size_t)a->species];
+    const glm::dvec3 at = a->pos + glm::dvec3(0, 0.3, 0);
+    animals_->remove(id);
+    if (s.hide <= 0) {
+        toast(s.label + ": daran ist nichts Brauchbares", false);
+        return true;
+    }
+    const int mat = materialIndex("hide");
+    const double side = std::sqrt((double)s.hide);
+    Object* o = world_->addBox(mat, glm::dvec3(side, 0.006, side * 0.8), at, "Fell (" + s.label + ")");
+    if (!o) return true;
+    if (!invStore(o->id, true)) toast("Fell (" + s.label + ") - passt nicht mehr ins Inventar, es liegt am Boden", false);
+    else toast("Fell (" + s.label + ", " + fmtNum(o->mass, 1) + " kg) im Inventar - C: daraus einen Verband herstellen");
+    return true;
 }

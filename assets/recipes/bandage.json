@@ -1,0 +1,8 @@
+{
+  "id": "bandage",
+  "label": "Verband",
+  "order": 60,
+  "pieces": [
+    { "from": [-0.1, 0, -0.03], "to": [0.1, 0.005, 0.03], "material": "hide", "main": true }
+  ]
+}

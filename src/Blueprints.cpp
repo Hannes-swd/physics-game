@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -46,10 +47,10 @@ bool vec3(const Json& j, glm::dvec3& v) {
 }
 
 PlanMat matOf(const std::string& s) {
-    return s == "stone" ? PlanMat::Stone : s == "metal" ? PlanMat::Metal : s == "any" ? PlanMat::Any : PlanMat::Wood;
+    return s == "stone" ? PlanMat::Stone : s == "metal" ? PlanMat::Metal : s == "any" ? PlanMat::Any : s == "hide" ? PlanMat::Hide : PlanMat::Wood;
 }
 const char* matKey(PlanMat m) {
-    return m == PlanMat::Stone ? "stone" : m == PlanMat::Metal ? "metal" : m == PlanMat::Any ? "any" : "wood";
+    return m == PlanMat::Stone ? "stone" : m == PlanMat::Metal ? "metal" : m == PlanMat::Any ? "any" : m == PlanMat::Hide ? "hide" : "wood";
 }
 
 bool readTemplate(const std::filesystem::path& file, PlanTemplate& t, std::string& err) {
@@ -162,6 +163,7 @@ bool fitsMat(PlanMat m, int material) {
     case PlanMat::Wood: return c == MaterialClass::Wood;
     case PlanMat::Stone: return c == MaterialClass::Stone;
     case PlanMat::Metal: return c == MaterialClass::Metal;
+    case PlanMat::Hide: return std::strcmp(materials()[(size_t)material].name, "hide") == 0;
     default: return true;
     }
 }
@@ -258,6 +260,7 @@ const char* planMatLabel(PlanMat m) {
     case PlanMat::Wood: return "Holz";
     case PlanMat::Stone: return "Stein";
     case PlanMat::Metal: return "Metall";
+    case PlanMat::Hide: return "Fell";
     default: return "Material";
     }
 }
@@ -565,7 +568,7 @@ bool templateFromParts(World& w, const std::vector<uint32_t>& ids, PlanTemplate&
         d.half = (o->bbMax - o->bbMin) * 0.5;
         d.rot = o->rot;
         const MaterialClass c = materialClass(o->material);
-        d.mat = c == MaterialClass::Wood ? PlanMat::Wood : c == MaterialClass::Stone ? PlanMat::Stone : c == MaterialClass::Metal ? PlanMat::Metal : PlanMat::Any;
+        d.mat = std::strcmp(materials()[(size_t)o->material].name, "hide") == 0 ? PlanMat::Hide : c == MaterialClass::Wood ? PlanMat::Wood : c == MaterialClass::Stone ? PlanMat::Stone : c == MaterialClass::Metal ? PlanMat::Metal : PlanMat::Any;
         out.pieces.push_back(d);
     }
     return true;

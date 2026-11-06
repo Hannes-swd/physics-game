@@ -115,6 +115,10 @@ bool App::init(const AppOptions& opt) {
         // Latein-1, Gedankenstriche, deutsche Anführungszeichen „“ ‚‘, Auslassungspunkte, Pfeile, ⌀
         static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2013, 0x2014, 0x2018, 0x201E, 0x2026, 0x2026, 0x2190, 0x2193, 0x2300, 0x2300, 0};
         io.Fonts->AddFontFromFileTTF(font, 18.0f, nullptr, ranges);
+        // Körperkarte (Leben): fett für die Körperteile, klein für den Zustand
+        const char* bold = "C:/Windows/Fonts/segoeuib.ttf";
+        hudBold_ = io.Fonts->AddFontFromFileTTF(std::filesystem::exists(bold) ? bold : font, 18.0f, nullptr, ranges);
+        hudSmall_ = io.Fonts->AddFontFromFileTTF(font, 16.0f, nullptr, ranges);
     }
     setupStyle();
     ImGui_ImplGlfw_InitForVulkan(window_, true);

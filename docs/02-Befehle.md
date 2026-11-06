@@ -49,6 +49,7 @@ Dokumentation sind deutsch.
 | Gelände | `terrain`, `terrain at`, `terrain biomes`, `terrain find`, `terrain goto`, `terrain raise`/`lower`/`flatten`/`reset`, `terrain reload`, `terrain borders`, `terrain map` (siehe [16](16-Weltgenerierung.md)) |
 | Bäume | `trees`, `tree plant`, `tree nearest`, `tp tree`, `scene trees`, `trees reload` (siehe [17](17-Baeume.md)) |
 | Tag & Nacht | `time`, `time <hh:mm>`, `time noon`/`night`/…, `time add`, `time stop`/`run`, `time length`, `sky`, `sky lines` (siehe [23](23-Tag-und-Nacht.md)) |
+| Leben | `health`, `health hurt <teil> <art> [1-3]`, `health heal`, `health bandage`, `health blood`, `health on`/`off` (siehe [25](25-Leben.md)) |
 | Tiere | `animals`, `animals list`, `animals info <id>`, `animals spawn <id> [Anzahl] [Abstand]`, `animals clear`, `animals reload`, `animals on`/`off` (siehe [24](24-Tiere.md)) |
 | Befehlssprache | `wait`, `wait until`, `if`, `repeat`, `print`, `set` (siehe [03](03-Befehlssprache.md)) |
 

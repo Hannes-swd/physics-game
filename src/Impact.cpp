@@ -281,6 +281,13 @@ const char* formName(ToolForm f) { return f == ToolForm::Point ? "point" : f == 
 
 } // namespace
 
+int World::strikeForm(const Object& o, const glm::dvec3& nWorld, const glm::dvec3& point) const {
+    if (o.kind != ObjKind::Solid || glm::length(nWorld) < 1e-9) return 0;
+    const ToolProfile tp = measureTool(o, glm::normalize(nWorld), point);
+    if (!tp.ok) return 0;
+    return tp.form == ToolForm::Point ? 1 : tp.form == ToolForm::Edge ? 2 : 0;
+}
+
 // ============================================================================ Aufprall
 
 // Je Paar zählt der stärkste Aufprall. Ist ein Teil deutlich härter, entscheidet seine Form (toolImpact).

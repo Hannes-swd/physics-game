@@ -621,7 +621,9 @@ void App::playInput(float dt) {
         if (ImGui::IsKeyPressed(ImGuiKey_X, false)) selectHandTool(handTool_ == HandTool::Axe ? HandTool::None : HandTool::Axe);
     }
     // F: das Teil, auf das man schaut (auch Zeug am Boden), direkt ins Inventar
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false) && !planMode_ && !netClient()) {
+    // Ein erlegtes Tier im Blick: zerlegen (Fell ins Inventar)
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false) && !planMode_ && !netClient() && animalHarvest(eye, fwd)) {
+    } else if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false) && !planMode_ && !netClient()) {
         RayHit h;
         const bool hitPart = world_->raycast(eye, fwd, h, 0) && h.obj && h.t <= 3.5;
         ScatterSpot spot;
@@ -636,6 +638,15 @@ void App::playInput(float dt) {
     // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
     planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
     const bool lmbPressed = lmbDown && !prevLmb_;
+    // Schlag (linke Maustaste): ein Tier im Blick wird getroffen (Werkzeug: fester, weiter), sonst lassen Tiere direkt vor
+    // der Figur ab und fliehen
+    if (lmbPressed && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_) {
+        strikeReady_ = time_ + 0.4;
+        if (!animalStrike(eye, fwd, handTool_)) {
+            const glm::dvec3 hit = playerEye() + glm::normalize(glm::dvec3(fwd.x, 0, fwd.z) + glm::dvec3(1e-9)) * 1.2 - glm::dvec3(0, 1.0, 0);
+            if (animals_->scare(hit, handTool_ != HandTool::None ? 2.4 : 1.8) > 0) toast("Vertrieben");
+        }
+    }
     handToolAction(eye, fwd, lmbDown, lmbPressed, rmbDown, rmbDown && !prevRmb_);
     const bool inHand = handTool_ != HandTool::None;
     HandInput in;
@@ -831,7 +842,16 @@ void App::updatePlay(float dt) {
         run = run || autoRun_;
         autoMoveTime_ = std::max(0.0, autoMoveTime_ - dt);
     }
-    if (glm::length(wish) > 0) wish = glm::normalize(wish) * (run ? 7.0f : 4.0f);
+    // Verletzte Beine, Blutverlust: langsamer, kein Sprinten oder Springen. Tot: keine Bewegung. Verbinden: nur gehen
+    if (!netClient()) {
+        run = run && me_.health.canRun() && me_.bandageUntil < 0;
+        jump = jump && me_.health.canJump();
+        if (me_.deadUntil >= 0) {
+            wish = glm::vec3(0);
+            jump = false;
+        }
+    }
+    if (glm::length(wish) > 0) wish = glm::normalize(wish) * (run ? 7.0f : 4.0f) * (netClient() ? 1.0f : (float)me_.health.moveFactor());
     // Wasser: Waten bremst, ab der Brust schwimmt die Figur. W mit Blick nach unten taucht, Leertaste hoch, Strg hinunter
     const float swim = swimDepth(netClient() ? netFeet_ : physics_.characterPosition());
     if (swim > 0.5f) {
@@ -852,6 +872,7 @@ void App::updatePlay(float dt) {
     if (netClient()) {  // der Gastgeber bewegt die Figur
         netWish_ = wish;
         netJump_ = netJump_ || jump;
+        updateHealth(dt, true, 0.0, swim);  // nur Uhr und H (rechnen tut der Gastgeber)
         return;
     }
     world_->step(dt, [&](float h) {
@@ -861,7 +882,10 @@ void App::updatePlay(float dt) {
     if (play_) {
         BodyHandle ignore = kNoBody;
         if (Object* g = world_->find(hand_.grabbed)) ignore = g->body;
+        const bool wasOnGround = physics_.characterOnGround();
+        const double vyBefore = physics_.characterVelocity().y;
         physics_.updateCharacter(dt, wish, jump, ignore, 0, swim);
+        updateHealth(dt, wasOnGround, vyBefore, swim);
         // Stufe hinauf: die Figur steht sofort oben, die Kamera gleitet nach (schneller, als man laufen oder springen kann)
         const double y = physics_.characterPosition().y, dy = y - lastFeetY_;
         if (physics_.characterOnGround() && dy > 0.04 && dy < 0.5 && dy > 8.0 * dt) eyeLag_ -= dy;

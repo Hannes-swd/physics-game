@@ -32,6 +32,7 @@ glm::dvec3 matColor(PlanMat m) {
     case PlanMat::Wood: return {0.72, 0.52, 0.32};
     case PlanMat::Stone: return {0.62, 0.62, 0.60};
     case PlanMat::Metal: return {0.58, 0.64, 0.72};
+    case PlanMat::Hide: return {0.45, 0.30, 0.18};
     default: return {0.75, 0.75, 0.75};
     }
 }
@@ -114,10 +115,10 @@ std::vector<CatalogUi::Poly> picture(const PlanTemplate& tp) {
 
 // Bauvorlage: Material je Art in dm³ ("Holz 120 dm³ + Stein 40 dm³")
 std::string planNeeds(const PlanTemplate& tp) {
-    double need[4] = {0, 0, 0, 0};
-    for (const PlanPieceDef& d : tp.pieces) need[std::clamp((int)d.mat, 0, 3)] += 8.0 * d.half.x * d.half.y * d.half.z;
+    double need[kPlanMats] = {};
+    for (const PlanPieceDef& d : tp.pieces) need[std::clamp((int)d.mat, 0, kPlanMats - 1)] += 8.0 * d.half.x * d.half.y * d.half.z;
     std::string s;
-    for (int m : {(int)PlanMat::Wood, (int)PlanMat::Stone, (int)PlanMat::Metal, (int)PlanMat::Any})
+    for (int m : {(int)PlanMat::Wood, (int)PlanMat::Stone, (int)PlanMat::Metal, (int)PlanMat::Hide, (int)PlanMat::Any})
         if (need[m] > 0) s += (s.empty() ? "" : " + ") + std::string(planMatLabel((PlanMat)m)) + " " + fmtNum(need[m] * 1000, need[m] < 0.01 ? 1 : 0) + " dm³";
     return s;
 }

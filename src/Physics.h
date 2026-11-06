@@ -71,6 +71,16 @@ struct ImpactInfo {
     double energy = 0;  // ½·µ·v² (µ = reduzierte Masse) in J
 };
 
+// Treffer auf eine Spielfigur: ein bewegliches Teil fliegt oder fällt gegen sie
+struct CharacterHit {
+    int who = 0;
+    BodyHandle other = kNoBody;
+    glm::dvec3 point{0};  // Kontaktstelle (auf dem Teil)
+    glm::dvec3 into{0};   // Richtung vom Teil in die Figur
+    double speed = 0;     // Geschwindigkeit des Teils auf die Figur zu (m/s)
+    double mass = 0;      // Masse des Teils (kg)
+};
+
 struct ContactInfo {
     glm::dvec3 point{0};
     glm::dvec3 normal{0};       // Richtung der Kontaktkraft auf den beobachteten Körper
@@ -228,6 +238,8 @@ public:
     glm::dvec3 characterPosition(int who = 0) const;
     void setCharacterPosition(const glm::dvec3& feet, int who = 0);
     bool characterOnGround(int who = 0) const;
+    glm::dvec3 characterVelocity(int who = 0) const;
+    std::vector<CharacterHit> takeCharacterHits();  // Treffer seit dem letzten Aufruf
 
 private:
     void applyRollingResistance(float dt);

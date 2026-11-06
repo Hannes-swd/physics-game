@@ -24,6 +24,7 @@ enum class AnimalBehavior { Shy = 0, Calm = 1, Curious = 2, Small = 3 };
 // Ground: läuft; Soar: kreist hoch oben (Greifvögel, Möwen); Flock: Schwarm zieht umher; Flutter: flattert (Fledermaus)
 enum class AnimalMotion { Ground = 0, Soar = 1, Flock = 2, Flutter = 3 };
 enum class AnimalActive { Always = 0, Day = 1, Night = 2 };
+enum class AnimalAttack { None = 0, Hunt = 1, Defend = 2 };
 
 struct AnimalSpecies {
     std::string id, label;
@@ -55,6 +56,14 @@ struct AnimalSpecies {
     float flySpeed = 9.0f;                     // m/s
     float wingspan = 0.0f;                     // Modell mit Flügeln zum Abheben (takeoff): Spannweite (m)
     glm::vec3 body{0.2f}, wing{0.1f}, beak{0.8f, 0.6f, 0.1f};  // Vogelform, Flügel beim Abheben (wing)
+    // Angriff: hunt = jagt den Spieler ab range (m, nachts doppelt so weit), gibt nach chase s auf; defend = greift nur an,
+    // wer näher als range kommt, und zieht sich danach zurück. reach: so nah muss es heran; kind: bite, gore, sting, pinch
+    AnimalAttack attack = AnimalAttack::None;
+    float attackRange = 0, attackReach = 1.0f, attackCooldown = 1.6f, attackPower = 1.0f, attackChase = 25.0f;
+    std::string attackKind = "bite", attackClip;
+    // Jagd: so viel hält es aus (0: aus der Größe), Fell beim Zerlegen (m², 0: keins), Sterbe-Ablauf
+    float toughness = 0, hide = 0;
+    std::string deathClip;
 };
 
 struct AnimalConfig {
@@ -91,7 +100,13 @@ struct Animal {
     glm::dvec2 offset{0};    // Herde: Platz relativ zum ersten Tier
     float detour = 0;        // Umweg um Wasser und Steilhänge (rad, klingt ab)
     float stuck = 0;         // so lange (s) kam es nicht weiter
-    enum State { Idle, Walk, Alert, Flee, Follow, Fly } state = Idle;
+    enum State { Idle, Walk, Alert, Flee, Follow, Fly, Attack } state = Idle;
+    float attackCool = 0;    // bis zum nächsten Biss (s)
+    float attackAnim = -1;   // Angriffs-Ablauf läuft seit so vielen s (-1: keiner)
+    float retreat = 0;       // Jäger nach einem Biss: so lange (s) zurückweichen, dann wieder heran
+    float hp = 1.0f;         // Lebenskraft 0..1: unter 0,5 humpelt es (kein Rennen), bei 0 ist es tot (erholt sich langsam)
+    bool dead = false;
+    float deadTime = 0;      // so lange (s) schon tot
     float timer = 0;
     int idleClip = 0, lastIdle = 0;
     float idleBlend = 1, idleTime = 0, phase = 0;
@@ -114,6 +129,8 @@ struct AnimalGroup {
     glm::dvec2 home{0};      // Platz, um den die Gruppe zieht
     glm::dvec2 pos{0};       // wo das erste Tier gerade ist
     double fleeUntil = -1;
+    double attackUntil = -1, attackStart = -1;  // greift an bis dahin, seit dann
+    double calmUntil = -1;                     // vertrieben oder aufgegeben: bis dahin kein Angriff
     glm::dvec2 fleeFrom{0};
     int size = 0;
 };
@@ -122,6 +139,14 @@ struct AnimalGroup {
 struct AnimalScarer {
     glm::dvec3 pos{0};
     double speed = 0;
+    bool prey = false;  // kann angegriffen werden (eigene Figur, lebt)
+};
+
+// Ein Tier hat zugebissen (gestoßen, gestochen): wer, und welcher Spieler (Index in scarers)
+struct AnimalBite {
+    int species = 0;
+    glm::dvec3 from{0};
+    int target = 0;
 };
 
 class AnimalWorld {
@@ -140,6 +165,16 @@ public:
     std::string status(const glm::dvec3& focus) const;
     double now() const { return clock_; }
     double reach(const AnimalSpecies& s) const { return s.visible * viewScale_; }
+    std::vector<AnimalBite> takeBites() { std::vector<AnimalBite> r; r.swap(bites_); return r; }
+    // Schlag in diese Richtung: Tiere im Umkreis lassen ab und fliehen. Rückgabe: so viele vertrieben
+    int scare(const glm::dvec3& at, double radius);
+    // Schlag entlang eines Strahls (bis reach m): trifft das nächste lebende Tier am Boden. damage: Anteil der Lebenskraft
+    // eines Tiers der Zähigkeit 1. Rückgabe: Nummer des Tiers (0: keins); killed: daran gestorben
+    uint32_t strike(const glm::dvec3& eye, const glm::dvec3& dir, double reach, float damage, bool* killed = nullptr);
+    uint32_t pickDead(const glm::dvec3& eye, const glm::dvec3& dir, double reach) const;  // totes Tier im Blick
+    const Animal* find(uint32_t id) const;
+    bool remove(uint32_t id);
+    float toughness(const AnimalSpecies& s) const { return s.toughness > 0 ? s.toughness : 0.35f + s.height; }
 
 private:
     bool walkable(const Terrain& tr, const AnimalSpecies& s, double x, double z, double* y = nullptr, double* slope = nullptr) const;
@@ -161,4 +196,6 @@ private:
     double clock_ = 0, spawnClock_ = 0;
     size_t nextSpecies_ = 0;
     double viewScale_ = 1.0;
+    double dayHours_ = 12.0;
+    std::vector<AnimalBite> bites_;
 };

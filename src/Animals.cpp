@@ -206,6 +206,30 @@ bool parseAnimalConfig(const std::string& text, AnimalConfig& out, std::string* 
         r.num(t, "alert", s.alertDistance, w);
         r.pair(t, "keep", s.keepNear, s.keepFar, w);
         if (t["takeoff"].type == Json::Bool) s.takeoff = t["takeoff"].num != 0;
+        if (const Json& at = t["attack"]; at.type == Json::Object) {
+            const std::string wa = w + ".attack";
+            std::string mode = "defend";
+            r.text(at, "mode", mode, wa);
+            if (!pick<AnimalAttack>(mode, {{"hunt", AnimalAttack::Hunt}, {"defend", AnimalAttack::Defend}, {"none", AnimalAttack::None}}, s.attack))
+                r.fail(wa + ".mode", "'" + mode + "': hunt, defend or none");
+            r.num(at, "range", s.attackRange, wa);
+            r.num(at, "reach", s.attackReach, wa);
+            r.num(at, "cooldown", s.attackCooldown, wa);
+            r.num(at, "power", s.attackPower, wa);
+            r.num(at, "chase", s.attackChase, wa);
+            r.text(at, "kind", s.attackKind, wa);
+            r.text(at, "clip", s.attackClip, wa);
+            if (s.attackKind != "bite" && s.attackKind != "gore" && s.attackKind != "sting" && s.attackKind != "pinch")
+                r.fail(wa + ".kind", "'" + s.attackKind + "': bite, gore, sting or pinch");
+            s.attackRange = std::clamp(s.attackRange, 0.0f, 200.0f);
+            s.attackReach = std::clamp(s.attackReach, 0.2f, 5.0f);
+            s.attackCooldown = std::clamp(s.attackCooldown, 0.3f, 30.0f);
+            s.attackPower = std::clamp(s.attackPower, 0.1f, 5.0f);
+        }
+        r.num(t, "toughness", s.toughness, w);
+        r.num(t, "hide", s.hide, w);
+        s.hide = std::clamp(s.hide, 0.0f, 10.0f);
+        if (t["clips"].type == Json::Object) r.text(t["clips"], "death", s.deathClip, w + ".clips");
         r.num(t, "visible", s.visible, w);
         s.visible = std::clamp(s.visible, 10.0f, 5000.0f);
         std::string act = "always";
@@ -319,6 +343,7 @@ void AnimalWorld::setConfig(std::shared_ptr<const AnimalConfig> cfg) {
 void AnimalWorld::clear() {
     animals_.clear();
     groups_.clear();
+    bites_.clear();
 }
 
 AnimalGroup* AnimalWorld::findGroup(uint32_t id) {
@@ -472,6 +497,7 @@ std::string AnimalWorld::spawnAt(const Terrain& tr, const std::string& id, int c
 // ============================================================================ Bewegung
 
 void AnimalWorld::moveGround(Animal& a, const AnimalSpecies& s, const Terrain& tr, double dt, const glm::dvec2& goal, float speed) {
+    if (a.hp < 0.5f) speed = std::min(speed, s.walkSpeed * 1.3f);  // verwundet: humpelt, kann nicht rennen
     const glm::dvec2 p = xz(a.pos), to = goal - p;
     const double dist = glm::length(to);
     float want = dist > 0.25 ? speed : 0.0f;
@@ -512,13 +538,70 @@ void AnimalWorld::think(Animal& a, AnimalGroup& g, const Animal* lead, const Ter
     // der nächste Spieler
     double d = 1e30, scSpeed = 0;
     glm::dvec2 from(0);
-    for (const AnimalScarer& sc : scarers) {
+    int nearest = -1;
+    for (size_t i = 0; i < scarers.size(); ++i) {
+        const AnimalScarer& sc = scarers[i];
         if (std::abs(sc.pos.y - a.pos.y) > 40) continue;
         const double dd = glm::length(xz(sc.pos) - xz(a.pos));
-        if (dd < d) d = dd, from = xz(sc.pos), scSpeed = sc.speed;
+        if (dd < d) d = dd, from = xz(sc.pos), scSpeed = sc.speed, nearest = (int)i;
     }
+    a.attackCool = std::max(0.0f, a.attackCool - (float)dt);
+    if (a.attackAnim >= 0 && (a.attackAnim += (float)dt) > 2.0f) a.attackAnim = -1;
+
+    // Angriff: Jäger (Wolf) kommen ab range heran (nachts von doppelt so weit) und geben nach "chase" s auf; Verteidiger
+    // (Wildschwein, Schlange) greifen nur an, wer ihnen zu nahe kommt
+    bool attacking = false;
+    if (s.attack != AnimalAttack::None && !a.airborne && nearest >= 0 && scarers[(size_t)nearest].prey && g.calmUntil < clock_) {
+        const bool night = dayHours_ < 6.0 || dayHours_ > 20.5;
+        const double range = s.attackRange * (s.attack == AnimalAttack::Hunt && night ? 2.0 : 1.0);
+        if (d < range) {
+            if (g.attackUntil < clock_) g.attackStart = clock_;
+            g.attackUntil = std::max(g.attackUntil, clock_ + (s.attack == AnimalAttack::Hunt ? 4.0 : 1.5));
+        }
+        if (s.attack == AnimalAttack::Hunt && g.attackUntil > clock_ && d < range * 2.5)
+            g.attackUntil = std::max(g.attackUntil, clock_ + 1.0);  // an der Beute dranbleiben
+        if (s.attack == AnimalAttack::Hunt && g.attackUntil > clock_ && clock_ - g.attackStart > s.attackChase) {
+            g.attackUntil = -1;  // aufgegeben
+            g.calmUntil = clock_ + 90.0;
+        }
+        attacking = g.attackUntil > clock_;
+    }
+    if (!attacking && a.state == Animal::Attack) a.state = Animal::Idle;
+
     // wer rennt, erschreckt weiter; wer steht oder schleicht, kommt näher heran
     const double scare = scSpeed > 4.0 ? 1.5 : scSpeed < 0.4 ? 0.75 : 1.0;
+    if (attacking) {
+        g.fleeUntil = -1;
+        a.state = Animal::Attack;
+        const double reach = s.attackReach + 0.35;  // bis an die Figur (ihr Radius)
+        if (a.retreat > 0) {  // nach dem Biss ein paar Sprünge zurück, dann wieder heran
+            a.retreat -= (float)dt;
+            glm::dvec2 away = xz(a.pos) - from;
+            if (glm::length(away) < 1e-3) away = -heading(a.yaw);
+            moveGround(a, s, tr, dt, xz(a.pos) + glm::normalize(away) * 6.0, s.runSpeed * 0.6f);
+        } else if (d > reach * 0.85) {
+            const float sp = d > 5.0 ? s.runSpeed : std::max(s.walkSpeed * 2.0f, s.runSpeed * 0.5f);
+            moveGround(a, s, tr, dt, from, sp);
+        } else {  // dran: zur Beute drehen, stehen
+            const float diff = wrapAngle(yawOf(from - xz(a.pos)) - a.yaw), step = s.turnRate * (float)dt;
+            a.yaw = wrapAngle(a.yaw + std::clamp(diff, -step, step));
+            moveGround(a, s, tr, dt, xz(a.pos), 0);
+        }
+        if (d < reach && a.attackCool <= 0 && a.retreat <= 0) {
+            bites_.push_back({a.species, a.pos, nearest});
+            a.attackCool = s.attackCooldown * rnd(0.8f, 1.25f);
+            a.attackAnim = 0;
+            if (s.attack == AnimalAttack::Hunt) a.retreat = rnd(0.8f, 1.6f);
+            if (s.attack == AnimalAttack::Defend) {  // gewarnt: zurückziehen
+                g.attackUntil = -1;
+                g.calmUntil = clock_ + rnd(6, 12);
+                g.fleeUntil = clock_ + rnd(2, 4);
+                g.fleeFrom = from;
+            }
+        }
+        if (a.leader) g.home = xz(a.pos);
+        return;
+    }
     if (d < s.fleeDistance * scare) {
         const double len = s.behavior == AnimalBehavior::Small ? rnd(2, 4) : s.behavior == AnimalBehavior::Shy ? rnd(5, 9) : rnd(3, 5);
         g.fleeUntil = std::max(g.fleeUntil, clock_ + len);
@@ -631,6 +714,106 @@ void AnimalWorld::think(Animal& a, AnimalGroup& g, const Animal* lead, const Ter
         }
         a.timer = rnd(1, 3);
     }
+}
+
+// Treffer-Kugel eines Tiers: um die Körpermitte, etwa so groß wie das Tier
+static bool hitAnimal(const Animal& a, const AnimalSpecies& s, const glm::dvec3& eye, const glm::dvec3& dir, double reach, double& t) {
+    const double r = std::max(0.22, s.height * 0.6);
+    const glm::dvec3 c = a.pos + glm::dvec3(0, a.dead ? std::min(0.25, s.height * 0.3) : s.height * 0.5, 0);
+    const glm::dvec3 oc = eye - c;
+    const double b = glm::dot(oc, dir), cc = glm::dot(oc, oc) - r * r, disc = b * b - cc;
+    if (disc < 0) return false;
+    t = -b - std::sqrt(disc);
+    if (t < 0) t = 0;  // schon drin
+    return t <= reach;
+}
+
+uint32_t AnimalWorld::strike(const glm::dvec3& eye, const glm::dvec3& dirIn, double reach, float damage, bool* killed) {
+    if (killed) *killed = false;
+    const glm::dvec3 dir = glm::normalize(dirIn);
+    Animal* best = nullptr;
+    double bestT = 1e30;
+    for (Animal& a : animals_) {
+        const AnimalSpecies& s = cfg_->species[(size_t)a.species];
+        double t;
+        if (a.dead || a.airborne || s.model == "bird" || !hitAnimal(a, s, eye, dir, reach, t) || t >= bestT) continue;
+        best = &a;
+        bestT = t;
+    }
+    if (!best) return 0;
+    Animal& a = *best;
+    const AnimalSpecies& s = cfg_->species[(size_t)a.species];
+    a.hp -= damage / toughness(s);
+    a.attackAnim = -1;
+    AnimalGroup* g = findGroup(a.group);
+    const glm::dvec2 from = xz(eye);
+    if (a.hp <= 0) {  // tot: liegt da, die anderen fliehen
+        a.hp = 0;
+        a.dead = true;
+        a.deadTime = 0;
+        a.speed = a.wantSpeed = 0;
+        a.state = Animal::Idle;
+        a.leader = false;
+        a.group = 0;
+        if (g) {
+            g->attackUntil = -1;
+            g->calmUntil = clock_ + 60.0;
+            g->fleeUntil = clock_ + rnd(6, 10);
+            g->fleeFrom = from;
+        }
+        if (killed) *killed = true;
+        return a.id;
+    }
+    if (g) {
+        if (s.attack != AnimalAttack::None && a.hp >= 0.45f) {  // wehrt sich
+            if (g->attackUntil < clock_) g->attackStart = clock_;
+            g->calmUntil = -1;
+            g->attackUntil = clock_ + 6.0;
+            a.retreat = 0.6f;
+        } else {  // flieht (verwundet nur humpelnd)
+            g->attackUntil = -1;
+            g->calmUntil = clock_ + 60.0;
+            g->fleeUntil = clock_ + rnd(6, 10);
+            g->fleeFrom = from;
+        }
+    }
+    return a.id;
+}
+
+uint32_t AnimalWorld::pickDead(const glm::dvec3& eye, const glm::dvec3& dirIn, double reach) const {
+    const glm::dvec3 dir = glm::normalize(dirIn);
+    uint32_t best = 0;
+    double bestT = 1e30, t;
+    for (const Animal& a : animals_)
+        if (a.dead && hitAnimal(a, cfg_->species[(size_t)a.species], eye, dir, reach, t) && t < bestT) best = a.id, bestT = t;
+    return best;
+}
+
+const Animal* AnimalWorld::find(uint32_t id) const {
+    for (const Animal& a : animals_)
+        if (a.id == id) return &a;
+    return nullptr;
+}
+
+bool AnimalWorld::remove(uint32_t id) {
+    const size_t n = animals_.size();
+    animals_.erase(std::remove_if(animals_.begin(), animals_.end(), [&](const Animal& a) { return a.id == id; }), animals_.end());
+    return animals_.size() != n;
+}
+
+int AnimalWorld::scare(const glm::dvec3& at, double radius) {
+    int n = 0;
+    for (const Animal& a : animals_) {
+        if (a.dead || a.airborne || std::abs(a.pos.y - at.y) > 3.0 || glm::length(xz(a.pos) - xz(at)) > radius) continue;
+        AnimalGroup* g = findGroup(a.group);
+        if (!g || g->calmUntil > clock_ + 30.0) continue;  // schon vertrieben
+        g->attackUntil = -1;
+        g->calmUntil = clock_ + 45.0;
+        g->fleeUntil = clock_ + rnd(4, 7);
+        g->fleeFrom = xz(at);
+        ++n;
+    }
+    return n;
 }
 
 void AnimalWorld::fly(Animal& a, AnimalGroup& g, const Animal* lead, const Terrain& tr, double dt) {
@@ -746,6 +929,7 @@ void AnimalWorld::update(double dt, const Terrain& tr, const glm::dvec3& focus, 
                          double dayHours, double viewScale) {
     dt = std::clamp(dt, 0.0, 0.1);
     clock_ += dt;
+    dayHours_ = dayHours;
     viewScale_ = std::clamp(viewScale, 0.3, 3.0);
     if (!cfg_->enabled) {
         clear();
@@ -787,6 +971,11 @@ void AnimalWorld::update(double dt, const Terrain& tr, const glm::dvec3& focus, 
     }
     for (size_t i = 0; i < animals_.size(); ++i) {
         Animal& a = animals_[i];
+        if (a.dead) {  // liegt da
+            a.deadTime += (float)dt;
+            continue;
+        }
+        a.hp = std::min(1.0f, a.hp + 0.004f * (float)dt);  // Wunden heilen langsam (ca. 4 min)
         auto it = groupIndex.find(a.group);
         if (it == groupIndex.end()) continue;
         AnimalGroup& g = groups_[it->second];
@@ -813,7 +1002,7 @@ void AnimalWorld::update(double dt, const Terrain& tr, const glm::dvec3& focus, 
         const AnimalSpecies& s = cfg_->species[(size_t)a.species];
         const glm::dvec2 rel = xz(a.pos) - f;
         const double dist = glm::length(rel);
-        bool gone = dist > reach(s) * 1.08;
+        bool gone = dist > reach(s) * 1.08 || (a.dead && a.deadTime > 600.0f);  // Kadaver: nach 10 min weg
         if (!gone && !activeAt(s.active, dayHours) && dist > 20) gone = glm::dot(rel / dist, v2) < 0.3;
         if (!gone) keep.push_back(std::move(a));
     }

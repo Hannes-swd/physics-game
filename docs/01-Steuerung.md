@@ -94,6 +94,9 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **M** | große Karte auf / zu (auch **Esc**). **Mausrad** zoomt um den Mauszeiger (von 25 cm bis 80 m je Pixel), **Maus ziehen** (links oder rechts) verschiebt, **Leertaste** zurück zur eigenen Position. Unten rechts: Ort und Biom unter dem Mauszeiger. Die Welt läuft weiter, die Figur steht. Befehl: `map [open\|close]`, `map zoom <m je Pixel>`, `map center <x> <z>` (cm) |
 | **1 … 7** | Hand und Werkzeuge (Leiste unten rechts): 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, **7 Spitzhacke** |
 | **7** Spitzhacke | Linksklick auf Stein oder Erz (bis 2,6 m, ein Hieb alle 0,45 s) schlägt einen Brocken ab, der direkt ins Inventar kommt (passt er nicht, fällt er herunter). So gewinnt man Eisenerz, Kupfererz und Steinkohle aus den Erzbrocken im Gebirge ([19](19-Steine-und-Holz.md#erze-und-kakteen)) |
+| **H** | verletzt: die schlimmste Stelle verbinden (3 s, verbraucht einen Verband aus dem Inventar; ohne: Druck auf die Wunde) ([25](25-Leben.md)) |
+| Linke Maustaste auf ein Tier | Schlag: verletzt es (mit Axt, Spitzhacke, Laser kräftiger); daneben vertreibt der Schlag Tiere direkt vor der Figur ([24](24-Tiere.md#jagd)) |
+| **F** auf ein erlegtes Tier | zerlegen: das Fell kommt ins Inventar |
 | **Esc** | Pausenfenster: Weiterspielen, Modus wechseln, Einstellungen, Beenden; die Welt steht so lange still ([15](15-Hauptmenue-und-Welten.md#pausenfenster-im-spiel)). Esc nochmal: weiterspielen |
 
 Die Spielfigur ist ein Bauarbeiter (Modell von Quaternius, CC0, siehe `assets/characters`). Sie steht, geht und rennt

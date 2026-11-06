@@ -19,7 +19,7 @@ zusammen **ein einziges Teil**, das direkt ins [Inventar](21-Inventar.md) kommt.
 
 ## Material
 
-- Jedes Bauteil braucht **Holz**, **Stein**, **Metall** oder beliebiges Material, wie bei den Bauvorlagen. Grün = das
+- Jedes Bauteil braucht **Holz**, **Stein**, **Metall**, **Fell** (`hide`) oder beliebiges Material, wie bei den Bauvorlagen. Grün = das
   getragene Teil passt, rot = passt nicht.
 - Es zählt das **Volumen** (Anzeige in cm³). Zu große Stücke werden passend **abgesägt**; der Rest bleibt in der Hand bzw.
   geht ins Inventar zurück.
@@ -37,6 +37,7 @@ zusammen **ein einziges Teil**, das direkt ins [Inventar](21-Inventar.md) kommt.
 | Werkzeug | Steinaxt `axe`, Spitzhacke `pickaxe`, Steinhammer `hammer`, Steinmesser `knife`, Speer `spear`, Holzschaufel `shovel`, Fackel `torch` | ein Stock + ein Stein |
 | Baumaterial | Brett 80 cm `plank`, Kantholz 1 m `squarebeam`, Mauerstein `brick`, Steinplatte `stoneslab` | mehrere Stöcke bzw. Steine |
 | Dinge | Steinschale `bowl`, Holzkistchen `crate`, Hocker `stool` | |
+| Heilen | Verband `bandage` | 60 cm³ **Fell** (von erlegten Tieren, [24](24-Tiere.md#jagd)); **H** verbraucht ihn ([25](25-Leben.md)) |
 
 Die Werkzeuge sind bisher **nur Gegenstände** (echte Teile mit Physik: tragen, werfen, anzünden, verbauen). Die Axt (X)
 geht weiterhin auch ohne hergestellte Axt.

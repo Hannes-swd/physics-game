@@ -1156,6 +1156,8 @@ void App::drawViewLabels() {
 }
 
 void App::drawPlayHud() {
+    drawHealthHud();  // Körperkarte (nur bei Verletzung)
+    if (me_.deadUntil >= 0) return;  // tot: dunkler Bildschirm, kein Fadenkreuz
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 c(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
