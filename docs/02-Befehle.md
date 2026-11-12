@@ -227,7 +227,7 @@ collision     6 convex hull(s) (auto: holes and grooves are kept)
 ```
 
 ### `inspect <id>`
-Live-Physikwerte (Kräfte, Reibung, Energie, Kippen …) wie im Physik-Inspektor. Öffnet mit Fenster auch den Inspektor (F3).
+Live-Physikwerte (Kräfte, Reibung, Energie, Kippen …) wie im Physik-Inspektor. Öffnet mit Fenster auch den Inspektor (F6).
 Kontaktkräfte sind erst messbar, wenn die Physik läuft (Spiel-Modus oder `sim`).
 Siehe [05-Physik-und-Materialien.md](05-Physik-und-Materialien.md). Anderer Name: `physics`.
 
@@ -562,6 +562,19 @@ Stecken beim Start Teile ineinander, kommt ein Hinweis; die Physik schiebt sie l
 Das Pausenfenster des Spiel-Modus (wie Esc): ohne Wert auf bzw. zu, `settings` zeigt die Einstellungen, `quit` die Seite
 „Beenden“. Dazu `pause set <key> <value>` (Einstellung wie `menu set`, gilt sofort, z. B. `pause set graphics ultra`) und
 `pause shot <bild.png>` (Bild des Pausenfensters). Siehe [15](15-Hauptmenue-und-Welten.md#pausenfenster-im-spiel).
+`pause settings|graphics|controls` öffnet die Einstellungen auf diesem Reiter.
+
+### `debug [on|off]`
+Debug-Ansicht wie **F3** (Ort, FPS, was geladen ist, Rechenzeit je Abschnitt), siehe [01](01-Steuerung.md#überall).
+Ohne Wert umschalten.
+
+### `keys [reset] | keys <aktion> <taste> [zweite] | keys <aktion> none`
+Tastenbelegung wie unter *Einstellungen → Steuerung* (steht in `settings.json`, gilt sofort). Ohne Wert: jede Aktion mit
+ihren Tasten (`jump Space`), doppelt belegte mit „(also: …)“. `keys jump F` legt Springen auf F, `keys forward W Up` gibt
+Vorwärts zwei Tasten, `keys axe none` entfernt die Taste, `keys reset` stellt alle zurück. Tastennamen: `A`–`Z`, `0`–`9`,
+`F1`–`F12`, `Space`, `Shift`, `Ctrl`, `Alt`, `Tab`, `Enter`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`,
+`PageDown`, `Up`, `Down`, `Left`, `Right`, `CapsLock`, `^`, `Comma`, `Period`, `Minus`, `Num0`–`Num9`. Im Hauptmenü
+dasselbe mit `menu keys`, `menu key <aktion> <taste>`.
 
 ### `sim <seconds>`
 Lässt die Physik genau so lange laufen (auch im Bau-Modus) und meldet, welche Teile sich bewegt haben.
@@ -693,7 +706,7 @@ water ground reset               # alles wieder Standardgrund
 | `tool round [radius_mm] [chamfer]` | Abrunden (mit `chamfer`: Fasen) per Mausklick auf eine Kante. `tool chamfer [mm]` geht auch |
 | `tool mill [L W depth]` | Tasche fräsen per Mausklick auf eine Fläche (mm) |
 | `tool plane [mm]` | Hobeln per Mausklick auf eine Fläche |
-| `tool heat [lighter\|gas\|welding\|spray\|nitrogen]` | Wärme-Werkzeug: im Bau-Modus Maustaste auf einem Teil halten, im Spiel-Modus F halten (der Modus bleibt) |
+| `tool heat [lighter\|gas\|welding\|spray\|nitrogen]` | Wärme-Werkzeug des Bau-Modus: Maustaste auf einem Teil halten (der Modus bleibt). Im Spiel-Modus ist das Feuerzeug Werkzeug 8 der Leiste |
 
 ---
 
@@ -712,6 +725,7 @@ Alle `player`-Befehle (außer der Abfrage) schalten bei Bedarf automatisch in de
 | `player stop` | stehen bleiben |
 | `player jump` | springen |
 | `player view [first\|third]` | durch die Augen der Figur oder von hinten über die Schulter (wie **F5**); ohne Angabe umschalten |
+| `player tool <werkzeug>` | Werkzeug der Leiste unten rechts in die Hand nehmen (wie **1 … 8**): `hand`, `axe`, `laser`, `drill`, `terra`, `tractor`, `pickaxe`, `lighter` (Feuerzeug) oder die Nummer |
 | `player grab [id]` | Teil aufnehmen (mit id: vorher hinschauen). Reichweite 3,5 m, nicht durch andere Teile hindurch |
 | `player release` | Teil fallen lassen. Anderer Name: `drop` |
 | `player throw [N·s]` | getragenes Teil in Blickrichtung werfen (Standard: 9 m/s, höchstens 45 N·s) |

@@ -5,8 +5,10 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 
+#include "Icons.h"
 #include "Scatter.h"
 #include "Terrain.h"
 
@@ -30,28 +32,21 @@ void App::selectHandTool(HandTool t) {
     handTool_ = t;
     if (t != HandTool::None) planMode_ = false;  // Bauvorlagen und Werkzeug schließen sich aus
     switch (t) {
-    case HandTool::None: toast("Hand: Maus links nimmt Teile auf, rechts wirft sie (1-7 wählt ein Werkzeug)"); break;
-    case HandTool::Axe: toast("Axt: Linksklick auf Holz hackt (2 oder X legt sie zurück in die Hand)"); break;
-    case HandTool::Laser: toast("Laser: Linksklick halten brennt dort, wo du hinzielst (bis 8 m), 1 legt ihn weg"); break;
+    case HandTool::None:
+        toast("Hand: Maus links nimmt Teile auf, rechts wirft sie (" + keys::label1(keys::Act::Tool1) + "-" + keys::label1(keys::Act::Tool8) +
+              " wählt ein Werkzeug)");
+        break;
+    case HandTool::Axe:
+        toast("Axt: Linksklick auf Holz hackt (" + keys::label1(keys::Act::Tool2) + " oder " + keys::label(keys::Act::Axe) +
+              " legt sie zurück in die Hand)");
+        break;
+    case HandTool::Laser: toast("Laser: Linksklick halten brennt dort, wo du hinzielst (bis 8 m), " + keys::label1(keys::Act::Tool1) + " legt ihn weg"); break;
     case HandTool::Drill: toast("Erdbohrer: Linksklick bohrt in Teile, auf Gelände halten gräbt er eine Grube"); break;
     case HandTool::Terra: toast("Planierer: Linksklick halten gräbt, rechts halten füllt auf"); break;
     case HandTool::Tractor: toast("Traktorstrahl: Linksklick zieht Steine, Stöcke und Stämme bis 10 m ins Inventar"); break;
     case HandTool::Pickaxe: toast("Spitzhacke: Linksklick auf Stein oder Erz schlägt einen Brocken ab (er kommt ins Inventar)"); break;
+    case HandTool::Lighter: toast("Feuerzeug: Maus links halten hält die Flamme an das Teil, das du anschaust (bis 3 m)"); break;
     }
-}
-
-std::string App::handToolHelp() const {
-    const std::string tail = " · WASD laufen · Leertaste springen · 1 Hand" + std::string(cheats_ ? " · Tab Bauen" : "");
-    switch (handTool_) {
-    case HandTool::Axe: return "AXT: Maus links hackt (auf Holz zielen, bis 2,6 m)" + tail;
-    case HandTool::Laser: return "LASER: Maus links halten brennt, wo du hinzielst (bis 8 m)" + tail;
-    case HandTool::Drill: return "ERDBOHRER: Maus links bohrt in Teile, halten gräbt im Gelände" + tail;
-    case HandTool::Terra: return "PLANIERER: Maus links halten gräbt, rechts halten füllt auf" + tail;
-    case HandTool::Tractor: return "TRAKTORSTRAHL: Maus links zieht ins Inventar (bis 10 m)" + tail;
-    case HandTool::Pickaxe: return "SPITZHACKE: Maus links schlägt Brocken aus Stein und Erz (bis 2,6 m)" + tail;
-    case HandTool::None: break;
-    }
-    return "";
 }
 
 // Loch bohren (Laser und Erdbohrer): von from aus in Richtung dir, Durchmesser und Tiefe in mm (Tiefe 0: durch das ganze Teil).
@@ -192,97 +187,68 @@ void App::handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbD
     }
 }
 
-// Leiste unten rechts (Spiel-Modus): Hand und vier Werkzeuge als kleine Symbole, das gewählte ist hervorgehoben.
-// Die Symbole sind einfache Formen (ImGui-Zeichenliste), damit keine Bilddateien nötig sind.
+// Leiste unten rechts (Spiel-Modus): Hand und Werkzeuge als runde Holzmarken mit eingravierten Symbolen (Icons.cpp,
+// Stil der Wald-Menüs). Die gewählte Marke ist heller, hat einen moosgrünen Ring und darüber ihren Namen.
 void App::drawHandToolBar() {
     struct Slot {
         HandTool tool;
+        icons::Id icon;
         const char* name;
-        const char* key;
+        keys::Act key;
     };
-    static const Slot slots[] = {{HandTool::None, "Hand", "1"},          {HandTool::Axe, "Axt", "2"},
-                                 {HandTool::Laser, "Laser", "3"},        {HandTool::Drill, "Erdbohrer", "4"},
-                                 {HandTool::Terra, "Planierer", "5"},    {HandTool::Tractor, "Traktorstrahl", "6"},
-                                 {HandTool::Pickaxe, "Spitzhacke", "7"}};
+    static const Slot slots[] = {{HandTool::None, icons::Id::Hand, "Hand", keys::Act::Tool1},
+                                 {HandTool::Axe, icons::Id::Axe, "Axt", keys::Act::Tool2},
+                                 {HandTool::Laser, icons::Id::Laser, "Laser", keys::Act::Tool3},
+                                 {HandTool::Drill, icons::Id::Drill, "Erdbohrer", keys::Act::Tool4},
+                                 {HandTool::Terra, icons::Id::Shovel, "Planierer", keys::Act::Tool5},
+                                 {HandTool::Tractor, icons::Id::Tractor, "Traktorstrahl", keys::Act::Tool6},
+                                 {HandTool::Pickaxe, icons::Id::Pickaxe, "Spitzhacke", keys::Act::Tool7},
+                                 {HandTool::Lighter, icons::Id::Lighter, "Feuerzeug", keys::Act::Tool8}};
     const int n = (int)(sizeof(slots) / sizeof(slots[0]));
-    const float size = 58, gap = 6;
+    const float r = 28, gap = 9;
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    const float statusH = ImGui::GetFrameHeight() + 6;  // so hoch ist die Statusleiste unten (drawStatusBar)
-    const float x0 = io.DisplaySize.x - (n * size + (n - 1) * gap) - 16;
-    const float y0 = io.DisplaySize.y - statusH - size - 10;
-
-    // Symbol mit Mittelpunkt c; Koordinaten u, v von -1 bis 1 (v nach unten)
-    auto icon = [&](HandTool t, ImVec2 c) {
-        const float r = 21.0f;
-        auto P = [&](float u, float v) { return ImVec2(c.x + u * r, c.y + v * r); };
-        const ImU32 skin = IM_COL32(230, 180, 140, 255), wood = IM_COL32(150, 100, 55, 255), steel = IM_COL32(185, 190, 200, 255);
-        switch (t) {
-        case HandTool::None:  // offene Hand: Handfläche, vier Finger, Daumen
-            dl->AddRectFilled(P(-0.5f, -0.1f), P(0.5f, 0.9f), skin, 0.3f * r);
-            for (int i = 0; i < 4; ++i) {
-                const float x = -0.42f + i * 0.28f;
-                dl->AddRectFilled(P(x - 0.11f, -0.95f), P(x + 0.11f, 0.05f), skin, 0.11f * r);
-            }
-            dl->AddLine(P(-0.4f, 0.3f), P(-0.85f, -0.2f), skin, 0.26f * r);
-            break;
-        case HandTool::Axe:  // Holzstiel, Stahlkopf
-            dl->AddLine(P(-0.55f, 0.9f), P(0.2f, -0.45f), wood, 0.2f * r);
-            dl->AddQuadFilled(P(-0.1f, -0.3f), P(0.05f, -0.9f), P(0.85f, -0.75f), P(0.3f, -0.25f), steel);
-            break;
-        case HandTool::Laser:  // Stift mit rotem Strahl und Lichtpunkt
-            dl->AddLine(P(-0.75f, 0.75f), P(0.05f, -0.05f), IM_COL32(95, 100, 112, 255), 0.42f * r);
-            dl->AddLine(P(0.1f, -0.1f), P(0.9f, -0.9f), IM_COL32(255, 60, 60, 90), 0.5f * r);
-            dl->AddLine(P(0.1f, -0.1f), P(0.9f, -0.9f), IM_COL32(255, 70, 70, 255), 0.12f * r);
-            dl->AddCircleFilled(P(0.9f, -0.9f), 0.16f * r, IM_COL32(255, 120, 120, 255));
-            break;
-        case HandTool::Drill:  // Gehäuse in Blau, Griff, Spannfutter, Bohrer
-            dl->AddRectFilled(P(-0.9f, -0.3f), P(0.1f, 0.25f), IM_COL32(55, 110, 200, 255), 0.2f * r);
-            dl->AddRectFilled(P(-0.5f, 0.2f), P(-0.15f, 0.9f), IM_COL32(40, 40, 46, 255), 0.1f * r);
-            dl->AddRectFilled(P(0.1f, -0.15f), P(0.35f, 0.1f), IM_COL32(120, 125, 135, 255));
-            dl->AddTriangleFilled(P(0.35f, -0.2f), P(0.35f, 0.15f), P(0.98f, -0.02f), IM_COL32(205, 210, 220, 255));
-            break;
-        case HandTool::Terra:  // Schaufel: Stiel und Blatt
-            dl->AddLine(P(-0.75f, -0.9f), P(0.05f, 0.1f), wood, 0.2f * r);
-            {
-                const ImVec2 blade[] = {P(0.05f, 0.05f), P(0.55f, 0.2f), P(0.8f, 0.6f), P(0.6f, 0.95f), P(0.15f, 0.95f), P(-0.05f, 0.5f)};
-                dl->AddConvexPolyFilled(blade, 6, IM_COL32(160, 165, 175, 255));
-            }
-            break;
-        case HandTool::Tractor:  // Gerät mit Sog-Kegel, der Steine einsammelt
-            dl->AddTriangleFilled(P(-0.85f, 0.05f), P(0.9f, -0.75f), P(0.9f, 0.85f), IM_COL32(90, 180, 255, 90));
-            dl->AddRectFilled(P(-0.95f, 0.1f), P(-0.7f, 0.9f), IM_COL32(60, 62, 70, 255), 0.08f * r);
-            dl->AddCircleFilled(P(-0.85f, 0.05f), 0.22f * r, IM_COL32(120, 200, 255, 255));
-            dl->AddCircleFilled(P(0.5f, -0.2f), 0.13f * r, IM_COL32(150, 140, 120, 255));
-            dl->AddCircleFilled(P(0.65f, 0.4f), 0.11f * r, IM_COL32(150, 140, 120, 255));
-            dl->AddCircleFilled(P(0.3f, 0.55f), 0.12f * r, IM_COL32(150, 140, 120, 255));
-            break;
-        case HandTool::Pickaxe: {  // Holzstiel, gebogener Stahlkopf mit zwei Spitzen, darunter ein Erzbrocken
-            dl->AddCircleFilled(P(0.55f, 0.7f), 0.24f * r, IM_COL32(110, 70, 50, 255));
-            dl->AddCircleFilled(P(0.48f, 0.64f), 0.07f * r, IM_COL32(200, 120, 70, 255));
-            dl->AddLine(P(-0.6f, 0.9f), P(0.15f, -0.55f), wood, 0.2f * r);
-            const ImVec2 head[] = {P(-0.85f, -0.35f), P(-0.3f, -0.72f), P(0.15f, -0.78f), P(0.6f, -0.72f), P(0.95f, -0.3f),
-                                   P(0.55f, -0.55f), P(0.15f, -0.58f), P(-0.25f, -0.55f)};
-            dl->AddPolyline(head, 8, steel, ImDrawFlags_Closed, 0.12f * r);
-            dl->AddConvexPolyFilled(head + 1, 3, steel);
-            dl->AddConvexPolyFilled(head + 5, 3, steel);
-            break;
-        }
-        }
-    };
+    const float statusH = statusBarHeight();  // im Spiel-Modus 0: keine Statusleiste
+    const float x0 = io.DisplaySize.x - (n * 2 * r + (n - 1) * gap) - 18;
+    const float cy = io.DisplaySize.y - statusH - r - 12;
+    ImFont* fb = hudBold_ ? hudBold_ : ImGui::GetFont();
+    const ImU32 cream = IM_COL32(243, 230, 198, 255), bright = IM_COL32(255, 244, 220, 255);
 
     for (int k = 0; k < n; ++k) {
-        const ImVec2 a(x0 + k * (size + gap), y0), b(a.x + size, y0 + size);
+        const ImVec2 c(x0 + r + k * (2 * r + gap), cy);
         const bool sel = handTool_ == slots[k].tool;
-        dl->AddRectFilled(a, b, sel ? IM_COL32(60, 52, 30, 225) : IM_COL32(18, 20, 26, 190), 8);
-        dl->AddRect(a, b, sel ? IM_COL32(255, 200, 80, 255) : IM_COL32(90, 95, 105, 200), 8, 0, sel ? 2.5f : 1.5f);
-        icon(slots[k].tool, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f + 2));
-        dl->AddText(ImVec2(a.x + 5, a.y + 3), IM_COL32(230, 230, 230, 220), slots[k].key);
-        if (sel) {  // Name des gewählten Werkzeugs über dem Feld
-            const ImVec2 ts = ImGui::CalcTextSize(slots[k].name);
-            const ImVec2 mid((a.x + b.x) * 0.5f, a.y - 6);
-            dl->AddRectFilled(ImVec2(mid.x - ts.x / 2 - 6, mid.y - ts.y - 3), ImVec2(mid.x + ts.x / 2 + 6, mid.y + 3), IM_COL32(0, 0, 0, 150), 4);
-            dl->AddText(ImVec2(mid.x - ts.x / 2, mid.y - ts.y), IM_COL32(255, 220, 140, 255), slots[k].name);
+        icons::woodToken(dl, c, r, sel);
+        // nicht gewählt: Creme etwas ins Holz gemischt (deckend, damit sich Strichenden nicht abzeichnen)
+        ImVec4 ic = ImGui::ColorConvertU32ToFloat4(sel ? bright : cream);
+        if (!sel) {
+            const ImVec4 w = ImGui::ColorConvertU32ToFloat4(icons::tokenColor(false));
+            ic = ImVec4(ic.x * 0.8f + w.x * 0.2f, ic.y * 0.8f + w.y * 0.2f, ic.z * 0.8f + w.z * 0.2f, 1);
+        }
+        icons::drawEngraved(dl, slots[k].icon, c, 36, ImGui::ColorConvertFloat4ToU32(ic), 2.5f);
+
+        // Taste als kleine Plakette unten rechts (längere Namen: länglich)
+        const std::string key = keys::label1(slots[k].key);
+        if (!key.empty()) {
+            const ImVec2 kc(c.x + r * 0.77f, c.y + r * 0.77f);
+            const float ks = 13.0f;
+            const ImVec2 kt = fb->CalcTextSizeA(ks, FLT_MAX, 0, key.c_str());
+            const float hw = std::max(0.0f, kt.x * 0.5f - 4.0f);
+            const ImVec2 ka(kc.x - hw - 8.5f, kc.y - 8.5f), kb(kc.x + hw + 8.5f, kc.y + 8.5f);
+            dl->AddRectFilled(ka, kb, sel ? IM_COL32(95, 138, 53, 255) : IM_COL32(36, 21, 10, 255), 8.5f);
+            dl->AddRect(ka, kb, sel ? IM_COL32(182, 224, 122, 255) : IM_COL32(201, 151, 92, 130), 8.5f, 0, 1.0f);
+            dl->AddText(fb, ks, ImVec2(kc.x - kt.x * 0.5f, kc.y - kt.y * 0.5f), sel ? bright : cream, key.c_str());
+        }
+
+        if (sel) {  // Name des gewählten Werkzeugs auf einem Holzschild über der Marke
+            const float ns = 16.0f;
+            const ImVec2 ts = fb->CalcTextSizeA(ns, FLT_MAX, 0, slots[k].name);
+            const ImVec2 a(c.x - ts.x * 0.5f - 10, c.y - r - 14 - ts.y - 4), b(c.x + ts.x * 0.5f + 10, c.y - r - 10);
+            dl->AddRectFilled(ImVec2(a.x, a.y + 2), ImVec2(b.x, b.y + 2), IM_COL32(0, 0, 0, 70), 5);
+            dl->AddRectFilledMultiColor(ImVec2(a.x + 1, a.y + 1), ImVec2(b.x - 1, b.y - 1), IM_COL32(74, 47, 26, 255),
+                                        IM_COL32(74, 47, 26, 255), IM_COL32(46, 28, 15, 255), IM_COL32(46, 28, 15, 255));
+            dl->AddLine(ImVec2(a.x + 4, a.y + 2), ImVec2(b.x - 4, a.y + 2), IM_COL32(201, 151, 92, 90), 1.0f);
+            dl->AddRect(a, b, IM_COL32(27, 16, 8, 255), 5, 0, 1.5f);
+            dl->AddText(fb, ns, ImVec2(c.x - ts.x * 0.5f, a.y + 2 + ((b.y - a.y) - ts.y) * 0.5f - 1), cream, slots[k].name);
         }
     }
 }

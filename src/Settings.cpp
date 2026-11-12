@@ -101,6 +101,9 @@ GameSettings loadSettings() {
         if (g["plants"].type == Json::Number) s.plants = std::clamp(g["plants"].num, 0.0, 1.5);
         if (g["vsync"].type == Json::Bool) s.vsync = g["vsync"].num != 0;
     }
+    if (const Json& k = j["keys"]; k.type == Json::Object)
+        for (const auto& kv : k.obj)
+            if (kv.second.type == Json::String) s.keys[kv.first] = kv.second.str;
     return s;
 }
 
@@ -123,6 +126,11 @@ bool saveSettings(const GameSettings& s, std::string* err) {
     g.set("plants", Json::makeNumber(s.plants));
     g.set("vsync", makeBool(s.vsync));
     j.set("graphics", g);
+    if (!s.keys.empty()) {
+        Json k = Json::makeObject();
+        for (const auto& kv : s.keys) k.set(kv.first, Json::makeString(kv.second));
+        j.set("keys", k);
+    }
     const std::filesystem::path file = settingsFile();
     std::filesystem::path tmp = file;
     tmp += L".tmp";

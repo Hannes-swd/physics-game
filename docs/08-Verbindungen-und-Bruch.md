@@ -118,7 +118,7 @@ mode play ; wait 1
 !! glue J1 (Block - Board) broke: tension 71 N (holds 30), shear 0 N (holds 38), moment 0.0 N·m
 ```
 
-Anzeige: im Eigenschaften-Fenster als Balken, im Physik-Inspektor (F3), mit `joints` / `joint <nr>` und
+Anzeige: im Eigenschaften-Fenster als Balken, im Physik-Inspektor (F6), mit `joints` / `joint <nr>` und
 im Bau-Modus als farbige Markierung (grün = wenig, gelb = halb, rot = kurz vor dem Bruch).
 
 ### Einstellungen ändern

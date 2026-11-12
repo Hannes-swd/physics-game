@@ -15,6 +15,7 @@
 #include <random>
 
 #include "App.h"
+#include "Icons.h"
 #include "Materials.h"
 #include "Terrain.h"
 #include "WorldGen.h"
@@ -168,7 +169,7 @@ bool App::takeBandage() {
 // Eigene Figur. Als Mitspieler rechnet der Gastgeber, hier läuft nur die Uhr (für die Anzeige) und H wird gezählt.
 void App::updateHealth(float dt, bool wasOnGround, double vyBefore, float swim) {
     ImGuiIO& io = ImGui::GetIO();
-    const bool key = (play_ && cursorCaptured_ && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_H, false)) || bandageCmd_ > 0;
+    const bool key = (play_ && cursorCaptured_ && !io.WantTextInput && keys::pressed(keys::Act::Bandage)) || bandageCmd_ > 0;
     bandageCmd_ = 0;
     if (netClient()) {
         me_.clock += dt;
@@ -477,44 +478,19 @@ ImVec4 injuryColor(Injury t) {
 
 ImU32 col(ImVec4 c, float a) { return ImGui::ColorConvertFloat4ToU32(ImVec4(c.x, c.y, c.z, c.w * std::clamp(a, 0.0f, 1.0f))); }
 
-// Symbol der Verletzungsart, Mitte c, Größe r (halbe Breite)
+// Symbol der Verletzungsart (Icons.cpp, gleicher Strich wie die Werkzeuge), Mitte c, Größe r (halbe Breite)
 void drawInjuryIcon(ImDrawList* dl, Injury t, ImVec2 c, float r, ImU32 cl) {
+    icons::Id id;
     switch (t) {
-    case Injury::Burn: {  // Flamme
-        dl->PathLineTo(ImVec2(c.x, c.y - r));
-        dl->PathBezierCubicCurveTo(ImVec2(c.x + 0.4f * r, c.y - 0.4f * r), ImVec2(c.x + 0.85f * r, c.y - 0.1f * r), ImVec2(c.x + 0.8f * r, c.y + 0.35f * r));
-        dl->PathBezierCubicCurveTo(ImVec2(c.x + 0.75f * r, c.y + 0.85f * r), ImVec2(c.x - 0.75f * r, c.y + 0.85f * r), ImVec2(c.x - 0.8f * r, c.y + 0.35f * r));
-        dl->PathBezierCubicCurveTo(ImVec2(c.x - 0.82f * r, c.y - 0.05f * r), ImVec2(c.x - 0.45f * r, c.y - 0.25f * r), ImVec2(c.x - 0.3f * r, c.y - 0.55f * r));
-        dl->PathBezierCubicCurveTo(ImVec2(c.x - 0.15f * r, c.y - 0.25f * r), ImVec2(c.x + 0.05f * r, c.y - 0.45f * r), ImVec2(c.x, c.y - r));
-        dl->PathFillConcave(cl);
-        break;
+    case Injury::Burn: id = icons::Id::Burn; break;
+    case Injury::Frost: id = icons::Id::Frost; break;
+    case Injury::Cut: id = icons::Id::Cut; break;
+    case Injury::Bruise: id = icons::Id::Bruise; break;
+    case Injury::Break: id = icons::Id::Break; break;
+    default: return;
     }
-    case Injury::Frost:  // Schneekristall
-        for (int k = 0; k < 3; ++k) {
-            const float a = k * 3.14159265f / 3.0f + 1.5707963f;
-            const ImVec2 d(std::cos(a) * r, std::sin(a) * r);
-            dl->AddLine(ImVec2(c.x - d.x, c.y - d.y), ImVec2(c.x + d.x, c.y + d.y), cl, 1.6f);
-        }
-        break;
-    case Injury::Cut:  // Tropfen
-        dl->PathLineTo(ImVec2(c.x, c.y - r));
-        dl->PathBezierCubicCurveTo(ImVec2(c.x + 0.3f * r, c.y - 0.5f * r), ImVec2(c.x + 0.75f * r, c.y - 0.05f * r), ImVec2(c.x + 0.75f * r, c.y + 0.3f * r));
-        dl->PathBezierCubicCurveTo(ImVec2(c.x + 0.75f * r, c.y + 0.95f * r), ImVec2(c.x - 0.75f * r, c.y + 0.95f * r), ImVec2(c.x - 0.75f * r, c.y + 0.3f * r));
-        dl->PathBezierCubicCurveTo(ImVec2(c.x - 0.75f * r, c.y - 0.05f * r), ImVec2(c.x - 0.3f * r, c.y - 0.5f * r), ImVec2(c.x, c.y - r));
-        dl->PathFillConcave(cl);
-        break;
-    case Injury::Bruise:  // Kreis mit dunklem Kern
-        dl->AddCircleFilled(c, 0.72f * r, cl, 20);
-        dl->AddCircleFilled(c, 0.32f * r, IM_COL32(0, 0, 0, 110), 12);
-        break;
-    case Injury::Break: {  // Riss
-        const ImVec2 z[5] = {ImVec2(c.x - 0.7f * r, c.y - 0.8f * r), ImVec2(c.x - 0.05f * r, c.y - 0.15f * r), ImVec2(c.x - 0.35f * r, c.y + 0.1f * r),
-                             ImVec2(c.x + 0.3f * r, c.y + 0.25f * r), ImVec2(c.x + 0.75f * r, c.y + 0.85f * r)};
-        dl->AddPolyline(z, 5, cl, 0, 2.0f);
-        break;
-    }
-    default: break;
-    }
+    const float size = 2.3f * r;  // die Formen lassen im 24er-Raster etwas Rand
+    icons::drawShadowed(dl, id, c, size, cl, std::max(1.5f, 1.8f * size / 24.0f));
 }
 
 void shadowText(ImDrawList* dl, ImFont* f, float size, ImVec2 p, ImU32 c, const char* t, float a) {
@@ -560,7 +536,7 @@ void App::drawHealthHud() {
 
     // Lage: links unten über der Statusleiste, Größe mit der Fensterhöhe
     const float k = std::clamp(io.DisplaySize.y / 1080.0f, 0.75f, 2.0f);
-    const float statusH = ImGui::GetFrameHeight() + 6;
+    const float statusH = statusBarHeight();
     const float figH = 200.0f * k, s = figH / 290.0f;
     const ImVec2 o(26.0f * k - 21.0f * s, io.DisplaySize.y - statusH - 18.0f * k - 280.0f * s);
     auto P = [&](ImVec2 p) { return ImVec2(o.x + p.x * s, o.y + p.y * s); };

@@ -432,7 +432,7 @@ void App::netPeerMessage(Peer& p, net::Msg type, const std::string& payload) {
         p.sneak = sneak;
         in.throwPower = throwPower >= 0 ? std::min(throwPower, 1.0f) : -1.0f;
         p.bandageKeys += bandageKeys;
-        p.tool = std::clamp(tool, 0, (int)HandTool::Pickaxe);
+        p.tool = std::clamp(tool, 0, (int)HandTool::Lighter);
         p.camEye = camEye;
         p.spawnRef = spawnRef;
         if (play && (spawn || !physics_.hasCharacter((int)p.id))) {  // Figur absetzen, immer auf der Oberfläche
@@ -1063,9 +1063,10 @@ void App::netHostMessage(net::Msg type, const std::string& payload) {
             break;
         }
         if (!text.empty()) log(text, ok ? 0 : 2);
-        if (q.source == 0) {  // erste Ergebniszeile in die Statuszeile (wie bei Werkzeugen)
+        if (q.source == 0) {  // erste Ergebniszeile in die Statuszeile (wie bei Werkzeugen); im Spiel-Modus als Meldung
             status_ = text.substr(0, text.find('\n'));
             statusTime_ = time_;
+            if (play_) toast(status_, ok);
         } else if (q.source == 1) {
             std::printf("%s", text.c_str());
             std::fflush(stdout);

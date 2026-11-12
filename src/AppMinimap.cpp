@@ -226,7 +226,7 @@ void App::drawBigMap() {
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     const float top = ImGui::GetFrameHeight();
-    const float bottom = ImGui::GetFrameHeight() + 6;  // Statusleiste
+    const float bottom = statusBarHeight();  // im Spiel-Modus keine Statusleiste
     dl->AddRectFilled(ImVec2(0, top), ImVec2(io.DisplaySize.x, io.DisplaySize.y - bottom), IM_COL32(0, 0, 0, 90));
     const float margin = 36.0f;
     const ImVec2 a(margin, top + margin), b(io.DisplaySize.x - margin, io.DisplaySize.y - bottom - margin - 22.0f);
@@ -246,7 +246,7 @@ void App::drawBigMap() {
         mapCenter_ -= glm::dvec2(io.MouseDelta.x, io.MouseDelta.y) * mapMpp_;
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) mapDragging_ = inside;
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) mapDragging_ = false;
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
+    if (!io.WantTextInput && keys::pressed(keys::Act::Jump)) {
         const glm::dvec3 self = netClient() ? netFeet_ : physics_.characterPosition();
         mapCenter_ = glm::dvec2(self.x, self.z);
     }
@@ -266,7 +266,8 @@ void App::drawBigMap() {
             info += "  ·  " + gen.config().biomes[(size_t)bi].label;
         }
     }
-    const std::string help = "M / Esc schließen  ·  Mausrad zoomen  ·  Maus ziehen verschieben  ·  Leertaste: zu mir";
+    const std::string help = keys::label(keys::Act::Map) + " / Esc schließen  ·  Mausrad zoomen  ·  Maus ziehen verschieben  ·  " +
+                             keys::label(keys::Act::Jump) + ": zu mir";
     const ImU32 white = IM_COL32(235, 235, 235, 230);
     dl->AddText(ImVec2(a.x, b.y + 6), white, help.c_str());
     if (!info.empty()) {

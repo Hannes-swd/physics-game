@@ -12,10 +12,10 @@ Kunststoffbecher, Gummiring, einem geleimten Brett und einem tiefgekühlten Stah
 | Wo | Was |
 |---|---|
 | Bau-Modus, Werkzeug **H** (Wärme / Kälte) | Maustaste auf einem Teil **halten**: Flamme bzw. Kälte trifft genau diese Stelle. Auswahl: Feuerzeug, Gasbrenner, Schweißbrenner, Kältespray, Flüssigstickstoff. Das Werkzeugfenster zeigt die Temperatur unter der Maus. |
-| Spiel-Modus, Taste **F** halten | dasselbe Werkzeug auf das Teil, das man anschaut (bis 3 m) |
+| Spiel-Modus, Werkzeug **8 Feuerzeug** (Leiste unten rechts), linke Maustaste halten | Flamme des Feuerzeugs auf das Teil, das man anschaut (bis 3 m) |
 | Eigenschaften-Fenster, Abschnitt *Temperatur* | mittlere, kälteste und heißeste Temperatur, Zustand (brennt, verkohlt, geschmolzen, weich, spröde), Kennwerte des Materials; **Temperatur setzen**, **Anzünden**, **Löschen** |
 | Menü *Physik* | *Wärme und Feuer* an/aus, *Lufttemperatur* (−40 … 35 °C), *Wärme-Zeitraffer* (1×, 5×, 20×, 60×), *Alle Feuer löschen* |
-| Physik-Inspektor (F3) | Abschnitt HEAT |
+| Physik-Inspektor (F6) | Abschnitt HEAT |
 | Statusleiste / Spiel-Anzeige | Temperatur an der Stelle unter der Maus bzw. im Blick, wenn sie auffällt |
 
 Wärme läuft auch im Bau-Modus weiter (ein Feuer brennt, Metall kühlt ab). Teile, die abbrennen oder abtropfen, verändern

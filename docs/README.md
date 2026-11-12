@@ -13,7 +13,7 @@ Anleitung sind deutsch.
 | [02-Befehle.md](02-Befehle.md) | **Alle Befehle** mit Parametern, Beispielen und Ausgaben |
 | [03-Befehlssprache.md](03-Befehlssprache.md) | Befehle kombinieren: `;`, `wait`, `wait until`, `if`, `repeat`, `print`, `set`, Werte |
 | [04-Fernsteuerung.md](04-Fernsteuerung.md) | Das laufende Spiel von außen steuern, Skripte, Betrieb ohne Fenster, Kommandozeile |
-| [05-Physik-und-Materialien.md](05-Physik-und-Materialien.md) | Physikmodell, Reibung je Materialpaar, Ineinanderstecken und Rettung, Kollisionsformen, Rechenzeit, Materialwerte, Physik-Inspektor (F3), Spielfigur |
+| [05-Physik-und-Materialien.md](05-Physik-und-Materialien.md) | Physikmodell, Reibung je Materialpaar, Ineinanderstecken und Rettung, Kollisionsformen, Rechenzeit, Materialwerte, Physik-Inspektor (F6), Spielfigur |
 | [06-Dreitafelprojektion.md](06-Dreitafelprojektion.md) | Technische Zeichnungen nach DIN (F4), SVG-Export |
 | [07-Engine-Aufbau.md](07-Engine-Aufbau.md) | Aufbau des Programms, Geometrie, Chunks, Grafik, Dateiformat, Tests |
 | [08-Verbindungen-und-Bruch.md](08-Verbindungen-und-Bruch.md) | Kleben, Nageln, Schrauben, Schweißen, Scharnier, Feder, Seil; Belastung und Bruch; Luft, Wind, Propeller |

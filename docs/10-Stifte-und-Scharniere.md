@@ -31,7 +31,7 @@ Scharnieren (trocken und geölt) und zwei Stifte in Sacklöchern (Ø9,8 passt, �
 
 Werte für die Befehlssprache: `.bores` `.pins` `.boreload` (%) `.boreforce` (N) `.pressure` (MPa) `.wear` (mm)
 `.worn` (mm³) `.lubricant`. Im Eigenschaften-Fenster stehen die Bohrungen mit Lastbalken und ein Feld **Schmieren**,
-im Physik-Inspektor (F3) der Abschnitt *Bores & pins*.
+im Physik-Inspektor (F6) der Abschnitt *Bores & pins*.
 
 Beispiel (Stahlblock mit Sackloch, Stift Ø9,8):
 

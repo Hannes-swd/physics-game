@@ -1,5 +1,5 @@
-// Auswahl der Bauvorlagen (B) und Rezepte (C) im Spiel-Modus: ein Fenster des Hauptmenüs (CatalogUi, qml/CatalogWindow.qml)
-// mit einem Kasten je Vorlage. Die Zeichnung im Kasten rechnet das Spiel hier aus: die Quader der Vorlage schräg von
+// Auswahl der Bauvorlagen (B) und Rezepte (C) im Spiel-Modus: die Bereiche Bauen und Herstellen des gemeinsamen Fensters
+// mit dem Inventar (CatalogUi, qml/BagWindow.qml), ein Kasten je Vorlage. Die Zeichnung im Kasten rechnet das Spiel hier aus: die Quader der Vorlage schräg von
 // vorne oben gesehen, nur die sichtbaren Flächen, schattiert und von hinten nach vorne sortiert. Klick auf einen Kasten:
 // der Bauplan-Modus (AppPlans.cpp) beginnt mit dieser Vorlage.
 #include "App.h"
@@ -177,7 +177,7 @@ void App::catalogOpen(bool on, bool craft) {
         toast(craft ? "Keine Rezepte gefunden (assets/recipes fehlt?)" : "Keine Vorlagen gefunden (assets/blueprints fehlt?)", false);
         return;
     }
-    invOpen(false);
+    invOpen_ = false;  // Inventar offen: dasselbe Fenster, nur der Bereich wechselt
     std::vector<CatalogUi::Item> items;
     for (const PlanTemplate& t : list) {
         CatalogUi::Item it;
@@ -190,7 +190,7 @@ void App::catalogOpen(bool on, bool craft) {
     catalogCraft_ = craft;
     setCursorCaptured(false);
     const int current = std::clamp(craft ? craftType_ : planType_, 0, (int)list.size() - 1);
-    opt_.catalogUi->open(glfwGetWin32Window(window_), craft ? "Herstellen" : "Baupläne", craft ? "C" : "B", items, current);
+    opt_.catalogUi->open(glfwGetWin32Window(window_), craft, items, current);
 }
 
 bool App::catalogChoose(int index) {
@@ -211,5 +211,7 @@ void App::updateCatalog() {
         if (e.kind == CatalogUi::Event::None) break;
         if (e.kind == CatalogUi::Event::Close) catalogOpen(false);
         else if (e.kind == CatalogUi::Event::Choose) catalogChoose(e.index);
+        else if (e.kind == CatalogUi::Event::Switch && e.tab == 0) invOpen(true);
+        else if (e.kind == CatalogUi::Event::Switch) catalogOpen(true, e.tab == 1);  // Herstellen <-> Bauen
     }
 }

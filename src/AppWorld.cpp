@@ -415,6 +415,7 @@ void App::applySettings() {
     showEdges_ = settings_.edges;
     showGrid_ = settings_.grid;
     showBiomeBorders_ = settings_.biomeBorders;
+    keys::use(settings_.keys);
 }
 
 void App::storeSettings() {

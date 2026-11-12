@@ -23,7 +23,8 @@ ApplicationWindow {
         if (name === "worlds") stack.push(worldsPage, {}, op)
         else if (name === "new-world") stack.push(worldsPage, {}, op).openCreate()  // Weltliste mit "Neue Welt"
         else if (name === "multiplayer") stack.push(multiplayerPage, {}, op)
-        else if (name === "settings") stack.push(settingsPage, {}, op)
+        else if (name === "settings" || name === "graphics" || name === "controls")  // Einstellungen mit Reiter
+            stack.push(settingsPage, { tab: ["settings", "graphics", "controls"].indexOf(name) }, op)
     }
 
     // Ladeseite, bis das Spielfenster da ist (Menu.cpp ruft das auf, wenn eine Welt geöffnet oder beigetreten wird)

@@ -128,9 +128,27 @@ man verändert hat; der Rest entsteht aus dem Seed jedes Mal gleich neu.
 | `biomeBorders` | aus | Linien an den Biomgrenzen (Gelände; auch im Spiel unter *Ansicht → Biomgrenzen*). Ältere Dateien (ohne `version` 2) hatten hier noch den alten Standard „an“, der wird nicht mehr übernommen |
 | `autosaveMinutes` | 5 | automatisch speichern (0 = nie) |
 | `graphics` | Stufe „Hoch“ | Grafik, siehe unten |
+| `keys` | leer | Tastenbelegung, siehe unten (nur was vom Standard abweicht, z. B. `"jump": "F"` oder `"forward": "W Up"`) |
 
 Die Einstellungen gelten, wenn eine Welt geöffnet wird. Im Spiel stellt man sie im **Pausenfenster** um (siehe unten), dort
-gelten sie sofort.
+gelten sie sofort. Die Seite hat drei Reiter: **Allgemein**, **Grafik** und **Steuerung**.
+
+### Steuerung (Tastenbelegung)
+
+Der Reiter **Steuerung** zeigt jede Taste, nach Bereichen sortiert (Bewegen, Fenster, Handeln, Werkzeuge, Bau-Modus,
+Überall). Jede Aktion kann zwei Tasten haben (z. B. W und ↑ für Vorwärts):
+
+- **Klick** auf eine Taste: sie wartet grün leuchtend auf die neue („Taste drücken …“), die nächste gedrückte Taste gilt.
+  **Esc** bricht ab. Tasten, die nicht gehen (Umlaute, AltGr), meldet die Seite.
+- **Rechtsklick** auf eine Taste entfernt sie.
+- Ist eine Taste bei einer anderen Aktion belegt, die zugleich gilt, wird sie **rot** umrandet und daneben steht „auch: …“.
+  Spiel- und Bau-Modus dürfen dieselben Tasten haben (S ist im Spiel Rückwärts, im Bau-Modus die Säge).
+- **Standard** setzt alle Tasten zurück.
+- Fest und nur angezeigt: Maus, Esc und die Strg-Kürzel des Bau-Modus (Strg+Z, Strg+S …).
+
+Die Hinweise im Spiel (Statuszeile, Werkzeugleiste, Meldungen) zeigen immer die gewählten Tasten. Per Befehl:
+`menu keys [reset]`, `menu key <aktion> <taste> [zweite]`, `menu key <aktion> none` (im Menü und im Pausenfenster) oder im
+Spiel `keys …` (siehe [02](02-Befehle.md)). Die Namen der Aktionen und Tasten stehen in `src/Keys.cpp`.
 
 ### Grafik
 
@@ -153,7 +171,7 @@ Hauptmenü oder das Programm beenden; die Welt wird dabei gespeichert). Es gehö
 Rohbau-Stil). Es ist kein eigenes Fenster mit Rahmen: es liegt über dem ganzen Spiel, das leicht grau abgedunkelt durchscheint, und steht fest in der Mitte. Solange es offen ist, steht die Welt still (im
 LAN läuft sie für die anderen weiter). Esc im Pausenfenster: eine Seite zurück, auf der ersten weiterspielen.
 
-Per Befehl: `pause [on|off|settings|quit]`, `pause set <key> <value>` (wie `menu set`, gilt sofort),
+Per Befehl: `pause [on|off|settings|graphics|controls|quit]` (die drei Reiter der Einstellungen), `pause set <key> <value>` (wie `menu set`, gilt sofort),
 `pause shot <bild.png>` (Bild des Pausenfensters). Ohne Hauptmenü (Start mit `--world`, `--script`) zeigt das Spiel ein
 einfaches Ersatzfenster.
 

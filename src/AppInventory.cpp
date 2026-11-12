@@ -162,7 +162,8 @@ bool App::invTakeOut(uint32_t key) {
     hand_.holdRel = align;
     physics_.activate(o->body);
     invOpen(false);
-    toast(o->name + ": Linksklick setzt es ab, R / Shift+R dreht, Mausrad rückt, E zurück ins Inventar");
+    toast(o->name + ": Linksklick setzt es ab, " + keys::label(keys::Act::Rotate) + " (mit Shift) dreht, Mausrad rückt, " +
+          keys::label(keys::Act::Inventory) + " zurück ins Inventar");
     return true;
 }
 
@@ -172,12 +173,15 @@ void App::invOpen(bool on) {
         if (netClient()) toast("Inventar: als Mitspieler im LAN noch nicht möglich", false);
         return;
     }
-    invOpen_ = on;
     if (on) {
+        // Herstellen / Bauen offen: dasselbe Fenster, nur der Bereich wechselt (es bleibt offen, die Maus frei)
+        catalogOpen_ = false;
+        invOpen_ = true;
         setCursorCaptured(false);
         invPushContents();
         if (opt_.inventoryUi) opt_.inventoryUi->open(glfwGetWin32Window(window_));
     } else {
+        invOpen_ = false;
         if (opt_.inventoryUi) opt_.inventoryUi->close();
         if (play_ && pause_ == Pause::None) {
             glfwFocusWindow(window_);
@@ -217,6 +221,7 @@ void App::updateInventory() {
         if (e.kind == InventoryUi::Event::None) break;
         if (e.kind == InventoryUi::Event::Close) invOpen(false);
         else if (e.kind == InventoryUi::Event::TakeOut) invTakeOut(e.key);
+        else if (e.kind == InventoryUi::Event::Switch && e.tab > 0) catalogOpen(true, e.tab == 1);  // Herstellen / Bauen
         if (!invOpen_) break;
     }
 }
@@ -250,7 +255,7 @@ void App::drawInventoryWindow() {
         }
     }
     ImGui::Dummy(ImVec2(cell * kInvCols, cell * kInvRows));
-    ImGui::TextDisabled("Rechtsklick: herausnehmen   E: schliessen");
+    ImGui::TextDisabled("Rechtsklick: herausnehmen   %s: schließen", keys::label(keys::Act::Inventory).c_str());
     ImGui::End();
     if (take) invTakeOut(take);
 }

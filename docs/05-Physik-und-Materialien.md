@@ -244,7 +244,7 @@ Neues Material: in `src/Materials.cpp` eine Zeile in der Liste ergänzen (Paarwe
 Drückt die Figur ein getragenes Teil in ein anderes, greift die Rettung (siehe oben): Das Teil bleibt an seiner letzten
 freien Stelle, statt hineinzurutschen.
 
-## Physik-Inspektor (F3)
+## Physik-Inspektor (F6)
 
 Zeigt live, nach Themen sortiert, alles über ein Teil: im Bau-Modus das ausgewählte, im Spiel-Modus das angeschaute
 oder getragene. Dieselben Werte liefert der Befehl `inspect <id>`. Die Texte sind englisch (wie alle Ausgaben).

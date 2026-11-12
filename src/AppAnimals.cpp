@@ -473,7 +473,8 @@ bool App::animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool to
     case HandTool::Laser: damage = 0.8f, reach = 3.0; break;
     case HandTool::Drill: damage = 0.3f, reach = 2.2; break;
     case HandTool::Terra: damage = 0.15f, reach = 2.2; break;
-    case HandTool::Tractor: return false;
+    case HandTool::Tractor:
+    case HandTool::Lighter: return false;  // kein Schlag
     default: break;
     }
     bool killed = false;
@@ -486,7 +487,7 @@ bool App::animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool to
     if (const Animal* a = animals_->find(id)) {
         const AnimalSpecies& s = animals_->config().species[(size_t)a->species];
         std::string text;
-        if (killed) text = s.label + " erlegt" + (s.hide > 0 ? " - F zum Zerlegen" : "");
+        if (killed) text = s.label + " erlegt" + (s.hide > 0 ? " - " + keys::label(keys::Act::Use) + " zum Zerlegen" : "");
         else if (a->hp < 0.5f) text = s.label + " ist verwundet und humpelt";
         if (msg) *msg = text;
         else if (!text.empty()) toast(text);

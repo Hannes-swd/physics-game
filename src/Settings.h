@@ -1,6 +1,7 @@
 // Einstellungen des Spiels: %APPDATA%\Werkstatt\settings.json. Das Hauptmenü bearbeitet sie, das Spiel liest sie beim
 // Öffnen einer Welt (und schreibt beim Verlassen zurück, was man im Spiel umgestellt hat: Ansicht, Name im LAN).
 #pragma once
+#include <map>
 #include <string>
 
 struct GameSettings {
@@ -18,6 +19,9 @@ struct GameSettings {
     double viewDistance = 1.0;       // Sichtweite (Faktor 0,5..2): Gelände-Detail, Bäume, Büsche, Nebel
     double plants = 1.0;             // Gras und Blumen (Faktor 0 = aus .. 1,5): Dichte und Reichweite
     bool vsync = true;               // Bildrate an den Bildschirm binden (kein Zerreißen)
+
+    // Tastenbelegung (Keys.h): Aktion -> Tasten ("W Up"), nur was vom Standard abweicht; leer = keine Taste
+    std::map<std::string, std::string> keys;
 };
 
 // Grafikstufen: 0 Niedrig, 1 Mittel, 2 Hoch, 3 Ultra

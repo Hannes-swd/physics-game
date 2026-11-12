@@ -22,10 +22,11 @@ ApplicationWindow {
         pause.resume()
     }
 
-    // Seite öffnen: pause, settings, quit (Befehl "pause ...", beim Öffnen immer pause)
+    // Seite öffnen: pause, settings (Reiter: graphics, controls), quit (Befehl "pause ...", beim Öffnen immer pause)
     function openPage(name) {
         stack.pop(null, StackView.Immediate)
-        if (name === "settings") stack.push(settingsPage, {}, StackView.Immediate)
+        if (name === "settings" || name === "graphics" || name === "controls")
+            stack.push(settingsPage, { tab: ["settings", "graphics", "controls"].indexOf(name) }, StackView.Immediate)
         else if (name === "quit") stack.push(quitPage, {}, StackView.Immediate)
     }
 
@@ -48,7 +49,7 @@ ApplicationWindow {
         // wächst mit dem Spielfenster wie das Hauptmenü (ausgelegt für 1000 x 680)
         readonly property real zoom: Math.max(1, Math.min(parent.width / 1000, parent.height / 680))
         scale: zoom
-        width: Math.min(640, parent.width / zoom)
+        width: Math.min(menu.page === "controls" ? 900 : 640, parent.width / zoom)  // Steuerung: zwei Spalten
         height: Math.min(600, parent.height / zoom)
         padding: 22  // Abstand zum Holzrahmen
 

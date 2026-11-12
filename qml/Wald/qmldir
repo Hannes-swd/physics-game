@@ -14,6 +14,8 @@ ScrollBar 6.0 ScrollBar.qml
 Slider 6.0 Slider.qml
 StackView 6.0 StackView.qml
 SpinBox 6.0 SpinBox.qml
+TabBar 6.0 TabBar.qml
+TabButton 6.0 TabButton.qml
 TextField 6.0 TextField.qml
 internal Wood Wood.qml
 internal PlankField PlankField.qml

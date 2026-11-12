@@ -331,6 +331,16 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         jumpRequest_ = true;
         return "Player jumps";
     }
+    if (sub == "tool") {  // Werkzeug der Leiste unten rechts wählen (wie 1 … 8)
+        static const char* const names[] = {"hand", "axe", "laser", "drill", "terra", "tractor", "pickaxe", "lighter"};
+        const std::string w = t.size() > 2 ? t[2] : "";
+        for (int k = 0; k < 8; ++k)
+            if (w == names[k] || w == std::to_string(k + 1)) {
+                selectHandTool((HandTool)k);
+                return std::string("Tool in hand: ") + names[k];
+            }
+        return "Error: player tool hand|axe|laser|drill|terra|tractor|pickaxe|lighter (or 1-8)";
+    }
     if (sub == "grab" || sub == "take") {
         std::string a = arg(t, 2);
         uint32_t want = 0;
@@ -720,6 +730,50 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         return true;
     }
     if (cmd == "terrain" && terrainAppCommand(t, out)) return true;  // borders, goto, reload (der Rest: Commands.cpp)
+    if (cmd == "debug") {  // Debug-Ansicht (F3): debug [on|off]
+        const std::string v = t.size() > 1 ? t[1] : "";
+        showDebug_ = v == "on" ? true : v == "off" ? false : !showDebug_;
+        out = std::string("debug view ") + (showDebug_ ? "on" : "off");
+        return true;
+    }
+    if (cmd == "keys" || cmd == "tasten") {  // Tastenbelegung wie Einstellungen -> Steuerung (settings.json), gilt sofort
+        GameSettings s = loadSettings();
+        const std::string v = t.size() > 1 ? t[1] : "";
+        if (!v.empty() && v != "list") {
+            if (v == "reset") {
+                s.keys.clear();
+            } else {
+                keys::Act a;
+                if (!keys::byId(v, a) || t.size() < 3) {
+                    out = "Error: keys [list | reset | <action> <key> [second key] | <action> none]   (actions: see 'keys')";
+                    return true;
+                }
+                const std::string k1 = t[2] == "none" ? "" : t[2], k2 = t.size() > 3 ? t[3] : "";
+                for (const std::string& k : {k1, k2})
+                    if (!k.empty() && !keys::validKey(k)) {
+                        out = "Error: unknown key '" + k + "' (A-Z, 0-9, F1-F12, Space, Shift, Ctrl, Alt, Tab, Enter, Up, Down, Left, Right, Num0 ...)";
+                        return true;
+                    }
+                keys::setBinding(s.keys, a, {k1, k2});
+            }
+            std::string err;
+            if (!saveSettings(s, &err)) {
+                out = "Error: " + err;
+                return true;
+            }
+            settings_.keys = s.keys;
+            keys::use(s.keys);
+        }
+        for (int i = 0; i < keys::kActs; ++i) {
+            const keys::Act a = (keys::Act)i;
+            const keys::Binding b = keys::binding(s.keys, a);
+            out += std::string(keys::info(a).id) + " " + (b[0].empty() ? "none" : b[0]) + (b[1].empty() ? "" : " " + b[1]);
+            const std::string c = keys::conflict(s.keys, a, 0);
+            if (!c.empty()) out += "   (also: " + c + ")";
+            out += "\n";
+        }
+        return true;
+    }
     if (cmd == "pause") {  // Pausenfenster des Spiel-Modus (wie ESC), siehe Hilfe
         const std::string v = t.size() > 1 ? t[1] : "";
         if (!play_) {
@@ -727,9 +781,9 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
             return true;
         }
         PauseUi* ui = opt_.pauseUi;
-        if (v == "settings") {
+        if (v == "settings" || v == "graphics" || v == "controls") {  // Einstellungen, Reiter Grafik oder Steuerung
             setPause(Pause::Menu);
-            if (ui) ui->showPage("settings");
+            if (ui) ui->showPage(v);
             else showSettings_ = true;
         } else if (v == "quit") {
             setPause(Pause::Quit);
@@ -747,7 +801,8 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
             out = ui->grab(t[2]) ? "pause window saved: " + t[2] : "Error: could not save " + t[2];
             return true;
         } else {
-            out = ui ? "Error: pause [on|off|settings|quit] | pause set <key> <value> | pause shot <file.png>" : "Error: pause [on|off|settings|quit]";
+            out = ui ? "Error: pause [on|off|settings|graphics|controls|quit] | pause set <key> <value> | pause shot <file.png>"
+                     : "Error: pause [on|off|settings|quit]";
             return true;
         }
         if (pause_ == Pause::None) out = "pause window closed, playing";
@@ -891,7 +946,8 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
             if (!play_) tool_ = Tool::Heat;
             const HeatTool& h = heatTools()[heatTool_];
             out = std::string("Tool: heat (") + h.name + ", " + fmtNum(h.tempC, 0) + " °C) - " +
-                  (play_ ? "hold F and look at a part" : "hold the left mouse button on a part");
+                  (play_ ? "for build mode; in play mode the lighter is tool 8 of the bar ('player tool lighter')"
+                         : "hold the left mouse button on a part");
             return true;
         }
         if (play_) leavePlay();

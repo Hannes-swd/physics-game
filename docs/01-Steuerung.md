@@ -6,6 +6,10 @@ LAN-Spiel zeigt ein **Ladebildschirm**, was gerade passiert. Alles dazu: [15](15
 
 In der Welt gibt es zwei Modi. **Tab** wechselt zwischen ihnen.
 
+Alle Tasten auf dieser Seite sind die **Standardbelegung**. Ändern kann man sie unter *Einstellungen → Steuerung*
+(Hauptmenü oder Pausenfenster, [15](15-Hauptmenue-und-Welten.md#steuerung-tastenbelegung)); die Hinweise im Spiel zeigen
+dann die eigenen Tasten.
+
 | Modus | Was passiert |
 |---|---|
 | **Bau-Modus** (CAD) | Keine Schwerkraft, alles steht still. Teile erstellen, genau platzieren, sägen, bohren, abrunden, fräsen, hobeln, biegen, drehen. Verschobene Teile stoßen an anderen an. |
@@ -80,11 +84,11 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | **Strg** (links) halten | **schleichen**: geduckt (Blick 45 cm tiefer), langsam (1,8 m/s statt 4), kein Rennen und Springen; Tiere bemerken einen erst auf halbe Entfernung ([24](24-Tiere.md#verhalten)). Unten steht „SCHLEICHEN“. Im Wasser taucht Strg weiter ab |
 | Maus | umschauen |
 | Linke Maustaste **halten** | angeschautes Teil tragen (loslassen = fallen lassen) |
-| **E** | **Inventar** auf / zu. Mit einem Teil in der Hand: es ins Inventar stecken (auf ein Hologramm geschaut: dort einsetzen) ([21](21-Inventar.md)) |
+| **E** | **Inventar** auf / zu. Mit einem Teil in der Hand: es ins Inventar stecken (auf ein Hologramm geschaut: dort einsetzen) ([21](21-Inventar.md)). Inventar, Herstellen (**C**) und Bauen (**B**) sind ein Fenster mit drei Bereichen: im offenen Fenster wechselt die Taste eines anderen Bereichs dorthin, die des offenen schließt es |
 | **F** | das Teil, auf das man schaut, direkt ins Inventar (auch Kiesel und Stöcke am Boden, [19](19-Steine-und-Holz.md)) |
 | Maustaste **halten**, während man etwas trägt | Wurf **aufladen**: über dem Fadenkreuz füllt sich ein Streifen (weiß → orange, voll pulsiert er, nach gut 1 s), **loslassen wirft** – je länger, desto fester (ein Stein fliegt kurz angetippt etwa 4 m, voll aufgeladen über 30 m; schwere Teile kaum weiter, mehr schafft der Arm nicht). Mit **E** Aufgehobenes: linke Taste (ein kurzer Klick legt es ab), mit gehaltener linker Taste Getragenes: rechte Taste |
 | Mausrad | Abstand des getragenen Teils ändern |
-| **F** halten | Wärme-Werkzeug (Brenner, Kälte; Auswahl im Bau-Modus unter H) auf das angeschaute Teil richten |
+| **8** Feuerzeug | Linke Maustaste **halten**: die Flamme trifft das angeschaute Teil (bis 3 m), Holz wird schwarz und brennt ([12](12-Waerme-und-Feuer.md)) |
 | im Wasser | Waten bremst; ab der Brust schwimmt die Figur: **W** in Blickrichtung (nach unten schauen = tauchen), **Leertaste** hoch, **Strg** runter |
 | **F5** | Ansicht wechseln: durch die Augen der Figur / von hinten über die Schulter |
 | **B** | Bauplan-Modus: Vorlage (Wand, Boden, Treppe …) als Hologramm setzen; mit Teil in der Hand auf ein Hologramm schauen + **E** = einsetzen; **Q** halten = abbauen ([20](20-Bauvorlagen.md)) |
@@ -93,7 +97,7 @@ Mehrere ausgewählte Teile werden gemeinsam bewegt, gedreht, gelöscht und kopie
 | Minimap (oben rechts) | Norden ist oben, man selbst ist der Pfeil in der Mitte (Spitze = Blickrichtung), Mitspieler im LAN sind Pfeile in ihrer Farbe (außerhalb der Karte klein am Rand). Etwa 240 m breit, Flüsse und Seen blau, Maßstab 50 m. Ein-/ausschalten: *Ansicht → Minimap* |
 | Schnee | Auf Schnee (Schneewald, Tundra, Gletscher, Gipfel; nicht an steilen Hängen) hinterlassen die Figur und Mitspieler beim Laufen **Fußabdrücke** (abwechselnd links und rechts, in Laufrichtung). **Teile**, die auf dem Schnee liegen, rollen oder rutschen, drücken ihren Umriss hinein. Die Spuren bleiben 10 Minuten (höchstens 3000), nur Bild, jeder Rechner zeichnet sie selbst. Befehl `snow` (Anzahl, steht man auf Schnee), `snow clear` |
 | **M** | große Karte auf / zu (auch **Esc**). **Mausrad** zoomt um den Mauszeiger (von 25 cm bis 80 m je Pixel), **Maus ziehen** (links oder rechts) verschiebt, **Leertaste** zurück zur eigenen Position. Unten rechts: Ort und Biom unter dem Mauszeiger. Die Welt läuft weiter, die Figur steht. Befehl: `map [open\|close]`, `map zoom <m je Pixel>`, `map center <x> <z>` (cm) |
-| **1 … 7** | Hand und Werkzeuge (Leiste unten rechts): 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, **7 Spitzhacke** |
+| **1 … 8** | Hand und Werkzeuge (Leiste unten rechts): 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, 7 Spitzhacke, **8 Feuerzeug** |
 | **7** Spitzhacke | Linksklick auf Stein oder Erz (bis 2,6 m, ein Hieb alle 0,45 s) schlägt einen Brocken ab, der direkt ins Inventar kommt (passt er nicht, fällt er herunter). So gewinnt man Eisenerz, Kupfererz und Steinkohle aus den Erzbrocken im Gebirge ([19](19-Steine-und-Holz.md#erze-und-kakteen)) |
 | **H** | verletzt: die schlimmste Stelle verbinden (3 s, verbraucht einen Verband aus dem Inventar; ohne: Druck auf die Wunde) ([25](25-Leben.md)) |
 | Linke Maustaste auf ein Tier | Schlag: verletzt es (mit Axt, Spitzhacke, Laser kräftiger); daneben vertreibt der Schlag Tiere direkt vor der Figur ([24](24-Tiere.md#jagd)) |
@@ -116,7 +120,8 @@ Die Figur schiebt beim Laufen auch lose Teile weg (mit bis zu 350 N).
 | Taste | Fenster / Funktion |
 |---|---|
 | **F1** oder **^** | Konsole: Befehle eintippen. Pfeil hoch/runter = frühere Befehle |
-| **F3** | Physik-Inspektor für das ausgewählte (Bau) bzw. angeschaute/getragene (Spiel) Teil |
+| **F3** | **Debug-Ansicht** (wie in Minecraft, auch ohne Cheats): oben links Bildrate und Bildzeit, Welt (Name, Seed, Modus, LAN, Uhrzeit), Position in m, Chunk, Blickrichtung (Himmelsrichtung, Grad), Tempo, Biom, das angeschaute Teil; daneben was geladen und vorhanden ist (Teile, Detailstufen, Chunks, Gelände-Kacheln, Bäume, Gras, Bodenzeug, Tiere, Feuer, Bauvorlagen, Partikel, Inventar), Physik, Grafik und die **Rechenzeit je Bild** nach Abschnitten (letzte Sekunde). Befehl `debug [on\|off]` |
+| **F6** | Physik-Inspektor für das ausgewählte (Bau) bzw. angeschaute/getragene (Spiel) Teil |
 | **F4** | Dreitafelprojektion der Auswahl |
 | **F12** | Foto (PNG) im Programmordner speichern |
 | **Tab** | Modus wechseln |
@@ -128,10 +133,10 @@ Die Figur schiebt beim Laufen auch lose Teile weg (mit bis zu 350 N).
 | **Werkzeuge** (links, Bau-Modus) | Werkzeugwahl, Einstellungen von Säge, Bohrer, Abrunden, Fräsen, Hobeln, Wärme/Kälte, Einrasten, **Neues Teil** (Quader, Zylinder, Rohr, Kugel, Zahnrad, Propeller; Material, Maße), Blender-Import |
 | **Eigenschaften** (rechts, Bau-Modus) | Name, Material, Größe, Volumen, Masse, Haft-/Gleitreibung, Position und Drehung zum Eintippen, Lagerung (fest / Drehachse mit Motor), **Bearbeiten** (alle Kanten abrunden/fasen/schleifen, Drehbank, Biegen, Spiegeln, Skalieren), **Temperatur** (anzeigen, setzen, anzünden, löschen), Verbindungen, Unzerbrechlich. Bei zwei gewählten Teilen: **Verbinden** und **Formen kombinieren** (Vereinen, Ausschneiden, Schnittmenge) |
 | **Konsole** (F1) | Befehle und alle Meldungen |
-| **Physik-Inspektor** (F3) | Live-Werte, siehe [05-Physik-und-Materialien.md](05-Physik-und-Materialien.md) |
+| **Physik-Inspektor** (F6) | Live-Werte, siehe [05-Physik-und-Materialien.md](05-Physik-und-Materialien.md) |
 | **Materialien** (Menü Ansicht → Materialien bearbeiten) | alle Werte jedes Materials ändern, neue Materialien als Kopie anlegen, in `assets/materials.json` speichern, Datei neu laden ([13](13-Materialien.md)) |
 | **Dreitafelprojektion** (F4) | Technische Zeichnung, siehe [06-Dreitafelprojektion.md](06-Dreitafelprojektion.md) |
-| **Statusleiste** (unten) | Hinweise, Teil unter der Maus, Chunks, gezeichnete Teile je Detailstufe, FPS; im Spiel-Modus auch Physikzeit, Kontakte, aktive Teile und größtes Eindringen |
+| **Statusleiste** (unten, nur Bau-Modus) | Hinweise, Teil unter der Maus, Chunks, gezeichnete Teile je Detailstufe, FPS. Im Spiel-Modus ist das Bild frei: die Werte stehen in der Debug-Ansicht (**F3**), im Bauplan- und Herstell-Modus steht unten in der Mitte, was gewählt ist und wie man es setzt |
 
 Oben in der Mitte werden Befehle eingeblendet, die per Fernsteuerung ankommen, zusammen mit ihrem Ergebnis.
 Bricht etwas (Verbindung oder Teil), erscheint dort ebenfalls ein Hinweis.

@@ -8,7 +8,7 @@ genug passendes Material drin ist.
 
 | Eingabe | Wirkung |
 |---|---|
-| **B** | Auswahl der Baupläne: ein Kasten je Vorlage mit Zeichnung und Materialbedarf, Klick wählt; dann hängt die Vorlage als Hologramm vor der Figur (ohne Hauptmenü: gleich die letzte) |
+| **B** | Bereich **Bauen** des gemeinsamen Fensters mit Inventar und Herstellen ([21](21-Inventar.md)): ein Kasten je Vorlage mit Zeichnung und Materialbedarf, Klick wählt; dann hängt die Vorlage als Hologramm vor der Figur (ohne Hauptmenü: gleich die letzte) |
 | Mausrad / **1 … 0** | Vorlage wechseln |
 | **R** (Shift+R) | um 90° drehen |
 | Linke Maustaste | Vorlage hier setzen (mehrere hintereinander möglich) |

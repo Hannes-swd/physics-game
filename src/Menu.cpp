@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <sstream>
 
+#include "Keys.h"
 #include "Net.h"
 #include "Remote.h"
 #include "Settings.h"
@@ -105,7 +106,8 @@ std::string quoted(const std::string& s) { return "\"" + s + "\""; }
 const char* kMenuHelp =
     "MAIN MENU (remote control or console; every command takes effect at once, without animations)\n"
     "  menu                                   where am I: page, open dialog, worlds (numbered), selection, settings\n"
-    "  menu main|worlds|multiplayer|settings  switch to that page (also: menu page <name>, menu back)\n"
+    "  menu main|worlds|multiplayer|settings  switch to that page (also: menu page <name>, menu back);\n"
+    "                                         settings tabs: menu settings|graphics|controls\n"
     "  menu select <n|name>                   select a world in the list (n = number from 'menu')\n"
     "  menu play [n|name]                     open the world (without: the selected one); the game window opens\n"
     "  menu lan [n|name]                      open the world and host a LAN game\n"
@@ -119,6 +121,9 @@ const char* kMenuHelp =
     "                                         graphics low|medium|high|ultra (sets all of: msaa 1|2|4|8, supersampling on|off,\n"
     "                                         shadowquality low..ultra, view <0.5-2>, plants <0-1.5>), vsync on|off. Graphics apply\n"
     "                                         when a world opens\n"
+    "  menu keys [reset]                      key bindings (action id, keys); reset: all back to the defaults\n"
+    "  menu key <action> <key> [second key]   bind keys (A-Z, 0-9, F1-F12, Space, Shift, Ctrl, Alt, Tab, Up, Num0 ...);\n"
+    "                                         'menu key <action> none' unbinds. Also works in the pause window\n"
     "  menu close                             close an open dialog\n"
     "  menu quit                              quit the program\n"
     "In the game: 'menu' tells where you are; 'menu <...>' saves the world, goes back to the main menu and runs the command there\n"
@@ -126,11 +131,49 @@ const char* kMenuHelp =
 
 } // namespace
 
+// Taste aus Qt (QML: event.key, event.modifiers) in den Namen von Keys.h
+static std::string qtKeyName(int k, int mods) {
+    const bool pad = (mods & Qt::KeypadModifier) != 0;
+    if (k >= Qt::Key_A && k <= Qt::Key_Z) return std::string(1, (char)('A' + (k - Qt::Key_A)));
+    if (k >= Qt::Key_0 && k <= Qt::Key_9) return (pad ? "Num" : "") + std::string(1, (char)('0' + (k - Qt::Key_0)));
+    if (k >= Qt::Key_F1 && k <= Qt::Key_F12) return "F" + std::to_string(k - Qt::Key_F1 + 1);
+    switch (k) {
+    case Qt::Key_Space: return "Space";
+    case Qt::Key_Tab:
+    case Qt::Key_Backtab: return "Tab";
+    case Qt::Key_Return:
+    case Qt::Key_Enter: return "Enter";
+    case Qt::Key_Backspace: return "Backspace";
+    case Qt::Key_Delete: return "Delete";
+    case Qt::Key_Insert: return "Insert";
+    case Qt::Key_Home: return "Home";
+    case Qt::Key_End: return "End";
+    case Qt::Key_PageUp: return "PageUp";
+    case Qt::Key_PageDown: return "PageDown";
+    case Qt::Key_Up: return "Up";
+    case Qt::Key_Down: return "Down";
+    case Qt::Key_Left: return "Left";
+    case Qt::Key_Right: return "Right";
+    case Qt::Key_Shift: return "Shift";
+    case Qt::Key_Control: return "Ctrl";
+    case Qt::Key_Alt: return "Alt";
+    case Qt::Key_CapsLock: return "CapsLock";
+    case Qt::Key_AsciiCircum:
+    case Qt::Key_Dead_Circumflex: return "^";
+    case Qt::Key_Comma: return "Comma";
+    case Qt::Key_Period: return "Period";
+    case Qt::Key_Minus: return "Minus";
+    default: return "";
+    }
+}
+
 // Das Objekt "menu" in QML
 class MenuBackend : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList worlds READ worlds NOTIFY worldsChanged)
     Q_PROPERTY(QVariantMap settings READ settings NOTIFY settingsChanged)
+    // Einstellungen -> Steuerung: zwei Spalten, je eine Liste von Zeilen (kind "group" / "key" / "fixed")
+    Q_PROPERTY(QVariantList keyColumns READ keyColumns NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList lanGames READ lanGames NOTIFY lanGamesChanged)
     Q_PROPERTY(QString message READ message NOTIFY messageChanged)
     Q_PROPERTY(QString worldsFolder READ worldsFolder CONSTANT)
@@ -171,6 +214,7 @@ public:
 
     QVariantList worlds() const { return worlds_; }
     QVariantMap settings() const { return settings_; }
+    QVariantList keyColumns() const { return keyColumns_; }
     QVariantList lanGames() const { return lanGames_; }
     QString message() const { return message_; }
     QString worldsFolder() const { return qs(worlds::worldsDir().u8string()); }
@@ -314,6 +358,29 @@ public:
         loadSettingsMap();
     }
 
+    // ---- Tasten (Einstellungen -> Steuerung)
+    // Name einer Taste, wie ihn settings.json und das Spiel kennen ("W", "Space", "Ctrl"); leer: diese Taste geht nicht
+    Q_INVOKABLE QString keyName(int key, int modifiers) const { return qs(qtKeyName(key, modifiers)); }
+    // Taste slot (0 / 1) der Aktion id setzen; name leer: diese Taste entfernen
+    Q_INVOKABLE QString setKey(const QString& id, int slot, const QString& name) {
+        keys::Act a;
+        if (!keys::byId(ss(id), a)) return qs("Error: unknown action '" + ss(id) + "'");
+        if (!name.isEmpty() && !keys::validKey(ss(name))) return qs("Error: unknown key '" + ss(name) + "'");
+        GameSettings s = loadSettings();
+        keys::Binding b = keys::binding(s.keys, a);
+        b[(size_t)std::clamp(slot, 0, 1)] = ss(name);
+        keys::setBinding(s.keys, a, b);
+        saveSettings(s);
+        loadSettingsMap();
+        return QString();
+    }
+    Q_INVOKABLE void resetKeys() {
+        GameSettings s = loadSettings();
+        s.keys.clear();
+        saveSettings(s);
+        loadSettingsMap();
+    }
+
     Q_INVOKABLE void clearMessage() { setMessage(""); }
     Q_INVOKABLE void quit() {
         choice = MenuChoice();
@@ -379,7 +446,50 @@ private:
         settings_["viewDistance"] = s.viewDistance;
         settings_["plants"] = s.plants;
         settings_["vsync"] = s.vsync;
+        loadKeyColumns(s);
         Q_EMIT settingsChanged();
+    }
+    // Zeilen der Seite Steuerung: links Bewegen, Fenster, Handeln, Überall; rechts Werkzeuge, Bau-Modus
+    void loadKeyColumns(const GameSettings& s) {
+        keyColumns_.clear();
+        const std::vector<std::vector<std::string>> cols = {{"Bewegen", "Fenster", "Handeln", "Überall"}, {"Werkzeuge", "Bau-Modus"}};
+        for (const auto& groups : cols) {
+            QVariantList rows;
+            for (const std::string& g : groups) {
+                QVariantMap head;
+                head["kind"] = QStringLiteral("group");
+                head["label"] = qs(g);
+                rows.push_back(head);
+                for (int i = 0; i < keys::kActs; ++i) {
+                    const keys::Act a = (keys::Act)i;
+                    if (keys::info(a).group != g) continue;
+                    const keys::Binding b = keys::binding(s.keys, a);
+                    QVariantMap r;
+                    r["kind"] = QStringLiteral("key");
+                    r["id"] = qs(keys::info(a).id);
+                    r["label"] = qs(keys::info(a).label);
+                    QVariantList names, texts, conflicts;
+                    for (int k = 0; k < 2; ++k) {
+                        names.push_back(qs(b[k]));
+                        texts.push_back(qs(b[k].empty() ? "" : keys::keyText(b[k])));
+                        conflicts.push_back(qs(keys::conflict(s.keys, a, k)));
+                    }
+                    r["names"] = names;
+                    r["texts"] = texts;
+                    r["conflicts"] = conflicts;
+                    rows.push_back(r);
+                }
+                for (const keys::FixedRow& f : keys::fixedRows()) {
+                    if (f.group != g) continue;
+                    QVariantMap r;
+                    r["kind"] = QStringLiteral("fixed");
+                    r["label"] = qs(f.label);
+                    r["text"] = qs(f.keys);
+                    rows.push_back(r);
+                }
+            }
+            keyColumns_.push_back(rows);
+        }
     }
     void pollLan() {
         search_.update(clock_.elapsed() / 1000.0);
@@ -505,7 +615,9 @@ private:
         if (sub == "spielen" || sub == "welten" || sub == "list") sub = "worlds";
         if (sub == "mehrspieler" || sub == "lan-games") sub = "multiplayer";
         if (sub == "einstellungen" || sub == "options") sub = "settings";
-        if (sub == "main" || sub == "worlds" || sub == "multiplayer" || sub == "settings") {
+        if (sub == "steuerung" || sub == "tasten") sub = "controls";
+        if (sub == "grafik") sub = "graphics";
+        if (sub == "main" || sub == "worlds" || sub == "multiplayer" || sub == "settings" || sub == "graphics" || sub == "controls") {
             requestPage(sub);
             return status();
         }
@@ -602,6 +714,34 @@ private:
             join(qs(a));
             return "joining the LAN game at " + a + ". The game window opens; if it fails you come back here ('menu' shows the message).";
         }
+        // Tasten: "menu keys" (Liste), "menu keys reset", "menu key <aktion> <taste> [zweite]", "menu key <aktion> none"
+        if (sub == "keys" || sub == "tasten") {
+            if (lower(arg(2)) == "reset") resetKeys();
+            else if (!arg(2).empty()) return "Error: menu keys [reset]";
+            const GameSettings s = loadSettings();
+            std::ostringstream o;
+            for (int i = 0; i < keys::kActs; ++i) {
+                const keys::Binding b = keys::binding(s.keys, (keys::Act)i);
+                o << keys::info((keys::Act)i).id << " " << (b[0].empty() ? "none" : b[0]) << (b[1].empty() ? "" : " " + b[1]);
+                const std::string c = keys::conflict(s.keys, (keys::Act)i, 0);
+                if (!c.empty()) o << "   (also: " << c << ")";
+                o << "\n";
+            }
+            return o.str();
+        }
+        if (sub == "key" || sub == "taste") {
+            keys::Act a;
+            if (!keys::byId(arg(2), a) || arg(3).empty()) return "Error: menu key <action> <key> [second key] | menu key <action> none   ('menu keys' lists them)";
+            const std::string k1 = lower(arg(3)) == "none" ? "" : arg(3), k2 = arg(4);
+            for (const std::string& k : {k1, k2})
+                if (!k.empty() && !keys::validKey(k)) return "Error: unknown key '" + k + "' (A-Z, 0-9, F1-F12, Space, Shift, Ctrl, Alt, Tab, Up, ...)";
+            GameSettings s = loadSettings();
+            keys::setBinding(s.keys, a, {k1, k2});
+            saveSettings(s);
+            loadSettingsMap();
+            const keys::Binding b = keys::binding(s.keys, a);
+            return std::string(keys::info(a).id) + " = " + (b[0].empty() ? "none" : b[0]) + (b[1].empty() ? "" : " " + b[1]);
+        }
         if (sub == "set") {
             const std::string key = lower(arg(2)), v = arg(3);
             if (key.empty() || (v.empty() && key != "name"))
@@ -641,6 +781,7 @@ private:
     QVariantList worlds_, lanGames_;
     std::vector<WorldInfo> infos_;
     QVariantMap settings_;
+    QVariantList keyColumns_;
     QString message_, page_ = "main", dialog_, selectedDir_;
     std::shared_ptr<const GenConfig> gen_;  // Biome für neue Welten (assets/biomes.json)
     QVariantList biomes_;
@@ -755,7 +896,8 @@ public:
     std::string command(const std::string& line) override {
         if (!backend_) return "Error: the pause window is not open";
         const std::vector<std::string> t = words(line);
-        if (t.size() < 2 || t[0] != "menu" || t[1] != "set") return "Error: only 'menu set <key> <value>' works in the pause window";
+        if (t.size() < 2 || t[0] != "menu" || (t[1] != "set" && t[1] != "key" && t[1] != "keys"))
+            return "Error: only 'menu set <key> <value>', 'menu key ...' and 'menu keys' work in the pause window";
         const std::string r = backend_->command(line);
         QCoreApplication::processEvents();
         return r;
@@ -799,21 +941,53 @@ static QVariantList polyList(const std::vector<CatalogUi::Poly>& polys) {
     return out;
 }
 
-// Das Objekt "inventory" in qml/InventoryWindow.qml: Raster, Teile (Liste von Maps: key, x, y, w, h, name, info,
-// polys = Zeichnung), Gewichtszeile. Was man darin tut, holt das Spiel mit InventoryUi::poll() ab
-class InventoryBackend : public QObject {
+// Das Objekt "bag" in qml/BagWindow.qml: ein Fenster für Inventar (Bereich 0), Herstellen (1) und Bauen (2).
+// Inventar: Raster, Teile (Liste von Maps: key, x, y, w, h, name, info, polys = Zeichnung), Gewichtszeile.
+// Herstellen / Bauen: ein Kasten je Vorlage (label, info, polys), der zuletzt gewählte. Tasten (E, C, B nach der
+// Belegung in settings.json): die des offenen Bereichs schließt, eine andere wechselt. Was man tut, holt das Spiel
+// über InventoryUi::poll() bzw. CatalogUi::poll() ab
+class BagBackend : public QObject {
     Q_OBJECT
-    Q_PROPERTY(int cols READ cols NOTIFY changed)
-    Q_PROPERTY(int rows READ rows NOTIFY changed)
-    Q_PROPERTY(QVariantList items READ items NOTIFY changed)
-    Q_PROPERTY(QString summary READ summary NOTIFY changed)
+    Q_PROPERTY(int tab READ tab NOTIFY tabChanged)
+    Q_PROPERTY(QStringList keyTexts READ keyTexts NOTIFY tabChanged)  // Taste je Bereich zur Anzeige ("E")
+    Q_PROPERTY(int cols READ cols NOTIFY inventoryChanged)
+    Q_PROPERTY(int rows READ rows NOTIFY inventoryChanged)
+    Q_PROPERTY(QVariantList items READ items NOTIFY inventoryChanged)
+    Q_PROPERTY(QString summary READ summary NOTIFY inventoryChanged)
+    Q_PROPERTY(QVariantList tiles READ tiles NOTIFY catalogChanged)
+    Q_PROPERTY(int current READ current NOTIFY catalogChanged)
 
 public:
+    struct Ev {
+        enum Kind { Close, Switch, TakeOut, Choose } kind;
+        int tab = 0;
+        uint32_t key = 0;
+        int index = -1;
+    };
+    std::vector<Ev> events;
+
+    int tab() const { return tab_; }
+    QStringList keyTexts() const { return keyTexts_; }
     int cols() const { return cols_; }
     int rows() const { return rows_; }
     QVariantList items() const { return items_; }
     QString summary() const { return summary_; }
-    void set(int cols, int rows, const std::vector<InventoryUi::Item>& items, const std::string& summary) {
+    QVariantList tiles() const { return tiles_; }
+    int current() const { return current_; }
+
+    void setTab(int t) {
+        // Tasten der drei Bereiche neu lesen (man kann sie im Pausenfenster ändern)
+        const GameSettings s = loadSettings();
+        const keys::Act acts[3] = {keys::Act::Inventory, keys::Act::Craft, keys::Act::Build};
+        keyTexts_.clear();
+        for (int i = 0; i < 3; ++i) {
+            tabKeys_[i] = keys::binding(s.keys, acts[i]);
+            keyTexts_.push_back(qs(tabKeys_[i][0].empty() ? tabKeys_[i][1] : keys::keyText(tabKeys_[i][0])));
+        }
+        tab_ = t;
+        Q_EMIT tabChanged();
+    }
+    void setInventory(int cols, int rows, const std::vector<InventoryUi::Item>& items, const std::string& summary) {
         cols_ = cols;
         rows_ = rows;
         items_.clear();
@@ -830,157 +1004,66 @@ public:
             items_.push_back(m);
         }
         summary_ = qs(summary);
-        Q_EMIT changed();
+        Q_EMIT inventoryChanged();
     }
-    Q_INVOKABLE void close() { events.push_back({InventoryUi::Event::Close, 0}); }
-    Q_INVOKABLE void takeOut(double key) { events.push_back({InventoryUi::Event::TakeOut, (uint32_t)key}); }
-
-    std::vector<InventoryUi::Event> events;
-
-Q_SIGNALS:
-    void changed();
-
-private:
-    int cols_ = 1, rows_ = 1;
-    QVariantList items_;
-    QString summary_;
-};
-
-// Inventarfenster (InventoryUi.h): wie das Pausenfenster rahmenlos über dem Spielfenster, nach dem ersten Öffnen nur versteckt
-class QtInventory : public InventoryUi {
-public:
-    ~QtInventory() override { reset(); }
-
-    void open(void* gameWindow) override {
-        if (!engine_) {
-            backend_ = std::make_unique<InventoryBackend>();
-            engine_ = std::make_unique<QQmlApplicationEngine>();
-            engine_->rootContext()->setContextProperty("inventory", backend_.get());
-            backend_->set(cols_, rows_, items_, summary_);
-            engine_->addImportPath(QStringLiteral("qrc:/menu"));  // der Stil "Wald"
-            engine_->load(QUrl(QStringLiteral("qrc:/menu/InventoryWindow.qml")));
-            if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
-                reset();
-                return;
-            }
-            window_ = qobject_cast<QQuickWindow*>(engine_->rootObjects().first());
-        }
-        if (!window_) return;
-        backend_->events.clear();
-        window_->setTransientParent(nullptr);
-        foreign_.reset(gameWindow ? QWindow::fromWinId((WId)gameWindow) : nullptr);
-        if (foreign_) {
-            window_->setTransientParent(foreign_.get());
-            const QRect g = foreign_->geometry();
-            if (g.isValid()) window_->setGeometry(g);  // deckt das Spielfenster ganz ab, das Menü steht in der QML mittig
-        }
-        window_->show();
-        window_->raise();
-        window_->requestActivate();
-        open_ = true;
-        QCoreApplication::processEvents();
-    }
-    void close() override {
-        if (window_) window_->hide();
-        open_ = false;
-        QCoreApplication::processEvents();
-    }
-    bool isOpen() const override { return open_; }
-    void setContents(int cols, int rows, const std::vector<Item>& items, const std::string& summary) override {
-        cols_ = cols;
-        rows_ = rows;
-        items_ = items;
-        summary_ = summary;
-        if (backend_) backend_->set(cols, rows, items, summary);
-    }
-    Event poll() override {
-        if (!open_ || !backend_) return {};
-        QCoreApplication::processEvents();
-        if (backend_->events.empty()) return {};
-        const Event e = backend_->events.front();
-        backend_->events.erase(backend_->events.begin());
-        return e;
-    }
-    bool grab(const std::string& file) override {
-        if (!window_ || !open_) return false;
-        QCoreApplication::processEvents();
-        return window_->grabWindow().save(qs(file));
-    }
-    void reset() {
-        window_ = nullptr;
-        engine_.reset();
-        foreign_.reset();
-        backend_.reset();
-        open_ = false;
-    }
-
-private:
-    std::unique_ptr<InventoryBackend> backend_;
-    std::unique_ptr<QQmlApplicationEngine> engine_;
-    std::unique_ptr<QWindow> foreign_;
-    QQuickWindow* window_ = nullptr;
-    bool open_ = false;
-    int cols_ = 1, rows_ = 1;
-    std::vector<Item> items_;
-    std::string summary_;
-};
-
-// Das Objekt "catalog" in qml/CatalogWindow.qml: Überschrift, Kästen (Liste von Maps: label, info, polys mit pts und
-// color), gewählter Kasten. Die Wahl holt das Spiel mit CatalogUi::poll() ab
-class CatalogBackend : public QObject {
-    Q_OBJECT
-    Q_PROPERTY(QString title READ title NOTIFY changed)
-    Q_PROPERTY(QString closeKey READ closeKey NOTIFY changed)
-    Q_PROPERTY(QVariantList items READ items NOTIFY changed)
-    Q_PROPERTY(int current READ current NOTIFY changed)
-
-public:
-    QString title() const { return title_; }
-    QString closeKey() const { return closeKey_; }
-    QVariantList items() const { return items_; }
-    int current() const { return current_; }
-    void set(const std::string& title, const std::string& closeKey, const std::vector<CatalogUi::Item>& items, int current) {
-        title_ = qs(title);
-        closeKey_ = qs(closeKey);
+    void setCatalog(const std::vector<CatalogUi::Item>& items, int current) {
         current_ = current;
-        items_.clear();
+        tiles_.clear();
         for (const CatalogUi::Item& it : items) {
             QVariantMap m;
             m["label"] = qs(it.label);
             m["info"] = qs(it.info);
             m["polys"] = polyList(it.polys);
-            items_.push_back(m);
+            tiles_.push_back(m);
         }
-        Q_EMIT changed();
+        Q_EMIT catalogChanged();
     }
-    Q_INVOKABLE void close() { events.push_back({CatalogUi::Event::Close, -1}); }
-    Q_INVOKABLE void choose(int index) { events.push_back({CatalogUi::Event::Choose, index}); }
 
-    std::vector<CatalogUi::Event> events;
+    Q_INVOKABLE void close() { events.push_back({Ev::Close}); }
+    Q_INVOKABLE void switchTo(int t) {
+        if (t != tab_ && t >= 0 && t < 3) events.push_back({Ev::Switch, t});
+    }
+    Q_INVOKABLE void takeOut(double key) { events.push_back({Ev::TakeOut, 0, (uint32_t)key}); }
+    Q_INVOKABLE void choose(int index) { events.push_back({Ev::Choose, 0, 0, index}); }
+    // Welcher Bereich zu dieser Taste gehört (QML: event.key, event.modifiers); -1: keiner
+    Q_INVOKABLE int keyTab(int key, int modifiers) const {
+        const std::string name = qtKeyName(key, modifiers);
+        if (name.empty()) return -1;
+        for (int i = 0; i < 3; ++i)
+            if (tabKeys_[i][0] == name || tabKeys_[i][1] == name) return i;
+        return -1;
+    }
 
 Q_SIGNALS:
-    void changed();
+    void tabChanged();
+    void inventoryChanged();
+    void catalogChanged();
 
 private:
-    QString title_, closeKey_;
+    int tab_ = 0;
+    QStringList keyTexts_;
+    keys::Binding tabKeys_[3];
+    int cols_ = 1, rows_ = 1;
     QVariantList items_;
+    QString summary_;
+    QVariantList tiles_;
     int current_ = -1;
 };
 
-// Auswahlfenster (CatalogUi.h): wie das Inventar rahmenlos über dem Spielfenster, nach dem ersten Öffnen nur versteckt
-class QtCatalog : public CatalogUi {
+// Das gemeinsame Fenster: wie das Pausenfenster rahmenlos über dem Spielfenster, nach dem ersten Öffnen nur versteckt.
+// Wechselt man den Bereich, bleibt es offen (kein Flackern, die Maus bleibt frei)
+class QtBag {
 public:
-    ~QtCatalog() override { reset(); }
+    ~QtBag() { reset(); }
 
-    void open(void* gameWindow, const std::string& title, const std::string& closeKey, const std::vector<Item>& items,
-              int current) override {
+    void show(void* gameWindow, int tab) {
         if (!engine_) {
-            backend_ = std::make_unique<CatalogBackend>();
+            backend_ = std::make_unique<BagBackend>();
             engine_ = std::make_unique<QQmlApplicationEngine>();
-            engine_->rootContext()->setContextProperty("catalog", backend_.get());
-            backend_->set(title, closeKey, items, current);
+            engine_->rootContext()->setContextProperty("bag", backend_.get());
+            backend_->setInventory(cols_, rows_, items_, summary_);
             engine_->addImportPath(QStringLiteral("qrc:/menu"));  // der Stil "Wald"
-            engine_->load(QUrl(QStringLiteral("qrc:/menu/CatalogWindow.qml")));
+            engine_->load(QUrl(QStringLiteral("qrc:/menu/BagWindow.qml")));
             if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
                 reset();
                 return;
@@ -988,36 +1071,49 @@ public:
             window_ = qobject_cast<QQuickWindow*>(engine_->rootObjects().first());
         }
         if (!window_) return;
-        backend_->set(title, closeKey, items, current);
         backend_->events.clear();
-        window_->setTransientParent(nullptr);
-        foreign_.reset(gameWindow ? QWindow::fromWinId((WId)gameWindow) : nullptr);
-        if (foreign_) {
-            window_->setTransientParent(foreign_.get());
-            const QRect g = foreign_->geometry();
-            if (g.isValid()) window_->setGeometry(g);  // deckt das Spielfenster ganz ab, die Auswahl steht in der QML mittig
+        backend_->setTab(tab);
+        if (!open_) {
+            window_->setTransientParent(nullptr);
+            foreign_.reset(gameWindow ? QWindow::fromWinId((WId)gameWindow) : nullptr);
+            if (foreign_) {
+                window_->setTransientParent(foreign_.get());
+                const QRect g = foreign_->geometry();
+                if (g.isValid()) window_->setGeometry(g);  // deckt das Spielfenster ganz ab, der Inhalt steht in der QML mittig
+            }
+            window_->show();
+            window_->raise();
+            window_->requestActivate();
+            open_ = true;
         }
-        window_->show();
-        window_->raise();
-        window_->requestActivate();
-        open_ = true;
         QCoreApplication::processEvents();
     }
-    void close() override {
+    void hide() {
         if (window_) window_->hide();
         open_ = false;
         QCoreApplication::processEvents();
     }
-    bool isOpen() const override { return open_; }
-    Event poll() override {
-        if (!open_ || !backend_) return {};
-        QCoreApplication::processEvents();
-        if (backend_->events.empty()) return {};
-        const Event e = backend_->events.front();
-        backend_->events.erase(backend_->events.begin());
-        return e;
+    bool open() const { return open_; }
+    int tab() const { return backend_ ? backend_->tab() : -1; }
+    void setInventory(int cols, int rows, const std::vector<InventoryUi::Item>& items, const std::string& summary) {
+        cols_ = cols;
+        rows_ = rows;
+        items_ = items;
+        summary_ = summary;
+        if (backend_) backend_->setInventory(cols, rows, items, summary);
     }
-    bool grab(const std::string& file) override {
+    void setCatalog(const std::vector<CatalogUi::Item>& items, int current) {
+        if (backend_) backend_->setCatalog(items, current);
+    }
+    bool next(BagBackend::Ev& e) {
+        if (!open_ || !backend_) return false;
+        QCoreApplication::processEvents();
+        if (backend_->events.empty()) return false;
+        e = backend_->events.front();
+        backend_->events.erase(backend_->events.begin());
+        return true;
+    }
+    bool grab(const std::string& file) {
         if (!window_ || !open_) return false;
         QCoreApplication::processEvents();
         return window_->grabWindow().save(qs(file));
@@ -1031,11 +1127,70 @@ public:
     }
 
 private:
-    std::unique_ptr<CatalogBackend> backend_;
+    std::unique_ptr<BagBackend> backend_;
     std::unique_ptr<QQmlApplicationEngine> engine_;
     std::unique_ptr<QWindow> foreign_;
     QQuickWindow* window_ = nullptr;
     bool open_ = false;
+    int cols_ = 1, rows_ = 1;
+    std::vector<InventoryUi::Item> items_;
+    std::string summary_;
+};
+
+// Inventar (InventoryUi.h): Bereich 0 des gemeinsamen Fensters
+class QtInventory : public InventoryUi {
+public:
+    explicit QtInventory(QtBag& bag) : bag_(bag) {}
+    void open(void* gameWindow) override { bag_.show(gameWindow, 0); }
+    void close() override {
+        if (isOpen()) bag_.hide();
+    }
+    bool isOpen() const override { return bag_.open() && bag_.tab() == 0; }
+    void setContents(int cols, int rows, const std::vector<Item>& items, const std::string& summary) override {
+        bag_.setInventory(cols, rows, items, summary);
+    }
+    Event poll() override {
+        BagBackend::Ev e{};
+        if (!isOpen() || !bag_.next(e)) return {};
+        switch (e.kind) {
+        case BagBackend::Ev::Close: return {Event::Close};
+        case BagBackend::Ev::TakeOut: return {Event::TakeOut, e.key};
+        case BagBackend::Ev::Switch: return {Event::Switch, 0, e.tab};
+        default: return {};
+        }
+    }
+    bool grab(const std::string& file) override { return bag_.grab(file); }
+
+private:
+    QtBag& bag_;
+};
+
+// Herstellen und Bauen (CatalogUi.h): Bereiche 1 und 2 des gemeinsamen Fensters
+class QtCatalog : public CatalogUi {
+public:
+    explicit QtCatalog(QtBag& bag) : bag_(bag) {}
+    void open(void* gameWindow, bool craft, const std::vector<Item>& items, int current) override {
+        bag_.setCatalog(items, current);
+        bag_.show(gameWindow, craft ? 1 : 2);
+    }
+    void close() override {
+        if (isOpen()) bag_.hide();
+    }
+    bool isOpen() const override { return bag_.open() && bag_.tab() > 0; }
+    Event poll() override {
+        BagBackend::Ev e{};
+        if (!isOpen() || !bag_.next(e)) return {};
+        switch (e.kind) {
+        case BagBackend::Ev::Close: return {Event::Close};
+        case BagBackend::Ev::Choose: return {Event::Choose, e.index};
+        case BagBackend::Ev::Switch: return {Event::Switch, -1, e.tab};
+        default: return {};
+        }
+    }
+    bool grab(const std::string& file) override { return bag_.grab(file); }
+
+private:
+    QtBag& bag_;
 };
 
 struct MainMenu::Impl {
@@ -1044,13 +1199,19 @@ struct MainMenu::Impl {
     std::unique_ptr<MenuBackend> backend;
     std::unique_ptr<QQmlApplicationEngine> engine;
     std::unique_ptr<QtPause> pause;  // Pausenfenster im Spiel (vor app abgebaut)
-    std::unique_ptr<QtInventory> inventory;  // Inventarfenster im Spiel
-    std::unique_ptr<QtCatalog> catalog;      // Auswahl der Bauvorlagen und Rezepte im Spiel
+    // Ein Fenster im Spiel für Inventar, Herstellen und Bauen (vor den beiden Anschlüssen angelegt, nach ihnen abgebaut)
+    std::unique_ptr<QtBag> bag;
+    std::unique_ptr<QtInventory> inventory;  // Bereich Inventar
+    std::unique_ptr<QtCatalog> catalog;      // Bereiche Herstellen und Bauen
+    QtBag& theBag() {
+        if (!bag) bag = std::make_unique<QtBag>();
+        return *bag;
+    }
     Impl(int& argc, char** argv) : app(argc, argv) {}
 };
 
 CatalogUi* MainMenu::catalogUi() {
-    if (!impl_->catalog) impl_->catalog = std::make_unique<QtCatalog>();
+    if (!impl_->catalog) impl_->catalog = std::make_unique<QtCatalog>(impl_->theBag());
     return impl_->catalog.get();
 }
 
@@ -1060,7 +1221,7 @@ PauseUi* MainMenu::pauseUi() {
 }
 
 InventoryUi* MainMenu::inventoryUi() {
-    if (!impl_->inventory) impl_->inventory = std::make_unique<QtInventory>();
+    if (!impl_->inventory) impl_->inventory = std::make_unique<QtInventory>(impl_->theBag());
     return impl_->inventory.get();
 }
 
@@ -1087,7 +1248,7 @@ void MainMenu::hide() {
 MenuChoice MainMenu::show(const std::string& message, RemoteServer* remote, const std::string& command) {
     hide();
     if (impl_->pause) impl_->pause->reset();  // das Pausenfenster der letzten Sitzung
-    if (impl_->inventory) impl_->inventory->reset();
+    if (impl_->bag) impl_->bag->reset();  // Inventar / Herstellen / Bauen der letzten Sitzung
     impl_->backend = std::make_unique<MenuBackend>(message, remote);
     impl_->engine = std::make_unique<QQmlApplicationEngine>();
     MenuBackend& backend = *impl_->backend;

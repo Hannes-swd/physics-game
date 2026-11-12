@@ -132,9 +132,10 @@ void App::drawUI() {
         if (mapOpen_) drawBigMap();
         else if (showMinimap_) drawMinimap();
     }
-    drawStatusBar();
+    if (!play_) drawStatusBar();  // im Spiel-Modus ist das Bild frei (Werte: Debug-Ansicht F3)
     drawToasts();
     drawPlayerTags();
+    if (showDebug_) drawDebugOverlay();
     if (showInspector_) drawInspector();
     if (showMaterials_) drawMaterialEditor();
     if (showDrawing_) drawDrawingWindow();
@@ -210,6 +211,7 @@ void App::reloadSettings() {
     const std::string name = s.playerName.empty() ? defaultPlayerName() : s.playerName;
     std::snprintf(netName_, sizeof(netName_), "%s", name.c_str());
     changeSettings(s, false);  // Maus, Sichtfeld, Schatten, Grafik (steht schon in der Datei)
+    keys::use(s.keys);  // Tastenbelegung (Einstellungen -> Steuerung)
 }
 
 void App::drawPauseMenu() {
@@ -399,7 +401,8 @@ void App::drawMenuBar() {
         ImGui::MenuItem("Minimap (Spiel-Modus)", nullptr, &showMinimap_);
         if (world_->terrain()) ImGui::MenuItem("Gras und Büsche", nullptr, &showFlora_);
         ImGui::Separator();
-        ImGui::MenuItem("Physik-Inspektor", "F3", &showInspector_);
+        ImGui::MenuItem("Debug-Ansicht", keys::label(keys::Act::Debug).c_str(), &showDebug_);
+        ImGui::MenuItem("Physik-Inspektor", keys::label(keys::Act::Inspector).c_str(), &showInspector_);
         ImGui::MenuItem("Materialien bearbeiten", nullptr, &showMaterials_, cheats_);
         if (ImGui::MenuItem("Dreitafelprojektion", "F4", false, !selection_.empty())) showDrawing(selection_);
         ImGui::MenuItem("Konsole", "F1", &showConsole_, cheats_ || showConsole_);
@@ -518,7 +521,7 @@ void App::drawToolPanel() {
         if (hoverValid_ && hoverHit_.obj)
             ImGui::TextColored(kAccent, "Hier: %.0f °C", world_->temperatureAt(*hoverHit_.obj, hoverHit_.point));
         ImGui::TextWrapped("Maustaste auf einem Teil halten: Flamme bzw. Kälte trifft diese Stelle. Holz wird erst schwarz und "
-                           "brennt dann, Metall glüht, wird weich und schmilzt. Im Spiel-Modus: F halten.");
+                           "brennt dann, Metall glüht, wird weich und schmilzt. Im Spiel-Modus: das Feuerzeug (Werkzeug 8 unten rechts).");
         if (!world_->heat()) ImGui::TextColored(ImVec4(1, 0.4f, 0.3f, 1), "Wärme ist aus (Menü Physik).");
     } else if (tool_ == Tool::Select) {
         ImGui::TextWrapped("Klick = auswählen, Shift/Strg+Klick = mehrere. Ziehen = bewegen (Shift = hoch/runter, Alt = ohne Raster, "
@@ -1003,11 +1006,35 @@ void App::drawProperties() {
     ImGui::SameLine();
     if (ImGui::Button("Zeichnung (F4)")) showDrawing(selection_);
     ImGui::SameLine();
-    if (ImGui::Button("Physik (F3)")) showInspector_ = !showInspector_;
+    if (ImGui::Button(("Physik (" + keys::label(keys::Act::Inspector) + ")").c_str())) showInspector_ = !showInspector_;
     if (o->kind == ObjKind::Solid) ImGui::TextDisabled("%d konvexe Stücke, %d Flächen", (int)o->solid.pieces.size(), (int)solid::faceCount(o->solid));
     ImGui::End();
 }
 
+// Bauplan- bzw. Herstell-Modus (Spiel-Modus): welche Vorlage, was sie braucht, wie man sie setzt. Leer: nicht in dem Modus
+std::string App::planModeText() {
+    using keys::Act;
+    if (!play_ || !planMode_) return "";
+    if (planCraft_ && !craftRecipes().empty()) {
+        const int n = (int)craftRecipes().size(), k = std::clamp(craftType_, 0, n - 1);
+        const PlanTemplate& r = craftRecipes()[(size_t)k];
+        return "HERSTELLEN: " + r.label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) + ") braucht " + craftNeeds(r) +
+               "  ·  Rad / 1-0 wechseln  ·  " + keys::label(Act::Rotate) + " drehen  ·  Maus links hinlegen  ·  " + keys::label(Act::Craft) +
+               " / rechts fertig";
+    }
+    if (!planCraft_ && !planTemplates().empty()) {
+        const int n = (int)planTemplates().size(), k = std::clamp(planType_, 0, n - 1);
+        return "BAUPLAN: " + planTemplates()[(size_t)k].label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) +
+               ")  ·  Rad / 1-0 wechseln  ·  " + keys::label(Act::Rotate) + " drehen  ·  Maus links setzen  ·  " + keys::label(Act::PlanFixed) +
+               " " + (planFixed_ ? "fest (schwebt)" : "Physik") + "  ·  Alt ohne Einrasten  ·  " + keys::label(Act::Build) + " / rechts fertig";
+    }
+    return "";
+}
+
+// Höhe der Statusleiste unten: nur im Bau-Modus (im Spiel-Modus ist das Bild frei)
+float App::statusBarHeight() const { return play_ ? 0.0f : ImGui::GetFrameHeight() + 6; }
+
+// Statusleiste unten (nur Bau-Modus): Hinweise, Teil unter der Maus, Chunks, gezeichnete Teile, FPS
 void App::drawStatusBar() {
     ImGuiIO& io = ImGui::GetIO();
     const float h = ImGui::GetFrameHeight() + 6;
@@ -1021,39 +1048,21 @@ void App::drawStatusBar() {
     std::string left;
     if (!status_.empty() && time_ - statusTime_ < 6.0) {
         left = status_;
-    } else if (play_ && planMode_ && planCraft_ && !craftRecipes().empty()) {
-        const int n = (int)craftRecipes().size(), k = std::clamp(craftType_, 0, n - 1);
-        const PlanTemplate& r = craftRecipes()[(size_t)k];
-        left = "HERSTELLEN: " + r.label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) + ") braucht " + craftNeeds(r) +
-               " · Rad / 1-0 wechseln · R drehen · Maus links hinlegen · C / rechts fertig";
-    } else if (play_ && planMode_ && !planTemplates().empty()) {
-        const int n = (int)planTemplates().size(), k = std::clamp(planType_, 0, n - 1);
-        left = "BAUPLAN: " + planTemplates()[(size_t)k].label + " (" + std::to_string(k + 1) + "/" + std::to_string(n) +
-               ") · Rad / 1-0 wechseln · R drehen · Maus links setzen · G " + (planFixed_ ? "fest (schwebt)" : "Physik") +
-               " · Alt ohne Einrasten · B / rechts fertig";
-    } else if (play_ && handTool_ != HandTool::None) {
-        left = handToolHelp();
-    } else if (play_) {
-        left = "WASD laufen · Leertaste springen · Shift rennen · Strg schleichen · Maus links tragen · E aufnehmen · Maustaste halten: Wurf aufladen · F " +
-               std::string(heatTools()[heatTool_].label) + " · 1-7 Hand/Werkzeuge (unten rechts) · B Bauplan · C Herstellen" +
-               (cheats_ ? " · Tab Bauen" : "");
     } else if (Object* o = world_->find(hovered_)) {
         left = o->name + "  [" + materials()[o->material].label + ", " + fmtNum(o->mass, 3) + " kg";
         if (!o->heat.empty() && (std::abs(o->heatInfo.tMax - world_->ambient()) > 5 || o->heatInfo.tMin < world_->ambient() - 5))
             left += ", " + fmtNum(world_->temperatureAt(*o, hoverHit_.point), 0) + " °C";
         left += "]";
     } else {
-        left = "Rechte Maus drehen · Mitte/Shift+Rechts verschieben · Rad zoomen · 1-5 Ansichten · Tab Spielen · F1 Konsole · F3 Physik · F4 Zeichnung";
+        using keys::Act;
+        left = "Rechte Maus drehen · Mitte/Shift+Rechts verschieben · Rad zoomen · " + keys::label1(Act::View1) + "-" + keys::label1(Act::View5) +
+               " Ansichten · " + keys::label(Act::ModeSwitch) + " Spielen · " + keys::label(Act::Console) + " Konsole · " +
+               keys::label(Act::Inspector) + " Physik · " + keys::label(Act::Drawing) + " Zeichnung";
     }
     ImGui::TextUnformatted(left.c_str());
     char right[200];
-    const PhysicsStats& ps = physics_.stats();
-    if (play_)
-        std::snprintf(right, sizeof(right), "Physik %.2f ms (%d Schritte, %d Kontakte, %d aktiv) · Teile %d · %.0f FPS", ps.frameMs, ps.steps,
-                      ps.contacts, ps.activeBodies, drawnObjects_, fps_);
-    else
-        std::snprintf(right, sizeof(right), "Chunks %zu · Teile %d (LOD %d/%d/%d) · ausgeblendet %d · %.0f FPS", world_->grid().chunkCount(),
-                      drawnObjects_, drawnLod_[0], drawnLod_[1], drawnLod_[2], culledObjects_, fps_);
+    std::snprintf(right, sizeof(right), "Chunks %zu · Teile %d (LOD %d/%d/%d) · ausgeblendet %d · %.0f FPS · %s Debug", world_->grid().chunkCount(),
+                  drawnObjects_, drawnLod_[0], drawnLod_[1], drawnLod_[2], culledObjects_, fps_, keys::label(keys::Act::Debug).c_str());
     float w = ImGui::CalcTextSize(right).x;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 20, io.DisplaySize.x - w - 16));
     ImGui::TextDisabled("%s", right);
@@ -1133,7 +1142,7 @@ void App::drawHelp() {
     ImGui::BulletText("Maus links halten: tragen · E: aufnehmen/ablegen · Maus rechts: werfen · Rad: Abstand");
     ImGui::BulletText("Esc: Maus freigeben · Tab: zurück in den Bau-Modus");
     ImGui::SeparatorText("Überall");
-    ImGui::BulletText("F1 Konsole · F3 Physik-Inspektor · F4 Dreitafelprojektion · F12 Foto");
+    ImGui::BulletText("F1 Konsole · F3 Debug-Ansicht · F6 Physik-Inspektor · F4 Dreitafelprojektion · F12 Foto (Standardtasten)");
     ImGui::End();
 }
 
@@ -1170,7 +1179,7 @@ void App::drawPlayHud() {
         ImFont* f = hudSmall_ ? hudSmall_ : ImGui::GetFont();
         const char* label = "SCHLEICHEN";
         const ImVec2 ts = f->CalcTextSizeA(size, FLT_MAX, 0, label);
-        const ImVec2 p(c.x - ts.x / 2, io.DisplaySize.y - ImGui::GetFrameHeight() - 6 - 46.0f * k);
+        const ImVec2 p(c.x - ts.x / 2, io.DisplaySize.y - statusBarHeight() - 46.0f * k);
         dl->AddText(f, size, ImVec2(p.x + 1, p.y + 1), IM_COL32(0, 0, 0, (int)(170 * crouch_)), label);
         dl->AddText(f, size, p, IM_COL32(236, 242, 236, (int)(235 * crouch_)), label);
     }
@@ -1201,13 +1210,23 @@ void App::drawPlayHud() {
         info = "Trägt: " + g->name + " (" + fmtNum(g->mass, 2) + " kg)";
         if (hand_.tooHeavy) info += " - zu schwer zum Heben!";
     } else if (Object* o = world_->find(lookAt_)) {
-        info = o->name + "  " + fmtNum(o->mass, 2) + " kg" + (o->fixed ? "  (fest)" : "  [Maus links / E]");
+        info = o->name + "  " + fmtNum(o->mass, 2) + " kg" + (o->fixed ? "  (fest)" : "  [Maus links / " + keys::label(keys::Act::Inventory) + "]");
         // Temperatur nur, wenn sie auffällt (heiß, kalt, brennt)
         const double tc = lookHit_.obj == o ? world_->temperatureAt(*o, lookHit_.point) : world_->ambient();
         if (std::abs(tc - world_->ambient()) > 15 || o->heatInfo.burning) info += "  " + fmtNum(tc, 0) + " °C" + (o->heatInfo.burning ? ", brennt" : "");
-        if (heatActive_) info += "  [F: " + std::string(heatTools()[heatTool_].label) + "]";
+        if (heatActive_) info += "  [" + std::string(heatTools()[heatUsed_].label) + "]";
     }
     if (const std::string pl = planHudText(); !pl.empty()) info = info.empty() ? pl : info + "\n" + pl;
+    // Bauplan / Herstellen: was gewählt ist und wie es geht, frei unten in der Mitte (ohne Kasten)
+    if (const std::string pm = planModeText(); !pm.empty()) {
+        const float k = std::clamp(io.DisplaySize.y / 1080.0f, 0.75f, 2.0f), size = 16.0f * k;
+        ImFont* f = hudSmall_ ? hudSmall_ : ImGui::GetFont();
+        const ImVec2 ts = f->CalcTextSizeA(size, FLT_MAX, 0, pm.c_str());
+        const ImVec2 p(c.x - ts.x / 2, io.DisplaySize.y - 18.0f * k - ts.y);
+        dl->AddText(f, size, ImVec2(p.x + 1, p.y + 1), IM_COL32(0, 0, 0, 200), pm.c_str());
+        dl->AddText(f, size, ImVec2(p.x, p.y + 1.5f), IM_COL32(0, 0, 0, 110), pm.c_str());
+        dl->AddText(f, size, p, IM_COL32(255, 226, 170, 245), pm.c_str());
+    }
     if (!info.empty()) {
         ImVec2 ts = ImGui::CalcTextSize(info.c_str());
         dl->AddRectFilled(ImVec2(c.x - ts.x / 2 - 8, c.y + 22), ImVec2(c.x + ts.x / 2 + 8, c.y + 26 + ts.y), IM_COL32(0, 0, 0, 140), 4);
@@ -1391,13 +1410,13 @@ void App::drawMaterialEditor() {
     ImGui::End();
 }
 
-// ============================================================================ Physik-Inspektor (F3)
+// ============================================================================ Physik-Inspektor (F6)
 
 void App::drawInspector() {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 470, io.DisplaySize.y * 0.35f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(460, 560), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Physik-Inspektor (F3)", &showInspector_)) {
+    if (!ImGui::Begin("Physik-Inspektor", &showInspector_)) {
         ImGui::End();
         return;
     }

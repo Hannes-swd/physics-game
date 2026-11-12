@@ -1,7 +1,8 @@
-// Auswahlfenster des Spiel-Modus für Bauvorlagen (B) und Rezepte (C). Wie das Inventar ein Teil des Hauptmenüs
-// (Qt Quick, qml/CatalogWindow.qml): fest in der Mitte über dem grau abgedunkelten Spiel, ein Kasten je Vorlage mit einer
-// kleinen Zeichnung. Die Zeichnung rechnet App aus (Flächen schon projiziert und schattiert); was man wählt, holt das
-// Spiel jedes Bild mit poll() ab. Ohne Hauptmenü wählt man wie früher mit Mausrad und 1 … 0.
+// Auswahl des Spiel-Modus für Bauvorlagen (B) und Rezepte (C): die Bereiche „Bauen“ und „Herstellen“ des gemeinsamen
+// Fensters mit dem Inventar (Hauptmenü, Qt Quick, qml/BagWindow.qml): fest in der Mitte über dem grau abgedunkelten Spiel,
+// links Holzmarken für die drei Bereiche, rechts ein Kasten je Vorlage mit einer kleinen Zeichnung. Die Zeichnung rechnet
+// App aus (Flächen schon projiziert und schattiert); was man wählt, holt das Spiel jedes Bild mit poll() ab. Ohne
+// Hauptmenü wählt man wie früher mit Mausrad und 1 … 0.
 #pragma once
 #include <string>
 #include <vector>
@@ -18,14 +19,14 @@ public:
         std::vector<Poly> polys;  // von hinten nach vorne
     };
     struct Event {
-        enum Kind { None, Close, Choose } kind = None;
+        enum Kind { None, Close, Choose, Switch } kind = None;
         int index = -1;  // Choose: welcher Kasten
+        int tab = 0;     // Switch: anderer Bereich des Fensters (0 Inventar, 1 Herstellen, 2 Bauen)
     };
     virtual ~CatalogUi() = default;
 
-    // gameWindow: HWND des Spielfensters; closeKey: Taste, die es (neben Esc) wieder schließt ("B", "C")
-    virtual void open(void* gameWindow, const std::string& title, const std::string& closeKey, const std::vector<Item>& items,
-                      int current) = 0;
+    // gameWindow: HWND des Spielfensters; craft: Rezepte (Bereich Herstellen), sonst Bauvorlagen (Bereich Bauen)
+    virtual void open(void* gameWindow, bool craft, const std::vector<Item>& items, int current) = 0;
     virtual void close() = 0;
     virtual bool isOpen() const = 0;
     virtual Event poll() = 0;                         // Qt-Ereignisse abarbeiten

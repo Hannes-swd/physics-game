@@ -2,12 +2,21 @@
 #pragma once
 #include <chrono>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace prof {
 
 void add(const char* name, double ms);
 void frame(double ms);                 // ein Bild ist fertig (Gesamtzeit), für Bildzeiten und Ruckler
 std::string report();                  // Tabelle seit dem letzten reset
+
+// Die letzte volle Sekunde (Debug-Ansicht F3): Bildrate, Bildzeit, Rechenzeit je Abschnitt (ms je Bild, größte zuerst)
+struct Recent {
+    double fps = 0, frameMs = 0, worstMs = 0;
+    std::vector<std::pair<std::string, double>> sections;
+};
+const Recent& recent();
 void reset();
 bool enabled();
 void setEnabled(bool on);

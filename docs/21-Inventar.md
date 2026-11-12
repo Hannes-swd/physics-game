@@ -45,7 +45,11 @@ und legt ab).
 | `inventory take <Nummer>` | herausnehmen (vor die Figur, in die Hand) |
 | `inventory shot <datei.png>` | Bild des Fensters |
 
-Das Inventar ist wie das Pausenmenü ein Rohbau in Qt Quick (`qml/InventoryWindow.qml`), ohne eigene Gestaltung: kein
-eigenes Fenster mit Rahmen, sondern fest in der Mitte über dem leicht grau abgedunkelten Spiel. Jedes Kästchen zeigt eine
-kleine Zeichnung des Teils (schräg von oben, in Materialfarbe), darunter den Namen; Material und Gewicht im Tooltip.
+Inventar, [Herstellen](22-Herstellen.md) und [Bauen](20-Bauvorlagen.md) sind **ein Fenster** im Wald-Stil der Menüs
+(Qt Quick, `qml/BagWindow.qml`): links drei runde Holzmarken wie in der Werkzeugleiste (Inventar **E**, Herstellen **C**,
+Bauen **B**), rechts der gewählte Bereich. Ein Klick auf eine Marke oder ihre Taste wechselt den Bereich, das Fenster
+bleibt dabei offen; die Taste des offenen Bereichs oder **Esc** schließt es. Es ist kein eigenes Fenster mit Rahmen,
+sondern steht fest in der Mitte über dem leicht grau abgedunkelten Spiel. Jedes Kästchen zeigt eine kleine Zeichnung des
+Teils (schräg von oben, in Materialfarbe), darunter den Namen; Material und Gewicht im Tooltip. Die Tasten folgen der
+Belegung ([Einstellungen → Steuerung](15-Hauptmenue-und-Welten.md#steuerung-tastenbelegung)).
 Ohne Hauptmenü (`--world`, `--script`) erscheint ein einfaches Fenster im Spiel.

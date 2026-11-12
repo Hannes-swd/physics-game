@@ -55,7 +55,7 @@ Im Meerwasser schwimmt alles etwas höher (Eiche: 7,0 statt 7,2 cm von 10 cm unt
 | Menü *Physik → Wasser* | Becken hier (2 × 1,5 m, 50 cm tief, mit Rand), Meer an/aus (Spiegel 40 cm), Wellen (ruhig, 10, 40, 150 cm), Strömung (keine, 0,4, 1,2, 2,5 m/s nach rechts), ausgewähltes Teil füllen, alles Wasser entfernen |
 | Menü *Datei → Wasserbecken*, *Fluss* | Beispielszenen |
 | Spiel-Modus | ins Wasser laufen: Waten bremst, ab der Brust schwimmt die Figur. **W** schwimmt in Blickrichtung (nach unten schauen = tauchen), **Leertaste** nach oben, **Strg** nach unten |
-| Physik-Inspektor (F3) | Auftrieb im Wasser, Widerstand, Wasser im Teil (unter FORCES) |
+| Physik-Inspektor (F6) | Auftrieb im Wasser, Widerstand, Wasser im Teil (unter FORCES) |
 
 ## Befehle
 

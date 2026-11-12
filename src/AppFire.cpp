@@ -47,13 +47,15 @@ void App::heatToolInput(float) {
     const RayHit* hit = nullptr;
     if (!play_) {
         if (tool_ == Tool::Heat && hoverValid_ && hoverHit_.obj && !io.WantCaptureMouse && ImGui::IsMouseDown(ImGuiMouseButton_Left)) hit = &hoverHit_;
-    } else if (cursorCaptured_ && !io.WantTextInput && glfwGetKey(window_, GLFW_KEY_F) == GLFW_PRESS && lookHit_.obj &&
+    } else if (handTool_ == HandTool::Lighter && cursorCaptured_ && pause_ == Pause::None &&
+               glfwGetMouseButton(window_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && lookHit_.obj &&
                world_->find(lookAt_) == lookHit_.obj && lookHit_.t < 3.0) {
-        hit = &lookHit_;
+        hit = &lookHit_;  // Spiel-Modus: Feuerzeug in der Hand (Werkzeug 8), linke Maustaste halten
     }
     if (!hit) return;
     heatTool_ = std::clamp(heatTool_, 0, (int)heatTools().size() - 1);
-    world_->addHeatSource(hit->obj->id, hit->localPoint, heatTool_, 0.15);
+    heatUsed_ = play_ ? std::max(0, findHeatTool("lighter")) : heatTool_;
+    world_->addHeatSource(hit->obj->id, hit->localPoint, heatUsed_, 0.15);
     heatActive_ = true;
     heatTarget_ = hit->obj->id;
     heatPoint_ = hit->point;
@@ -106,7 +108,7 @@ void App::updateFx(float dt) {
         }
     }
     // Kältenebel am Kältespray / Stickstoff
-    if (heatActive_ && !heatTools()[heatTool_].flame) {
+    if (heatActive_ && !heatTools()[heatUsed_].flame) {
         float n = 30.0f * dt;
         while (n > 0) {
             if (n < 1 && rnd(0, 1) > n) break;
@@ -217,7 +219,7 @@ void App::addFireFx(FrameDesc& fd) {
 
     // ---- Brenner bzw. Kältestrahl
     if (heatActive_) {
-        const HeatTool& tool = heatTools()[heatTool_];
+        const HeatTool& tool = heatTools()[heatUsed_];
         if (tool.flame) {
             const glm::dvec3 jet = heatPoint_ - heatFrom_;
             glm::dvec3 right;

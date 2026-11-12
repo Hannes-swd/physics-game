@@ -20,6 +20,7 @@
 #include "Net.h"
 #include "CatalogUi.h"
 #include "InventoryUi.h"
+#include "Keys.h"
 #include "PauseUi.h"
 #include "Physics.h"
 #include "Remote.h"
@@ -241,13 +242,12 @@ private:
     // Tragen/Werfen/Drehen einer Spielfigur (eigene oder Mitspieler)
     void handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in);
     // Spiel-Modus: Werkzeug in der Hand (Axt, Laser, Erdbohrer, Planierer, Traktorstrahl)
-    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor, Pickaxe };
-    // Werkzeuge in der Hand (AppTools.cpp): Auswahl, Wirkung auf Ziel, Hilfstext in der Statuszeile
+    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor, Pickaxe, Lighter };
+    // Werkzeuge in der Hand (AppTools.cpp): Auswahl, Wirkung auf Ziel
     void selectHandTool(HandTool t);
     void handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown, bool rmbPressed);
     std::string boreHole(uint32_t id, const glm::dvec3& from, const glm::dvec3& dir, double diameterMm, double depthMm, bool newStep);
     void digGround(const glm::dvec3& p, double amount, double radius);
-    std::string handToolHelp() const;
     void drawHandToolBar();  // Leiste unten rechts: Hand und Werkzeuge als Symbole, das gewählte hervorgehoben
     // Minimap oben rechts (AppMinimap.cpp): Norden oben, man selbst als Pfeil in der Mitte, Mitspieler als Pfeile in
     // ihrer Farbe. Das Gelände kommt aus dem Generator, je Zelle einmal gerechnet und behalten
@@ -570,7 +570,8 @@ private:
     bool escTaken_ = false;         // ESC wurde in diesem Bild schon verbraucht
 
     // Wärme-Werkzeug (Bau-Modus: Werkzeug H, Spiel-Modus: F halten) und Effekte
-    int heatTool_ = 1;                     // Index in heatTools()
+    int heatTool_ = 1;                     // Index in heatTools() (Bau-Modus, Werkzeug H)
+    int heatUsed_ = 1;                     // was gerade wirkt (Spiel-Modus: das Feuerzeug, Werkzeug 8)
     float heatSet_ = 800.0f;               // Eigenschaften: Temperatur zum Setzen
     bool heatActive_ = false;              // gerade auf ein Teil gerichtet
     uint32_t heatTarget_ = 0;
@@ -720,6 +721,10 @@ private:
     char nameBuf_[128] = {};
     uint32_t nameBufFor_ = 0;
     bool showInspector_ = false;
+    bool showDebug_ = false;  // Debug-Ansicht (F3): Ort, FPS, Rechenzeit, was geladen ist (AppDebug.cpp)
+    void drawDebugOverlay();
+    std::string planModeText();     // Bauplan- / Herstell-Modus: Zeile unten in der Mitte (leer: nicht in dem Modus)
+    float statusBarHeight() const;  // Statusleiste unten (nur Bau-Modus), sonst 0
     uint32_t inspectTarget_ = 0;
     // Material-Editor
     bool showMaterials_ = false, materialsDirty_ = false;

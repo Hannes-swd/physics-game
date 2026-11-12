@@ -135,8 +135,8 @@ void App::handleInput(float dt) {
             else setPause(pause_ == Pause::None ? Pause::Menu : Pause::None);
             escTaken_ = true;
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Tab, false)) setMode(!play_);
-        if (ImGui::IsKeyPressed(ImGuiKey_F1, false) || ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false)) {
+        if (keys::pressed(keys::Act::ModeSwitch)) setMode(!play_);
+        if (keys::pressed(keys::Act::Console)) {
             if (!cheats_ && !showConsole_) {  // die Konsole mit allen Befehlen gibt es nur mit Cheats
                 toast("Die Konsole gibt es nur mit Cheats (neue Welt: Cheats an)", false);
             } else {
@@ -145,13 +145,14 @@ void App::handleInput(float dt) {
                 if (showConsole_ && play_) setCursorCaptured(false);
             }
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_F3, false)) showInspector_ = !showInspector_;
-        if (ImGui::IsKeyPressed(ImGuiKey_F5, false) && play_) thirdPerson_ = !thirdPerson_;
-        if (ImGui::IsKeyPressed(ImGuiKey_F4, false)) {
+        if (keys::pressed(keys::Act::Debug)) showDebug_ = !showDebug_;
+        if (keys::pressed(keys::Act::Inspector)) showInspector_ = !showInspector_;
+        if (keys::pressed(keys::Act::ViewSwitch) && play_) thirdPerson_ = !thirdPerson_;
+        if (keys::pressed(keys::Act::Drawing)) {
             if (!selection_.empty()) showDrawing(selection_);
             else if (play_ && lookAt_) showDrawing({lookAt_});
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_F12, false)) {
+        if (keys::pressed(keys::Act::Photo)) {
             std::string name = "foto_" + std::to_string((long long)(time_ * 1000)) + ".png";
             log(screenshot(name), 3);
         }
@@ -208,11 +209,11 @@ void App::buildInput(float) {
     // --- Tasten
     if (!io.WantTextInput) {
         const bool ctrl = io.KeyCtrl, shift = io.KeyShift;
-        if (ImGui::IsKeyPressed(ImGuiKey_1, false)) viewMode_ = ViewMode::Perspective;
-        if (ImGui::IsKeyPressed(ImGuiKey_2, false)) viewMode_ = ViewMode::Top;
-        if (ImGui::IsKeyPressed(ImGuiKey_3, false)) viewMode_ = ViewMode::Front;
-        if (ImGui::IsKeyPressed(ImGuiKey_4, false)) viewMode_ = ViewMode::Side;
-        if (ImGui::IsKeyPressed(ImGuiKey_5, false)) viewMode_ = ViewMode::Quad;
+        if (keys::pressed(keys::Act::View1)) viewMode_ = ViewMode::Perspective;
+        if (keys::pressed(keys::Act::View2)) viewMode_ = ViewMode::Top;
+        if (keys::pressed(keys::Act::View3)) viewMode_ = ViewMode::Front;
+        if (keys::pressed(keys::Act::View4)) viewMode_ = ViewMode::Side;
+        if (keys::pressed(keys::Act::View5)) viewMode_ = ViewMode::Quad;
         if (ctrl) {
             if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
                 if (netClient()) runLine("undo", "key");
@@ -233,22 +234,22 @@ void App::buildInput(float) {
             }
             if (ImGui::IsKeyPressed(ImGuiKey_O, false)) saveDialog(false);
         } else {
-            if (ImGui::IsKeyPressed(ImGuiKey_V, false) || ImGui::IsKeyPressed(ImGuiKey_Q, false)) tool_ = Tool::Select;
-            if (ImGui::IsKeyPressed(ImGuiKey_S, false)) tool_ = Tool::Saw;
-            if (ImGui::IsKeyPressed(ImGuiKey_B, false)) tool_ = Tool::Drill;
-            if (ImGui::IsKeyPressed(ImGuiKey_E, false)) tool_ = Tool::Round;
-            if (ImGui::IsKeyPressed(ImGuiKey_M, false)) tool_ = Tool::Mill;
-            if (ImGui::IsKeyPressed(ImGuiKey_P, false)) tool_ = Tool::Plane;
-            if (ImGui::IsKeyPressed(ImGuiKey_H, false)) tool_ = Tool::Heat;
+            if (keys::pressed(keys::Act::BSelect)) tool_ = Tool::Select;
+            if (keys::pressed(keys::Act::BSaw)) tool_ = Tool::Saw;
+            if (keys::pressed(keys::Act::BDrill)) tool_ = Tool::Drill;
+            if (keys::pressed(keys::Act::BRound)) tool_ = Tool::Round;
+            if (keys::pressed(keys::Act::BMill)) tool_ = Tool::Mill;
+            if (keys::pressed(keys::Act::BPlane)) tool_ = Tool::Plane;
+            if (keys::pressed(keys::Act::BHeat)) tool_ = Tool::Heat;
             if (tool_ == Tool::Saw) {
-                if (ImGui::IsKeyPressed(ImGuiKey_X, false)) sawAxis_ = 0;
-                if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) sawAxis_ = 1;
-                if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) sawAxis_ = 2;
+                if (keys::pressed(keys::Act::SawX)) sawAxis_ = 0;
+                if (keys::pressed(keys::Act::SawY)) sawAxis_ = 1;
+                if (keys::pressed(keys::Act::SawZ)) sawAxis_ = 2;
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) deleteSelected();
-            if (ImGui::IsKeyPressed(ImGuiKey_F, false)) focusSelected();
-            if (ImGui::IsKeyPressed(ImGuiKey_G, false)) dropSelected();
-            if (ImGui::IsKeyPressed(ImGuiKey_R, false)) {
+            if (keys::pressed(keys::Act::BDelete)) deleteSelected();
+            if (keys::pressed(keys::Act::BFocus)) focusSelected();
+            if (keys::pressed(keys::Act::BDrop)) dropSelected();
+            if (keys::pressed(keys::Act::BTurn)) {
                 int axis = 1;
                 if (v.mode == ViewMode::Front) axis = 2;
                 if (v.mode == ViewMode::Side) axis = 0;
@@ -582,12 +583,12 @@ void App::playInput(float dt) {
 
     if (pause_ != Pause::None || showSettings_) return;  // Pausenfenster oder Einstellungen offen: keine Spielsteuerung
     if (invOpen_) {  // Inventar offen: E schließt es (Fenster im Spiel; das Qt-Fenster fängt E selbst ab)
-        if (!opt_.inventoryUi && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false)) invOpen(false);
+        if (!opt_.inventoryUi && !io.WantTextInput && keys::pressed(keys::Act::Inventory)) invOpen(false);
         return;
     }
     if (catalogOpen_) return;  // Auswahl der Bauvorlagen / Rezepte offen (Qt-Fenster, fängt B, C und Esc selbst ab)
     // M: große Karte auf / zu. Offen: die Maus gehört der Karte (zoomen, ziehen), die Figur bleibt stehen
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_M, false) && !planMode_) {
+    if (!io.WantTextInput && keys::pressed(keys::Act::Map) && !planMode_) {
         openMap(!mapOpen_);
         return;
     }
@@ -614,16 +615,16 @@ void App::playInput(float dt) {
     // Werkzeuge: 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, 7 Spitzhacke (Leiste unten rechts).
     // X ist zusätzlich der Schalter für die Axt. Mit einem Werkzeug in der Hand wirkt die linke Maustaste das Werkzeug.
     if (!io.WantTextInput && !planMode_) {  // in der Bauvorlagen-Auswahl zählen 1-0 für die Vorlagen
-        const HandTool slots[7] = {HandTool::None,  HandTool::Axe,     HandTool::Laser,  HandTool::Drill,
-                                   HandTool::Terra, HandTool::Tractor, HandTool::Pickaxe};
-        for (int k = 0; k < 7; ++k)
-            if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + k), false)) selectHandTool(slots[k]);
-        if (ImGui::IsKeyPressed(ImGuiKey_X, false)) selectHandTool(handTool_ == HandTool::Axe ? HandTool::None : HandTool::Axe);
+        const HandTool slots[8] = {HandTool::None,  HandTool::Axe,     HandTool::Laser,   HandTool::Drill,
+                                   HandTool::Terra, HandTool::Tractor, HandTool::Pickaxe, HandTool::Lighter};
+        for (int k = 0; k < 8; ++k)
+            if (keys::pressed((keys::Act)((int)keys::Act::Tool1 + k))) selectHandTool(slots[k]);
+        if (keys::pressed(keys::Act::Axe)) selectHandTool(handTool_ == HandTool::Axe ? HandTool::None : HandTool::Axe);
     }
     // F: das Teil, auf das man schaut (auch Zeug am Boden), direkt ins Inventar
     // Ein erlegtes Tier im Blick: zerlegen (Fell ins Inventar)
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false) && !planMode_ && !netClient() && animalHarvest(eye, fwd)) {
-    } else if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false) && !planMode_ && !netClient()) {
+    if (!io.WantTextInput && keys::pressed(keys::Act::Use) && !planMode_ && !netClient() && animalHarvest(eye, fwd)) {
+    } else if (!io.WantTextInput && keys::pressed(keys::Act::Use) && !planMode_ && !netClient()) {
         RayHit h;
         const bool hitPart = world_->raycast(eye, fwd, h, 0) && h.obj && h.t <= 3.5;
         ScatterSpot spot;
@@ -661,7 +662,7 @@ void App::playInput(float dt) {
     }
     // Schlag (linke Maustaste): ein Tier im Blick wird getroffen (Werkzeug: fester, weiter), sonst lassen Tiere direkt vor
     // der Figur ab und fliehen
-    if (lmbPressed && !carrying && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_) {
+    if (lmbPressed && !carrying && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_ && handTool_ != HandTool::Lighter) {
         strikeReady_ = time_ + 0.4;
         if (!animalStrike(eye, fwd, handTool_)) {
             const glm::dvec3 hit = playerEye() + glm::normalize(glm::dvec3(fwd.x, 0, fwd.z) + glm::dvec3(1e-9)) * 1.2 - glm::dvec3(0, 1.0, 0);
@@ -677,8 +678,8 @@ void App::playInput(float dt) {
     in.throwPower = throwPower;
     prevLmb_ = lmbDown;
     prevRmb_ = rmbDown;
-    in.ePresses = !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_E, false);
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_R, false)) ++(io.KeyShift ? in.tilts : in.turns);
+    in.ePresses = !io.WantTextInput && keys::pressed(keys::Act::Inventory);
+    if (!io.WantTextInput && keys::pressed(keys::Act::Rotate)) ++(io.KeyShift ? in.tilts : in.turns);
     in.scroll = scrollAccum_;
     if (planMode_) {  // die Maus setzt Vorlagen, R dreht sie: nicht tragen, werfen, drehen
         in.lmbDown = false;
@@ -858,12 +859,12 @@ void App::updatePlay(float dt) {
     const glm::vec3 right(std::cos(playYaw_), 0, -std::sin(playYaw_));
     bool run = false;
     if (play_ && cursorCaptured_ && !io.WantTextInput) {
-        if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) wish += fwd;
-        if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) wish -= fwd;
-        if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) wish += right;
-        if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) wish -= right;
-        run = glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-        jump = jump || ImGui::IsKeyPressed(ImGuiKey_Space, false);
+        if (keys::down(keys::Act::Forward)) wish += fwd;
+        if (keys::down(keys::Act::Back)) wish -= fwd;
+        if (keys::down(keys::Act::Right)) wish += right;
+        if (keys::down(keys::Act::Left)) wish -= right;
+        run = keys::down(keys::Act::Run);
+        jump = jump || keys::pressed(keys::Act::Jump);
     }
     if (play_ && autoMoveTime_ > 0) {  // per Befehl "spieler laufe"
         wish += fwd * (float)autoMove_.x + right * (float)autoMove_.y;
@@ -881,7 +882,7 @@ void App::updatePlay(float dt) {
     }
     // Schleichen: linke Strg halten (im Wasser taucht Strg ab). Langsam (1,8 m/s), kein Rennen und Springen, geduckt
     {
-        const bool ctrl = play_ && cursorCaptured_ && !io.WantTextInput && glfwGetKey(window_, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+        const bool ctrl = play_ && cursorCaptured_ && !io.WantTextInput && keys::down(keys::Act::Sneak);
         const bool inWater = swimDepth(netClient() ? netFeet_ : physics_.characterPosition()) > 0.5f;
         sneaking_ = play_ && (ctrl || sneakCmd_) && !inWater && me_.deadUntil < 0;
         if (sneaking_) run = jump = false;
@@ -894,13 +895,13 @@ void App::updatePlay(float dt) {
     if (swim > 0.5f) {
         wish *= 0.5f;
         if (play_ && cursorCaptured_ && !io.WantTextInput) {
-            if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) {
+            if (keys::down(keys::Act::Forward)) {
                 wish.x *= std::cos((float)playPitch_);
                 wish.z *= std::cos((float)playPitch_);
                 wish.y += std::sin((float)playPitch_) * (run ? 3.5f : 2.0f);
             }
-            if (glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS) wish.y += 1.5f;
-            if (glfwGetKey(window_, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) wish.y -= 1.5f;
+            if (keys::down(keys::Act::Jump)) wish.y += 1.5f;
+            if (keys::down(keys::Act::Sneak)) wish.y -= 1.5f;
         }
         jump = false;
     } else if (swim > 0.25f) {

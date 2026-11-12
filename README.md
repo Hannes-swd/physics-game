@@ -49,7 +49,7 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 - Echtzeit 3D-Rendering mit Vulkan
 - Tag und Nacht (ein Tag = 20 Minuten): Sonne mit Morgen- und Abendrot, Mond mit Schatten, echte Sternbilder und
   Milchstraße; helle Nächte wie früher ohne Lampen ([23](docs/23-Tag-und-Nacht.md))
-- Physik-Inspektor (F3) für Debugging
+- Physik-Inspektor (F6) für Debugging
 - Technische Zeichnungen mit SVG-Export
 - Verschiedene Ansicht-Modi
 
@@ -61,7 +61,7 @@ Eine vollständig funktionsfähige 3D-Engine für physikalisch korrekte Konstruk
 | [Befehle](docs/02-Befehle.md) | alle Befehle mit Beispielen |
 | [Befehlssprache](docs/03-Befehlssprache.md) | `;`, `wait`, `wait until`, `if`, `repeat`, `print`, `set`, `$(…)`, Funktionen |
 | [Fernsteuerung](docs/04-Fernsteuerung.md) | laufendes Spiel steuern, Skripte, ohne Fenster, Kommandozeile |
-| [Physik & Materialien](docs/05-Physik-und-Materialien.md) | Physikmodell, Reibung, Kollisionsformen, Rechenzeit, Materialwerte, Physik-Inspektor (F3) |
+| [Physik & Materialien](docs/05-Physik-und-Materialien.md) | Physikmodell, Reibung, Kollisionsformen, Rechenzeit, Materialwerte, Physik-Inspektor (F6) |
 | [Dreitafelprojektion](docs/06-Dreitafelprojektion.md) | technische Zeichnungen (F4), SVG |
 | [Engine-Aufbau](docs/07-Engine-Aufbau.md) | Programmaufbau, Geometrie, Chunks, Grafik, Dateiformat |
 | [Verbindungen & Bruch](docs/08-Verbindungen-und-Bruch.md) | Kleber, Nägel, Schrauben, Schweißnaht, Scharnier, Feder, Seil, Bruch, Luft, Propeller |
@@ -134,7 +134,8 @@ Die vollständige Dokumentation der Befehlssprache inkl. Variablen, Funktionen u
 
 ## Debugging & Entwicklung
 
-- **F3:** Physik-Inspektor öffnen (Visualisierung der Physik-Bodies, Verbindungen, Kollisionen)
+- **F3:** Debug-Ansicht (Ort, FPS, was geladen ist, Rechenzeit je Abschnitt)
+- **F6:** Physik-Inspektor öffnen (Visualisierung der Physik-Bodies, Verbindungen, Kollisionen)
 - **F4:** Technische Zeichnung für Präzisions-Überprüfung
 - `--selftest`: Interne Tests ausführen
 - `--headless --demo`: ohne Fenster mit der Beispiel-Werkstatt (Befehle von der Tastatur oder einer Pipe)
@@ -247,7 +248,7 @@ deutlich langsamer (Fenstertitel „Debug-Version“). Details: [Engine-Aufbau, 
 
 Starten Sie die Anwendung und nutzen Sie:
 - **F1:** Konsolenfenster öffnen (Befehle eingeben)
-- **F3:** Physik-Inspektor (Debugging von Physik und Verbindungen)
+- **F3:** Debug-Ansicht · **F6:** Physik-Inspektor (Debugging von Physik und Verbindungen)
 - **F4:** Technische Zeichnung / Dreitafelprojektion
 - **Maus:** Objekte auswählen, verschieben, drehen
 - **Zahlen 1-9:** Werkzeugprofil wechseln

@@ -159,7 +159,7 @@ void App::planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool
     int pi;
     if (lookAt_ && world_->planPieceOf(lookAt_, pid, pi)) qTarget = lookAt_;
     else if (planLook_) qTarget = 0x80000000u | planLook_;
-    if (!io.WantTextInput && ImGui::IsKeyDown(ImGuiKey_Q) && qTarget && !netClient()) {
+    if (!io.WantTextInput && keys::down(keys::Act::Dismantle) && qTarget && !netClient()) {
         if (qTarget != dismantleId_) dismantleHold_ = 0;
         dismantleId_ = qTarget;
         dismantleHold_ += dt;
@@ -200,7 +200,7 @@ void App::planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool
     // B: Bauvorlagen, C: Rezepte zum Herstellen (dieselbe Bedienung); dieselbe Taste nochmal beendet. Mit Hauptmenü
     // öffnet die Taste erst die Auswahl (Kasten je Vorlage, AppCatalog.cpp), ohne geht es gleich mit der letzten los
     for (const bool craft : {false, true}) {
-        if (io.WantTextInput || !ImGui::IsKeyPressed(craft ? ImGuiKey_C : ImGuiKey_B, false)) continue;
+        if (io.WantTextInput || !keys::pressed(craft ? keys::Act::Craft : keys::Act::Build)) continue;
         if (opt_.catalogUi && !(planMode_ && planCraft_ == craft)) {
             planMode_ = false;
             catalogOpen(true, craft);
@@ -227,8 +227,8 @@ void App::planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool
     if (!io.WantTextInput) {
         for (int k = 0; k < 10; ++k)
             if (k < n && ImGui::IsKeyPressed(k < 9 ? (ImGuiKey)(ImGuiKey_1 + k) : ImGuiKey_0, false)) index = k;
-        if (ImGui::IsKeyPressed(ImGuiKey_R, false)) planTurns_ = (planTurns_ + (io.KeyShift ? 3 : 1)) % 4;
-        if (!planCraft_ && ImGui::IsKeyPressed(ImGuiKey_G, false)) {
+        if (keys::pressed(keys::Act::Rotate)) planTurns_ = (planTurns_ + (io.KeyShift ? 3 : 1)) % 4;
+        if (!planCraft_ && keys::pressed(keys::Act::PlanFixed)) {
             planFixed_ = !planFixed_;
             toast(planFixed_ ? "Neue Vorlagen: fest (schweben, zerbrechen nicht)" : "Neue Vorlagen: Physik (fertig = lose und verleimt)");
         }
@@ -244,7 +244,8 @@ void App::planInput(float dt, const glm::dvec3& eye, const glm::dvec3& fwd, bool
             toast(err, false);
         } else if (planCraft_) {  // ein Rezept setzt man meist einmal: gleich zurück zum Laufen und Füllen
             planMode_ = false;
-            toast("Rezept gesetzt: Material tragen + E, oder mit leerer Hand E = aus dem Inventar füllen");
+            const std::string e = keys::label(keys::Act::Inventory);
+            toast("Rezept gesetzt: Material tragen + " + e + ", oder mit leerer Hand " + e + " = aus dem Inventar füllen");
         }
     }
 }
@@ -297,16 +298,17 @@ std::string App::planHudText() {
             s = (tp ? tp->label : bp->type) + " " + std::to_string(planLookPiece_ + 1) + "/" + std::to_string(bp->pieces.size()) + ": " +
                 (pc.material >= 0 ? materials()[(size_t)pc.material].label : planMatLabel((PlanMat)pc.mat)) + " " +
                 fmtNum(pc.filled * unit, 0) + " / " + fmtNum(pc.volume() * unit, 0) + (bp->craft() ? " cm³" : " dm³");
+            const std::string e = keys::label(keys::Act::Inventory), q = keys::label(keys::Act::Dismantle);
             if (const Object* g = world_->find(hand_.grabbed))
-                s += planPieceFits(pc, g->material) ? "  [E: einsetzen]" : std::string("  (passt nicht: ") + materials()[(size_t)g->material].label + ")";
+                s += planPieceFits(pc, g->material) ? "  [" + e + ": einsetzen]" : std::string("  (passt nicht: ") + materials()[(size_t)g->material].label + ")";
             else
-                s += bp->craft() ? "  [E: aus dem Inventar füllen]" : "  (Material tragen, dann E)";
-            s += bp->craft() ? "  [Q halten: Rezept entfernen]" : "  [Q halten: Vorlage entfernen]";
+                s += bp->craft() ? "  [" + e + ": aus dem Inventar füllen]" : "  (Material tragen, dann " + e + ")";
+            s += "  [" + q + (bp->craft() ? " halten: Rezept entfernen]" : " halten: Vorlage entfernen]");
         }
     } else if (lookAt_) {
         uint32_t pid;
         int pi;
-        if (world_->planPieceOf(lookAt_, pid, pi)) s = "Bauteil  [Q halten: abbauen]";
+        if (world_->planPieceOf(lookAt_, pid, pi)) s = "Bauteil  [" + keys::label(keys::Act::Dismantle) + " halten: abbauen]";
     }
     if (dismantleHold_ > 0) s += "  " + fmtNum(std::min(100.0, dismantleHold_ / 0.8 * 100), 0) + " %";
     return s;

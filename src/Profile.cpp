@@ -12,6 +12,7 @@ struct Entry {
     const char* name;
     double total = 0, max = 0;
     long long count = 0;
+    double win = 0;  // in der laufenden Sekunde (recent)
 };
 
 struct State {
@@ -20,6 +21,10 @@ struct State {
     long long slow = 0;  // Bilder über 50 ms
     bool on = true;
     std::chrono::steady_clock::time_point since = std::chrono::steady_clock::now();
+    // laufende Sekunde und die letzte fertige
+    double winFrames = 0, winTotal = 0, winWorst = 0;
+    std::chrono::steady_clock::time_point winStart = std::chrono::steady_clock::now();
+    Recent recent;
 };
 
 State& st() {
@@ -37,9 +42,10 @@ void add(const char* name, double ms) {
             e.total += ms;
             e.max = std::max(e.max, ms);
             ++e.count;
+            e.win += ms;
             return;
         }
-    s.entries.push_back({name, ms, ms, 1});
+    s.entries.push_back({name, ms, ms, 1, ms});
 }
 
 void frame(double ms) {
@@ -49,7 +55,27 @@ void frame(double ms) {
     s.frameTotal += ms;
     s.frameMax = std::max(s.frameMax, ms);
     if (ms > 50) ++s.slow;
+    s.winFrames += 1;
+    s.winTotal += ms;
+    s.winWorst = std::max(s.winWorst, ms);
+    const auto now = std::chrono::steady_clock::now();
+    const double secs = std::chrono::duration<double>(now - s.winStart).count();
+    if (secs < 1.0) return;
+    Recent r;
+    r.fps = s.winFrames / secs;
+    r.frameMs = s.winTotal / s.winFrames;
+    r.worstMs = s.winWorst;
+    for (Entry& e : s.entries) {
+        if (e.win > 0) r.sections.emplace_back(e.name, e.win / s.winFrames);
+        e.win = 0;
+    }
+    std::sort(r.sections.begin(), r.sections.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    s.recent = std::move(r);
+    s.winFrames = s.winTotal = s.winWorst = 0;
+    s.winStart = now;
 }
+
+const Recent& recent() { return st().recent; }
 
 void reset() {
     State& s = st();
