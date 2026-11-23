@@ -202,6 +202,7 @@ bool parseAnimalConfig(const std::string& text, AnimalConfig& out, std::string* 
                                   s.behavior))
             r.fail(w + ".behavior", "'" + b + "': shy, calm, curious or small");
         r.num(t, "flee", s.fleeDistance, w);
+        if (t["ride"].type == Json::Bool) s.rideable = t["ride"].num != 0;
         s.alertDistance = s.fleeDistance * 1.7f;
         r.num(t, "alert", s.alertDistance, w);
         r.pair(t, "keep", s.keepNear, s.keepFar, w);
@@ -491,7 +492,14 @@ std::string AnimalWorld::spawnAt(const Terrain& tr, const std::string& id, int c
     const AnimalSpecies& s = cfg_->species[(size_t)si];
     if (count <= 0) count = s.groupMax;
     if (!spawnGroup(tr, si, xz(at), count, false)) return "Error: no room for '" + id + "' there (water?)";
-    return "spawned " + std::to_string(groups_.back().size) + " " + s.id + " (" + s.label + ")";
+    std::string where;
+    for (const Animal& a : animals_)
+        if (a.group == groups_.back().id) {  // Ort des ersten Tiers (cm), z. B. um etwas darauf fallen zu lassen
+            where = " at " + std::to_string((int)std::lround(a.pos.x * 100)) + " " + std::to_string((int)std::lround(a.pos.y * 100)) + " " +
+                    std::to_string((int)std::lround(a.pos.z * 100)) + " cm";
+            break;
+        }
+    return "spawned " + std::to_string(groups_.back().size) + " " + s.id + " (" + s.label + ")" + where;
 }
 
 // ============================================================================ Bewegung
@@ -771,14 +779,19 @@ uint32_t AnimalWorld::strike(const glm::dvec3& eye, const glm::dvec3& dirIn, dou
         bestT = t;
     }
     if (!best) return 0;
-    Animal& a = *best;
+    hurt(*best, damage, xz(eye), killed);
+    return best->id;
+}
+
+// Schaden an einem Tier: zuckt, wehrt sich oder flieht; bei 0 tot (die anderen fliehen vor from)
+void AnimalWorld::hurt(Animal& a, float damage, const glm::dvec2& from, bool* killed) {
+    if (killed) *killed = false;
     const AnimalSpecies& s = cfg_->species[(size_t)a.species];
     a.hp -= damage / toughness(s);
     a.attackAnim = -1;
     a.hitAnim = 0;  // zuckt (Treffer-Ablauf), von der Seite, von der der Schlag kam
-    a.hitLeft = glm::dot(glm::dvec2(eye.x - a.pos.x, eye.z - a.pos.z), glm::dvec2(std::cos(a.yaw), -std::sin(a.yaw))) < 0;
+    a.hitLeft = glm::dot(glm::dvec2(from.x - a.pos.x, from.y - a.pos.z), glm::dvec2(std::cos(a.yaw), -std::sin(a.yaw))) < 0;
     AnimalGroup* g = findGroup(a.group);
-    const glm::dvec2 from = xz(eye);
     if (a.hp <= 0) {  // tot: liegt da, die anderen fliehen
         a.hp = 0;
         a.dead = true;
@@ -794,7 +807,7 @@ uint32_t AnimalWorld::strike(const glm::dvec3& eye, const glm::dvec3& dirIn, dou
             g->fleeFrom = from;
         }
         if (killed) *killed = true;
-        return a.id;
+        return;
     }
     if (g) {
         if (s.attack != AnimalAttack::None && a.hp >= 0.45f) {  // wehrt sich
@@ -809,7 +822,70 @@ uint32_t AnimalWorld::strike(const glm::dvec3& eye, const glm::dvec3& dirIn, dou
             g->fleeFrom = from;
         }
     }
-    return a.id;
+}
+
+// Ein bewegtes Teil trifft Tiere (fallender Baum, geworfener Stein): jedes lebende Tier am Boden, dessen Trefferbox die
+// Box des Teils schneidet. Schaden nach der Wucht (½·m·v²): ab etwa 20 J, 400 J mehr sind eine ganze Lebenskraft (ein
+// Stein mit 1 kg und 15 m/s ~ 0,2, ein fallender Stamm tötet). Dasselbe Tier höchstens alle 0,5 s
+int AnimalWorld::crush(const glm::dvec3& mn, const glm::dvec3& mx, const glm::dvec3& vel, double mass, std::vector<uint32_t>* killed) {
+    const double speed = glm::length(vel);
+    if (speed < 2.0) return 0;
+    const double energy = 0.5 * mass * speed * speed;
+    const float damage = (float)std::clamp((energy - 20.0) / 400.0, 0.0, 3.0);
+    if (damage <= 0) return 0;
+    int n = 0;
+    for (Animal& a : animals_) {
+        const AnimalSpecies& s = cfg_->species[(size_t)a.species];
+        if (a.dead || a.airborne || s.model == "bird" || a.crushUntil > clock_) continue;
+        const glm::vec3 hs = hitSize(a.species, false);
+        const double r = 0.5 * std::max(hs.x, hs.z);
+        if (mx.x < a.pos.x - r || mn.x > a.pos.x + r || mx.z < a.pos.z - r || mn.z > a.pos.z + r || mx.y < a.pos.y || mn.y > a.pos.y + hs.y)
+            continue;
+        a.crushUntil = clock_ + 0.5;
+        bool k = false;
+        hurt(a, damage, glm::dvec2(a.pos.x - vel.x, a.pos.z - vel.z), &k);
+        if (k && killed) killed->push_back(a.id);
+        ++n;
+    }
+    return n;
+}
+
+uint32_t AnimalWorld::pickRideable(const glm::dvec3& eye, const glm::dvec3& dirIn, double reach) const {
+    const glm::dvec3 dir = glm::normalize(dirIn);
+    uint32_t best = 0;
+    double bestT = 1e30, t;
+    for (const Animal& a : animals_)
+        if (!a.dead && !a.ridden && cfg_->species[(size_t)a.species].rideable && hitTest(a, eye, dir, reach, t) && t < bestT)
+            best = a.id, bestT = t;
+    return best;
+}
+
+bool AnimalWorld::setRidden(uint32_t id, bool on) {
+    for (Animal& a : animals_)
+        if (a.id == id && !a.dead) {
+            a.ridden = on;
+            if (on) {  // verlässt die Herde und gehört jetzt dem Reiter
+                a.tame = true;
+                a.leader = false;
+                a.group = 0;
+                a.attackAnim = -1;
+            }
+            a.state = Animal::Idle;
+            a.speed = a.wantSpeed = 0;
+            return true;
+        }
+    return false;
+}
+
+void AnimalWorld::steer(uint32_t id, const glm::dvec3& feet, float yaw, float speed) {
+    for (Animal& a : animals_)
+        if (a.id == id) {
+            a.pos = feet;
+            a.yaw = yaw;
+            a.speed = a.wantSpeed = speed;
+            a.state = speed > 0.3f ? Animal::Walk : Animal::Idle;
+            return;
+        }
 }
 
 uint32_t AnimalWorld::pickDead(const glm::dvec3& eye, const glm::dvec3& dirIn, double reach) const {
@@ -1008,6 +1084,7 @@ void AnimalWorld::update(double dt, const Terrain& tr, const glm::dvec3& focus, 
             continue;
         }
         a.hp = std::min(1.0f, a.hp + 0.004f * (float)dt);  // Wunden heilen langsam (ca. 4 min)
+        if (a.ridden) continue;  // geritten: das Spiel bewegt es (steer)
         auto it = groupIndex.find(a.group);
         if (it == groupIndex.end()) continue;
         AnimalGroup& g = groups_[it->second];
@@ -1035,6 +1112,7 @@ void AnimalWorld::update(double dt, const Terrain& tr, const glm::dvec3& focus, 
         const glm::dvec2 rel = xz(a.pos) - f;
         const double dist = glm::length(rel);
         bool gone = dist > reach(s) * 1.08 || (a.dead && a.deadTime > 600.0f);  // Kadaver: nach 10 min weg
+        if (a.tame && !a.dead) gone = false;  // geritten: bleibt (auch weit weg), bis es stirbt
         if (!gone && !activeAt(s.active, dayHours) && dist > 20) gone = glm::dot(rel / dist, v2) < 0.3;
         if (!gone) keep.push_back(std::move(a));
     }

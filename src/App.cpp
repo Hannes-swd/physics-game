@@ -119,6 +119,11 @@ bool App::init(const AppOptions& opt) {
         const char* bold = "C:/Windows/Fonts/segoeuib.ttf";
         hudBold_ = io.Fonts->AddFontFromFileTTF(std::filesystem::exists(bold) ? bold : font, 18.0f, nullptr, ranges);
         hudSmall_ = io.Fonts->AddFontFromFileTTF(font, 16.0f, nullptr, ranges);
+        // Ladebildschirm: großer Weltname (halbfett) und Prozent (dünn)
+        const char* semi = "C:/Windows/Fonts/seguisb.ttf";
+        const char* light = "C:/Windows/Fonts/segoeuil.ttf";
+        loadTitle_ = io.Fonts->AddFontFromFileTTF(std::filesystem::exists(semi) ? semi : font, 56.0f, nullptr, ranges);
+        loadLight_ = io.Fonts->AddFontFromFileTTF(std::filesystem::exists(light) ? light : font, 44.0f, nullptr, ranges);
     }
     setupStyle();
     ImGui_ImplGlfw_InitForVulkan(window_, true);
@@ -369,7 +374,7 @@ std::string App::cameraLook(const glm::dvec3& target, double dist) {
 
 glm::dvec3 App::playerEye() const {
     // Mitspieler: die Figur läuft beim Gastgeber, hier steht ihre zuletzt gemeldete (geglättete) Lage
-    return (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, 1.65 - 0.45 * crouch_ + eyeLag_, 0);  // geduckt: tiefer
+    return (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, 1.65 - 0.45 * crouch_ + eyeLag_ + rideLift_, 0);  // geduckt: tiefer
 }
 
 glm::dvec3 App::playerForward() const {
@@ -626,6 +631,7 @@ void App::buildFrame(FrameDesc& fd) {
     addFlora(fd, visibleAny);  // Gras, Blumen, Büsche
     addScatter(fd, visibleAny); // Steine, Stöcke, Stämme, Stümpfe (die großen in der Nähe sind Teile, oben schon dabei)
     addPlans(fd);      // Bauvorlagen: Hologramme
+    addRope(fd);       // Seil zum angebundenen Teil (AppRope.cpp)
     addAnimals(fd, visibleAny);  // Tiere (AppAnimals.cpp)
     addAvatars(fd);    // andere Spieler im LAN
     addFireFx(fd);     // Flammen, Rauch, Feuerschein

@@ -82,7 +82,7 @@ void App::addAvatars(FrameDesc& fd) {
         }
     if (play_ && thirdPerson_) {
         const glm::vec3 col = playerColor(netSelfId_);
-        const glm::dvec3 feet = netClient() ? netFeet_ : physics_.characterPosition();
+        const glm::dvec3 feet = (netClient() ? netFeet_ : physics_.characterPosition()) + glm::dvec3(0, rideLift_, 0);  // reitend: im Sattel
         bool onGround = physics_.characterOnGround();
         if (netClient())  // die eigene Figur läuft beim Gastgeber
             for (const NetPlayer& p : netPlayers_)

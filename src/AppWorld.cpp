@@ -10,6 +10,8 @@
 #include <imgui_impl_vulkan.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cfloat>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -91,29 +93,79 @@ void App::drawLoading() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav;
     if (loading_.fade > 0) flags |= ImGuiWindowFlags_NoInputs;
-    if (ImGui::Begin("##loading", nullptr, flags)) {
-        const float w = std::min(520.0f, vp->Size.x - 40.0f);
-        ImGui::SetCursorPos(ImVec2((vp->Size.x - w) * 0.5f, vp->Size.y * 0.5f - 70.0f));
-        ImGui::BeginGroup();
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
-        ImGui::TextUnformatted(loading_.title.c_str());
-        if (!loading_.name.empty()) ImGui::TextDisabled("%s", loading_.name.c_str());
-        ImGui::Spacing();
-        // Unbestimmt (Beitreten): ein Stück läuft hin und her
-        ImGui::ProgressBar(loading_.progress < 0 ? -1.0f * (float)ImGui::GetTime() : loading_.progress, ImVec2(w, 0), "");
-        ImGui::TextUnformatted(loading_.detail.c_str());
-        if (loading_.kind == LoadKind::Join && loading_.fade <= 0) {
-            ImGui::Spacing();
-            if (ImGui::Button("Abbrechen")) {
+    // Schlicht in Dunkelgrün (wie die Ladeseite des Menüs, qml/LoadingPage.qml): unten links klein was passiert, groß der
+    // Weltname, darunter der Schritt; rechts die Prozent; ein dünner Balken über die ganze Unterkante
+    if (ImGui::Begin("##loading", nullptr, flags | ImGuiWindowFlags_NoBackground)) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 o = vp->Pos, sz = vp->Size;
+        const float k = std::clamp(sz.y / 1080.0f, 0.6f, 2.0f);
+        const auto A = [&](int r, int g, int b, float a = 1.0f) { return IM_COL32(r, g, b, (int)(255 * a * alpha)); };
+        dl->AddRectFilledMultiColor(o, ImVec2(o.x + sz.x, o.y + sz.y), A(22, 34, 26), A(15, 24, 18), A(8, 12, 9), A(11, 17, 12));
+        ImFont* fs = hudSmall_ ? hudSmall_ : ImGui::GetFont();
+        ImFont* ft = loadTitle_ ? loadTitle_ : fs;
+        ImFont* fl = loadLight_ ? loadLight_ : fs;
+        const float left = o.x + 64.0f * k, bottom = o.y + sz.y - 70.0f * k;
+        const std::string big = loading_.name.empty() ? loading_.title : loading_.name;
+        const std::string kicker = loading_.name.empty() ? std::string() : loading_.title;
+        // Schritt
+        const float sS = 18.0f * k;
+        float y = bottom - sS;
+        dl->AddText(fs, sS, ImVec2(left, y), A(168, 190, 160), loading_.detail.c_str());
+        // Weltname
+        const float sT = 56.0f * k;
+        y -= sT + 8.0f * k;
+        dl->AddText(ft, sT, ImVec2(left, y), A(240, 238, 228), big.c_str());
+        // darüber klein, gesperrt und in Großbuchstaben
+        if (!kicker.empty()) {
+            const float sK = 14.0f * k;
+            float x = left;
+            const float ky = y - sK + 2.0f * k;
+            for (size_t i = 0; i < kicker.size();) {  // Zeichen für Zeichen (UTF-8), groß: a-z und ä ö ü
+                const unsigned char ch = (unsigned char)kicker[i];
+                const size_t n = ch < 0x80 ? 1 : ch < 0xE0 ? 2 : ch < 0xF0 ? 3 : 4;
+                std::string c = kicker.substr(i, n);
+                if (n == 1) c[0] = (char)std::toupper(ch);
+                else if (n == 2 && ch == 0xC3 && ((unsigned char)c[1] == 0xA4 || (unsigned char)c[1] == 0xB6 || (unsigned char)c[1] == 0xBC))
+                    c[1] = (char)((unsigned char)c[1] - 0x20);
+                dl->AddText(fs, sK, ImVec2(x, ky), A(143, 179, 90), c.c_str());
+                x += fs->CalcTextSizeA(sK, FLT_MAX, 0, c.c_str()).x + 3.0f * k;
+                i += n;
+            }
+        }
+        // Prozent rechts (unbestimmt beim Beitreten: keine Zahl)
+        if (loading_.progress >= 0) {
+            char pct[16];
+            std::snprintf(pct, sizeof(pct), "%d %%", (int)std::lround(std::clamp(loading_.progress, 0.0f, 1.0f) * 100));
+            const float sP = 44.0f * k;
+            const ImVec2 ts = fl->CalcTextSizeA(sP, FLT_MAX, 0, pct);
+            dl->AddText(fl, sP, ImVec2(o.x + sz.x - 64.0f * k - ts.x, bottom - ts.y), A(240, 238, 228), pct);
+        }
+        // Balken unten über die ganze Breite (unbestimmt: ein Stück läuft durch)
+        const float bh = std::max(3.0f, 4.0f * k), by = o.y + sz.y - bh;
+        dl->AddRectFilled(ImVec2(o.x, by), ImVec2(o.x + sz.x, o.y + sz.y), A(30, 44, 32));
+        float b0 = 0, b1 = std::clamp(loading_.progress, 0.0f, 1.0f);
+        if (loading_.progress < 0) {
+            const float t = std::fmod((float)ImGui::GetTime() * 0.45f, 1.3f) - 0.3f;
+            b0 = std::max(0.0f, t), b1 = std::min(1.0f, t + 0.3f);
+        }
+        if (b1 > b0) {
+            dl->AddRectFilled(ImVec2(o.x + sz.x * b0, by - 2.0f * k), ImVec2(o.x + sz.x * b1, o.y + sz.y), A(182, 224, 122, 0.18f));
+            dl->AddRectFilled(ImVec2(o.x + sz.x * b0, by), ImVec2(o.x + sz.x * b1, o.y + sz.y), A(182, 224, 122));
+        }
+        if (loading_.kind == LoadKind::Join && loading_.fade <= 0) {  // Beitreten abbrechen: rechts, wo sonst die Prozent stehen
+            ImGui::SetCursorScreenPos(ImVec2(o.x + sz.x - 64.0f * k - 130.0f, bottom - 34.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(40, 58, 42, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(64, 92, 60, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(95, 138, 53, 255));
+            if (ImGui::Button("Abbrechen", ImVec2(130, 34))) {
                 netStop("");
                 joinPending_ = false;
                 exitMessage_ = "Beitreten abgebrochen";
                 loading_.kind = LoadKind::None;
                 leaveToMenu();
             }
+            ImGui::PopStyleColor(3);
         }
-        ImGui::PopTextWrapPos();
-        ImGui::EndGroup();
     }
     ImGui::End();
     ImGui::PopStyleVar(3);
@@ -339,7 +391,7 @@ bool App::saveWorld(bool quiet, bool evenAsClient) {
         w.view.feet = physics_.characterPosition();
         w.view.yaw = playYaw_;
         w.view.pitch = playPitch_;
-        w.view.health = me_.health.injured() ? me_.health.save() : std::string();
+        w.view.health = me_.health.injured() || me_.health.food() < 0.999 ? me_.health.save() : std::string();
     }
     w.env.valid = true;
     w.env.airDensity = world_->airDensity();

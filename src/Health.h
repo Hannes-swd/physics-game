@@ -8,6 +8,7 @@
 // Hitze und Kälte wirken als Dosis: sie sammelt sich je Körperteil an, klingt langsam ab und macht beim Überschreiten von
 // 1, 2,5 und 5 eine Verbrennung bzw. Erfrierung der Stufe 1, 2, 3.
 #pragma once
+#include <algorithm>
 
 #include <array>
 #include <string>
@@ -71,6 +72,14 @@ public:
     bool canRun() const;
     bool canJump() const;
 
+    // Hunger: food 1 = satt, sinkt in kFoodHours Spielstunden auf 0 (am Anfang ist man satt). Bei 0 kein Rennen, langsamer,
+    // nach kStarveSeconds verhungert. Essen (Fleisch aus dem Inventar) füllt auf
+    double food() const { return food_; }
+    void eat(double amount) { food_ = std::min(1.0, food_ + amount); starve_ = 0; }
+    void setFood(double f) { food_ = std::clamp(f, 0.0, 1.0); }
+    bool hungry() const { return food_ < 0.3; }
+    static constexpr double kFoodHours = 3.0, kStarveSeconds = 900.0;
+
     std::string save() const;            // eine Zeile Text
     // exact: so wie gespeichert (Mitspieler: Zustand vom Gastgeber), sonst eine tödliche Lage abgeschwächt
     void load(const std::string& text, bool exact = false);
@@ -84,6 +93,7 @@ private:
     void checkDeath();
     std::array<Part, kBodyParts> parts_;
     double blood_ = 1.0;
+    double food_ = 1.0, starve_ = 0;  // satt (0..1), so lange (s) schon bei 0
     bool dead_ = false;
     std::string deathCause_;
     double lastChange_ = -1e9;

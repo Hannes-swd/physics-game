@@ -96,3 +96,17 @@ stehen nach 4 s am Startpunkt. Mitspieler haben noch kein Inventar: bei ihnen ve
 | `health bandage` | sofort verbinden, ohne Verband (zum Testen) |
 | `health blood <0..1>` | Blut setzen |
 | `health on` / `off` | Verletzungen ein- und ausschalten (z. B. zum Bauen) |
+
+## Hunger
+
+- Am Anfang (und nach jedem Neustart) ist man **satt**. Satt sinkt in etwa **3 Stunden Spielzeit** von 100 % auf 0 –
+  man muss also nicht dauernd jagen.
+- Unter 30 % erscheint links unten **Hunger** (hungrig, sehr hungrig, verhungert bald). Unter 8 % kein Rennen, bei 0 %
+  langsamer, das Blut erholt sich nicht mehr, und nach 15 Minuten bei 0 % **verhungert** man.
+- **Essen:** Taste **V** (änderbar unter *Einstellungen → Steuerung*) isst das leichteste Stück **Fleisch** aus dem
+  Inventar. 1 kg macht 20 % satt, ein Stück (etwa 1,5 kg) also eine Mahlzeit.
+- **Fleisch** gibt es beim Zerlegen eines erlegten Tiers (**F**, [24](24-Tiere.md#jagd)): etwa 12 kg je m² Fell, in
+  Stücken zu rund 1,5 kg. Ein Reh gibt 6 Stücke (9,6 kg), das reicht für fast zwei volle Mägen, also gut 5 Stunden.
+- Der Hunger wird mit der Welt gespeichert und im LAN wie das Leben vom Gastgeber gerechnet (essen geht als Mitspieler
+  noch nicht, es fehlt das Inventar).
+- Befehle: `health` zeigt auch „satt … %“, `health eat` isst wie V, `health food <0–1>` setzt den Hunger (Test).

@@ -725,7 +725,8 @@ Alle `player`-Befehle (außer der Abfrage) schalten bei Bedarf automatisch in de
 | `player stop` | stehen bleiben |
 | `player jump` | springen |
 | `player view [first\|third]` | durch die Augen der Figur oder von hinten über die Schulter (wie **F5**); ohne Angabe umschalten |
-| `player tool <werkzeug>` | Werkzeug der Leiste unten rechts in die Hand nehmen (wie **1 … 8**): `hand`, `axe`, `laser`, `drill`, `terra`, `tractor`, `pickaxe`, `lighter` (Feuerzeug) oder die Nummer |
+| `player tool <werkzeug>` | Werkzeug der Leiste unten rechts in die Hand nehmen (wie **1 … 9**): `hand`, `axe`, `laser`, `drill`, `terra`, `tractor`, `pickaxe`, `lighter` (Feuerzeug), `rope` (Seil) oder die Nummer |
+| `player rope <id>\|off` | Seil an das Teil binden (wie Werkzeug 9 und Linksklick, auch ohne Seil im Inventar) bzw. lösen |
 | `player grab [id]` | Teil aufnehmen (mit id: vorher hinschauen). Reichweite 3,5 m, nicht durch andere Teile hindurch |
 | `player release` | Teil fallen lassen. Anderer Name: `drop` |
 | `player throw [N·s]` | getragenes Teil in Blickrichtung werfen (Standard: 9 m/s, höchstens 45 N·s) |

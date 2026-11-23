@@ -526,8 +526,9 @@ void App::drawHealthHud() {
 
     // Sichtbarkeit: nur bei Verletzung. Voll bei Schwerem, Blutung, frischer Verletzung oder beim Verbinden, sonst halb
     float target = 0;
-    if (me_.health.injured() && !dead) {
-        const bool urgent = me_.health.worst() >= 2 || me_.health.bleeding() > 0 || bandaging || me_.health.blood() < 0.8;
+    if ((me_.health.injured() || me_.health.hungry()) && !dead) {
+        const bool urgent = me_.health.worst() >= 2 || me_.health.bleeding() > 0 || bandaging || me_.health.blood() < 0.8 ||
+                            me_.health.food() < 0.1;
         target = urgent || now - (float)me_.health.lastChange() < 6.0f ? 1.0f : 0.6f;
     }
     hudHealthAlpha_ += (target - hudHealthAlpha_) * (1.0f - std::exp(-io.DeltaTime / 0.3f));
@@ -599,6 +600,12 @@ void App::drawHealthHud() {
         const char* st[3] = {"leicht", "mittel", "schwer"};
         rows.push_back({"Blutverlust", std::string(st[sev - 1]) + (me_.health.bleeding() > 0 ? " · blutet" : " · erholt sich"), Injury::Cut, sev});
     }
+    if (me_.health.hungry()) {  // Hunger: hungrig, sehr hungrig, verhungert bald
+        const double f = me_.health.food();
+        const int sev = f > 0.15 ? 1 : f > 0 ? 2 : 3;
+        const char* st[3] = {"hungrig", "sehr hungrig · kein Rennen", "verhungert bald"};
+        rows.push_back({"Hunger", std::string(st[sev - 1]) + " · " + keys::label(keys::Act::Eat) + " essen", Injury::None, sev});
+    }
     std::vector<int> order;
     for (int i = 0; i < kBodyParts; ++i)
         if (me_.health.part((BodyPart)i).sev > 0) order.push_back(i);
@@ -643,9 +650,31 @@ void App::drawHealthHud() {
 
 // ============================================================================ Befehl
 
+// Essen (Taste V): das leichteste Stück Fleisch aus dem Inventar. 1,5 kg (ein Stück) machen 30 % satt, ein Reh ~2 Mägen
+std::string App::eatFood() {
+    if (netClient()) return "Error: als Mitspieler im LAN noch nicht möglich (kein Inventar)";
+    if (me_.health.food() > 0.97) return "satt";
+    const int meat = materialIndex("meat");
+    int best = -1;
+    for (size_t i = 0; i < inv_.size(); ++i)
+        if (inv_[i].state.material == meat && (best < 0 || inv_[i].mass < inv_[(size_t)best].mass)) best = (int)i;
+    if (best < 0) return "Error: kein Fleisch im Inventar (ein erlegtes Tier mit " + keys::label(keys::Act::Use) + " zerlegen)";
+    const double kg = inv_[(size_t)best].mass;
+    inv_.erase(inv_.begin() + best);
+    invPushContents();
+    me_.health.eat(kg * 0.2);
+    return "gegessen: " + fmtNum(kg, 1) + " kg Fleisch, satt " + fmtNum(me_.health.food() * 100, 0) + " %";
+}
+
 std::string App::healthCommand(const std::vector<std::string>& t) {
     const std::string w = t.size() > 1 ? t[1] : "";
-    if (w.empty() || w == "status") return std::string(healthOn_ ? "" : "(aus) ") + me_.health.describe();
+    if (w.empty() || w == "status")
+        return std::string(healthOn_ ? "" : "(aus) ") + me_.health.describe() + "\nsatt " + fmtNum(me_.health.food() * 100, 0) + " %";
+    if (w == "eat") return eatFood();
+    if (w == "food" && t.size() > 2) {  // health food <0..1>: Hunger setzen (Test)
+        me_.health.setFood(std::atof(t[2].c_str()));
+        return "satt " + fmtNum(me_.health.food() * 100, 0) + " %";
+    }
     if (netClient() && w != "use") return "Error: as a co-player only 'health' and 'health use' (the host computes injuries)";
     if (w == "on" || w == "off") {
         healthOn_ = w == "on";

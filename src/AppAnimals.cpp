@@ -206,6 +206,39 @@ void App::updateAnimals(float dt) {
         who.push_back(p.id);
     }
     animals_->update(dt, *tr, focus, view, scarers, dayHours_, settings_.viewDistance);
+    updateRide(dt);  // das gerittene Pferd unter die Figur
+    // Bewegte Teile treffen Tiere (fallender Baum, geworfener Stein): Schaden nach der Wucht. Der Gastgeber rechnet
+    // Tempo aus der Bewegung der Teilmitte seit dem letzten Bild (Teile, die eben erst da sind: noch nicht)
+    if (!netClient() && world_->simulating() && dt > 1e-4f) {
+        std::unordered_map<uint32_t, glm::dvec3> seen;
+        for (const auto& o : world_->objects()) {
+            if (o->fixed || o->mass < 0.05) continue;
+            const glm::dvec3 c = (o->wMin + o->wMax) * 0.5;
+            seen[o->id] = c;
+            const auto last = partCenters_.find(o->id);
+            if (last == partCenters_.end()) continue;
+            glm::dvec3 v = (c - last->second) / (double)dt;
+            if (glm::dot(v, v) < 4.0 || glm::dot(v, v) > 2500.0) continue;  // unter 2 m/s kein Schaden; über 50 m/s: versetzt, kein Flug
+            // Versetzt (beim Laden aufs Gelände gesetzt, per Befehl) statt geflogen: dann bewegt die Physik es nicht.
+            // Beide müssen eine Bewegung zeigen; es zählt das kleinere Tempo
+            if (o->body == kNoBody) continue;
+            const double phys = glm::length(glm::dvec3(physics_.linearVelocity(o->body)));
+            if (phys < 2.0) continue;
+            v *= std::min(1.0, phys / glm::length(v));
+            std::vector<uint32_t> killed;
+            const int hit = animals_->crush(o->wMin, o->wMax, v, o->mass, &killed);
+            if (hit > (int)killed.size()) log(o->name + " trifft " + std::to_string(hit - killed.size()) + " Tier(e)", 3);
+            for (uint32_t id : killed)
+                if (const Animal* a = animals_->find(id)) {
+                    const std::string msg = animals_->config().species[(size_t)a->species].label + " von " + o->name + " erschlagen";
+                    toast(msg);
+                    log(msg, 3);
+                }
+        }
+        partCenters_ = std::move(seen);
+    } else {
+        partCenters_.clear();
+    }
     // Bisse und Stöße: auf die eigene Figur oder (als Gastgeber) auf einen Mitspieler
     for (const AnimalBite& b : animals_->takeBites()) {
         if (b.target < 0 || b.target >= (int)who.size()) continue;
@@ -474,7 +507,8 @@ bool App::animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool to
     case HandTool::Drill: damage = 0.3f, reach = 2.2; break;
     case HandTool::Terra: damage = 0.15f, reach = 2.2; break;
     case HandTool::Tractor:
-    case HandTool::Lighter: return false;  // kein Schlag
+    case HandTool::Lighter:
+    case HandTool::Rope: return false;  // kein Schlag
     default: break;
     }
     bool killed = false;
@@ -496,6 +530,54 @@ bool App::animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool to
 }
 
 // Totes Tier im Blick zerlegen: das Fell (Größe je Art, "hide" in animals.json) kommt ins Inventar, der Kadaver ist weg
+// Reiten (F auf ein lebendes Pferd): man sitzt im Sattel, das Pferd läuft unter der Figur mit (Trab 7 m/s, Shift Galopp
+// 15 m/s) und zieht am Seil viermal so stark. F nochmal: absteigen. Ein gerittenes Pferd bleibt danach zahm stehen, wo
+// man es lässt (verschwindet nicht), und läuft nicht mehr mit der Herde. Mitspieler: noch nicht (der Gastgeber rechnet)
+bool App::rideToggle(const glm::dvec3& eye, const glm::dvec3& fwd) {
+    if (!animals_) return false;
+    if (rideId_) {
+        animals_->setRidden(rideId_, false);
+        const Animal* a = animals_->find(rideId_);
+        rideId_ = 0;
+        toast(std::string("Abgestiegen") + (a ? " - das " + animals_->config().species[(size_t)a->species].label + " wartet hier" : ""));
+        if (physics_.hasCharacter()) {  // neben das Pferd
+            const glm::dvec3 side(std::cos(playYaw_), 0, -std::sin(playYaw_));
+            physics_.setCharacterPosition(physics_.characterPosition() + side * 0.9 + glm::dvec3(0, 0.2, 0));
+        }
+        return true;
+    }
+    const uint32_t id = animals_->pickRideable(eye, fwd, 3.0);
+    const Animal* a = id ? animals_->find(id) : nullptr;
+    if (!a || !physics_.hasCharacter()) return false;
+    animals_->setRidden(id, true);
+    rideId_ = id;
+    handTool_ = handTool_ == HandTool::Rope ? HandTool::Rope : HandTool::None;
+    physics_.setCharacterPosition(a->pos + glm::dvec3(0, 0.05, 0));
+    playYaw_ = a->yaw;
+    toast("Aufgestiegen: " + animals_->config().species[(size_t)a->species].label + " - " + keys::moveLabel() + " reiten, " +
+          keys::label(keys::Act::Run) + " Galopp, " + keys::label(keys::Act::Use) + " absteigen");
+    return true;
+}
+
+void App::updateRide(float dt) {
+    float target = 0;
+    if (rideId_) {
+        const Animal* a = animals_ ? animals_->find(rideId_) : nullptr;
+        if (!a || a->dead || !play_ || !physics_.hasCharacter() || me_.deadUntil >= 0) {  // Pferd weg oder tot, Figur tot
+            if (a && !a->dead) animals_->setRidden(rideId_, false);
+            rideId_ = 0;
+            if (a && a->dead) toast("Das Pferd ist tot", false);
+        } else {
+            const AnimalSpecies& s = animals_->config().species[(size_t)a->species];
+            target = 0.55f * s.height;  // Sattelhöhe
+            const glm::dvec3 v = physics_.characterVelocity();
+            animals_->steer(rideId_, physics_.characterPosition(), (float)playYaw_, (float)glm::length(glm::dvec2(v.x, v.z)));
+        }
+    }
+    rideLift_ += (target - rideLift_) * (1.0f - std::exp(-dt / 0.15f));
+    if (std::fabs(rideLift_ - target) < 0.002f) rideLift_ = target;
+}
+
 bool App::animalHarvest(const glm::dvec3& eye, const glm::dvec3& fwd) {
     if (!animals_) return false;
     const uint32_t id = animals_->pickDead(eye, fwd, 3.0);
@@ -508,11 +590,23 @@ bool App::animalHarvest(const glm::dvec3& eye, const glm::dvec3& fwd) {
         toast(s.label + ": daran ist nichts Brauchbares", false);
         return true;
     }
+    // Fleisch: Stücke zu etwa 1,5 kg (eine Mahlzeit), je Tier etwa 12 kg je m² Fell (Reh ~10 kg: gut zwei volle Mägen)
+    const int meat = materialIndex("meat");
+    const double meatKg = 12.0 * s.hide;
+    const int pieces = std::clamp((int)std::lround(meatKg / 1.5), 1, 12);
+    const double pieceKg = meatKg / pieces, edge = std::cbrt(pieceKg / 1050.0);
+    int stored = 0;
+    for (int i = 0; i < pieces && meat >= 0; ++i)
+        if (Object* m = world_->addBox(meat, glm::dvec3(edge * 1.4, edge * 0.6, edge * 1.2), at + glm::dvec3(0, 0.15 * i, 0), "Fleisch (" + s.label + ")"))
+            stored += invStore(m->id, true) ? 1 : 0;
     const int mat = materialIndex("hide");
     const double side = std::sqrt((double)s.hide);
     Object* o = world_->addBox(mat, glm::dvec3(side, 0.006, side * 0.8), at, "Fell (" + s.label + ")");
-    if (!o) return true;
-    if (!invStore(o->id, true)) toast("Fell (" + s.label + ") - passt nicht mehr ins Inventar, es liegt am Boden", false);
-    else toast("Fell (" + s.label + ", " + fmtNum(o->mass, 1) + " kg) im Inventar - C: daraus einen Verband herstellen");
+    const bool hideIn = o && invStore(o->id, true);
+    std::string msg = s.label + " zerlegt: " + std::to_string(pieces) + " Stück Fleisch (" + fmtNum(meatKg, 1) + " kg)";
+    msg += hideIn ? " und Fell" : "";
+    if (stored < pieces || !hideIn) msg += " - nicht alles passt ins Inventar, der Rest liegt am Boden";
+    else msg += " im Inventar - " + keys::label(keys::Act::Eat) + ": essen";
+    toast(msg, stored == pieces && hideIn);
     return true;
 }

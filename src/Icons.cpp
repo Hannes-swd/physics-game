@@ -83,6 +83,11 @@ std::vector<El> elements(Id id) {
                 {"M14 8.4A1.3 1.3 0 1 0 16.6 8.4A1.3 1.3 0 1 0 14 8.4Z", 0, Kind::Thin},
                 {"M11 1.6C12.3 3 13 4 13 5A2 2 0 0 1 9 5C9 4 9.7 3 11 1.6Z"},
                 {"M7.5 13.5H16.5", 0, Kind::Thin}};
+    case Id::Rope:  // Seil: drei Schlingen übereinander, ein Ende hängt heraus
+        return {{"M4 11A5 5 0 1 0 14 11A5 5 0 1 0 4 11Z"},
+                {"M7 11A5 5 0 1 0 17 11A5 5 0 1 0 7 11Z"},
+                {"M10 11A5 5 0 1 0 20 11A5 5 0 1 0 10 11Z"},
+                {"M17.5 14.5Q20 18 18.5 21.5"}};
     case Id::Burn: return {{FLAME}};
     case Id::Frost: return {};  // wird in build() gerechnet
     case Id::Cut: return {{DROP}};

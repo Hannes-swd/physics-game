@@ -101,13 +101,13 @@
     { "id": "wild_horse", "label": "Wildpferd", "model": "horse.glb", "height": 1.85, "foot": "FrontLowerLeg.L",
       "clips": { "idle": ["Idle", "Eating", "Eating", "Idle_2", "Idle_Headlow"], "walk": "Walk", "run": "Gallop" },
       "speed": [0.85, 8.5], "turn": 2.5, "group": [3, 8], "spread": 10, "wander": 70,
-      "behavior": "calm", "flee": 16, "hide": 3.0, "visible": 380, "slope": [0, 0.35] },
+      "behavior": "calm", "flee": 16, "hide": 3.0, "visible": 380, "slope": [0, 0.35], "ride": true },
 
     { "id": "przewalski", "label": "Przewalski-Pferd", "model": "horse.glb", "height": 1.75, "foot": "FrontLowerLeg.L",
       "tint": { "Main": [0.40, 0.25, 0.11], "Main_Light": [0.60, 0.46, 0.28], "Main_Dark": [0.18, 0.11, 0.05] },
       "clips": { "idle": ["Idle", "Eating", "Eating", "Idle_2", "Idle_Headlow"], "walk": "Walk", "run": "Gallop" },
       "speed": [0.85, 8.5], "turn": 2.5, "group": [4, 9], "spread": 10, "wander": 80,
-      "behavior": "shy", "flee": 25, "alert": 45, "hide": 2.8, "visible": 380, "slope": [0, 0.35] },
+      "behavior": "shy", "flee": 25, "alert": 45, "hide": 2.8, "visible": 380, "slope": [0, 0.35], "ride": true },
 
     { "id": "bison", "label": "Wisent", "model": "bull.glb", "height": 1.85, "foot": "FrontLowerLeg.L",
       "tint": { "Main": [0.06, 0.03, 0.013], "Main_Light": [0.12, 0.065, 0.03], "Horns": [0.12, 0.10, 0.08] },

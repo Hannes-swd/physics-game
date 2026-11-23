@@ -615,15 +615,16 @@ void App::playInput(float dt) {
     // Werkzeuge: 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, 7 Spitzhacke (Leiste unten rechts).
     // X ist zusätzlich der Schalter für die Axt. Mit einem Werkzeug in der Hand wirkt die linke Maustaste das Werkzeug.
     if (!io.WantTextInput && !planMode_) {  // in der Bauvorlagen-Auswahl zählen 1-0 für die Vorlagen
-        const HandTool slots[8] = {HandTool::None,  HandTool::Axe,     HandTool::Laser,   HandTool::Drill,
-                                   HandTool::Terra, HandTool::Tractor, HandTool::Pickaxe, HandTool::Lighter};
-        for (int k = 0; k < 8; ++k)
+        const HandTool slots[9] = {HandTool::None,  HandTool::Axe,     HandTool::Laser,   HandTool::Drill,
+                                   HandTool::Terra, HandTool::Tractor, HandTool::Pickaxe, HandTool::Lighter, HandTool::Rope};
+        for (int k = 0; k < 9; ++k)
             if (keys::pressed((keys::Act)((int)keys::Act::Tool1 + k))) selectHandTool(slots[k]);
         if (keys::pressed(keys::Act::Axe)) selectHandTool(handTool_ == HandTool::Axe ? HandTool::None : HandTool::Axe);
     }
     // F: das Teil, auf das man schaut (auch Zeug am Boden), direkt ins Inventar
     // Ein erlegtes Tier im Blick: zerlegen (Fell ins Inventar)
-    if (!io.WantTextInput && keys::pressed(keys::Act::Use) && !planMode_ && !netClient() && animalHarvest(eye, fwd)) {
+    if (!io.WantTextInput && keys::pressed(keys::Act::Use) && !planMode_ && !netClient() && rideToggle(eye, fwd)) {
+    } else if (!io.WantTextInput && keys::pressed(keys::Act::Use) && !planMode_ && !netClient() && animalHarvest(eye, fwd)) {
     } else if (!io.WantTextInput && keys::pressed(keys::Act::Use) && !planMode_ && !netClient()) {
         RayHit h;
         const bool hitPart = world_->raycast(eye, fwd, h, 0) && h.obj && h.t <= 3.5;
@@ -635,6 +636,10 @@ void App::playInput(float dt) {
         if (o && o->fixed) world_->wakeScatter(*o);
         if (o && !o->fixed) invStore(o->id);
         else if (o) toast(o->name + " ist fest und lässt sich nicht einstecken", false);
+    }
+    if (!io.WantTextInput && keys::pressed(keys::Act::Eat) && !planMode_) {  // Essen
+        const std::string r = eatFood();
+        toast(r.rfind("Error: ", 0) == 0 ? r.substr(7) : r, r.rfind("Error", 0) != 0);
     }
     // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
     planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
@@ -662,7 +667,7 @@ void App::playInput(float dt) {
     }
     // Schlag (linke Maustaste): ein Tier im Blick wird getroffen (Werkzeug: fester, weiter), sonst lassen Tiere direkt vor
     // der Figur ab und fliehen
-    if (lmbPressed && !carrying && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_ && handTool_ != HandTool::Lighter) {
+    if (lmbPressed && !carrying && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_ && handTool_ != HandTool::Lighter && handTool_ != HandTool::Rope) {
         strikeReady_ = time_ + 0.4;
         if (!animalStrike(eye, fwd, handTool_)) {
             const glm::dvec3 hit = playerEye() + glm::normalize(glm::dvec3(fwd.x, 0, fwd.z) + glm::dvec3(1e-9)) * 1.2 - glm::dvec3(0, 1.0, 0);
@@ -888,8 +893,15 @@ void App::updatePlay(float dt) {
         if (sneaking_) run = jump = false;
         crouch_ += ((sneaking_ ? 1.0f : 0.0f) - crouch_) * (1.0f - std::exp(-dt / 0.12f));
     }
+    // Seil gespannt (AppRope.cpp): je stärker es zieht, desto langsamer; schwer ziehen geht nur gehend
+    updateRope(dt);
+    if (ropeDrag_ > 0.5f) run = false;
+    // Reiten: Trab 7 m/s, mit Shift Galopp 15 m/s; das Pferd zieht am Seil viel stärker (AppRope.cpp)
+    const bool riding = rideId_ != 0;
+    if (riding) sneaking_ = false;
     if (glm::length(wish) > 0)
-        wish = glm::normalize(wish) * (run ? 7.0f : sneaking_ ? 1.8f : 4.0f) * (netClient() ? 1.0f : (float)me_.health.moveFactor());
+        wish = glm::normalize(wish) * (riding ? (run ? 15.0f : 7.0f) : run ? 7.0f : sneaking_ ? 1.8f : 4.0f) * (netClient() ? 1.0f : (float)me_.health.moveFactor()) *
+               (1.0f - 0.65f * ropeDrag_);
     // Wasser: Waten bremst, ab der Brust schwimmt die Figur. W mit Blick nach unten taucht, Leertaste hoch, Strg hinunter
     const float swim = swimDepth(netClient() ? netFeet_ : physics_.characterPosition());
     if (swim > 0.5f) {

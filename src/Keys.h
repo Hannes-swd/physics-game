@@ -15,9 +15,9 @@ enum class Act : int {
     // Spiel-Modus: Fenster
     Inventory, Craft, Build, Map,
     // Spiel-Modus: Handeln
-    Use, Rotate, Dismantle, PlanFixed, Bandage, Axe,
+    Use, Rotate, Dismantle, PlanFixed, Bandage, Eat, Axe,
     // Spiel-Modus: Werkzeuge der Leiste (1 Hand … 7 Spitzhacke, 8 Feuerzeug)
-    Tool1, Tool2, Tool3, Tool4, Tool5, Tool6, Tool7, Tool8,
+    Tool1, Tool2, Tool3, Tool4, Tool5, Tool6, Tool7, Tool8, Tool9,
     // Bau-Modus
     BSelect, BSaw, BDrill, BRound, BMill, BPlane, BHeat, SawX, SawY, SawZ,
     BDelete, BFocus, BDrop, BTurn,

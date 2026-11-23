@@ -5,7 +5,7 @@
 
 namespace icons {
 
-enum class Id { Hand, Axe, Laser, Drill, Shovel, Tractor, Pickaxe, Lighter, Burn, Frost, Cut, Bruise, Break, Count };
+enum class Id { Hand, Axe, Laser, Drill, Shovel, Tractor, Pickaxe, Lighter, Rope, Burn, Frost, Cut, Bruise, Break, Count };
 
 // Symbol mit Mitte c und Kantenlänge size (Pixel); stroke ist die Breite des Hauptstrichs in Pixeln
 void draw(ImDrawList* dl, Id id, ImVec2 c, float size, ImU32 color, float stroke);

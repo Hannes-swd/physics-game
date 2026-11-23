@@ -42,6 +42,7 @@ struct AnimalSpecies {
     float wander = 30.0f;                      // so weit (m) entfernt sich die Gruppe von ihrem Platz
     AnimalBehavior behavior = AnimalBehavior::Shy;
     float fleeDistance = 25.0f, alertDistance = 45.0f;  // m
+    bool rideable = false;  // "ride": man kann aufsteigen und reiten (Pferde)
     float keepNear = 14.0f, keepFar = 30.0f;            // neugierig: Abstand zum Spieler
     bool takeoff = false;                      // flieht fliegend (Tauben) und landet später wieder
     float visible = 150.0f;                    // so weit (m) bleibt das Tier, dahinter verschwindet es
@@ -92,6 +93,8 @@ struct Animal {
     uint32_t id = 0, group = 0;
     int species = 0;
     bool leader = false;
+    bool ridden = false;     // jemand reitet es: das Spiel bewegt es (keine eigene Bewegung)
+    bool tame = false;       // schon geritten: bleibt, wo man es lässt, und verschwindet nicht
     glm::dvec3 pos{0};       // Füße (Vögel: Körpermitte)
     float yaw = 0;           // Blick: (-sin, -cos) wie die Spielfigur
     float pitch = 0, roll = 0;
@@ -107,6 +110,7 @@ struct Animal {
     float hp = 1.0f;         // Lebenskraft 0..1: unter 0,5 humpelt es (kein Rennen), bei 0 ist es tot (erholt sich langsam)
     bool dead = false;
     float deadTime = 0;      // so lange (s) schon tot
+    double crushUntil = -1;  // von einem Teil getroffen: bis dahin nicht noch einmal
     float hitAnim = -1;      // Treffer-Ablauf (Zucken) läuft seit so vielen s (-1: keiner)
     bool hitLeft = false;    // von links getroffen
     float timer = 0;
@@ -175,6 +179,13 @@ public:
     // eines Tiers der Zähigkeit 1. Rückgabe: Nummer des Tiers (0: keins); killed: daran gestorben
     uint32_t strike(const glm::dvec3& eye, const glm::dvec3& dir, double reach, float damage, bool* killed = nullptr);
     uint32_t pickDead(const glm::dvec3& eye, const glm::dvec3& dir, double reach) const;  // totes Tier im Blick
+    uint32_t pickRideable(const glm::dvec3& eye, const glm::dvec3& dir, double reach) const;  // lebendes Reittier im Blick
+    // Reiten: aufsteigen (on) bzw. absteigen; beim Reiten setzt das Spiel Lage, Blick und Tempo jedes Bild
+    bool setRidden(uint32_t id, bool on);
+    void steer(uint32_t id, const glm::dvec3& feet, float yaw, float speed);
+    // Bewegtes Teil (Box mn..mx, Geschwindigkeit, Masse) trifft Tiere: Schaden nach der Wucht. Rückgabe: so viele getroffen
+    int crush(const glm::dvec3& mn, const glm::dvec3& mx, const glm::dvec3& vel, double mass, std::vector<uint32_t>* killed = nullptr);
+    void hurt(Animal& a, float damage, const glm::dvec2& from, bool* killed = nullptr);
     const Animal* find(uint32_t id) const;
     bool remove(uint32_t id);
     float toughness(const AnimalSpecies& s) const { return s.toughness > 0 ? s.toughness : 0.35f + s.height; }

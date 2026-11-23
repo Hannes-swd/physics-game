@@ -92,10 +92,17 @@ Tiere lassen sich mit Schlägen (linke Maustaste auf das Tier) verletzen und erl
 - Getroffene Tiere fliehen; Wehrhafte (Wolf, Wildschwein, Wisent) greifen erst recht an, bis sie schwer verwundet sind.
 - Unter halber Kraft **humpeln** sie und können nicht mehr rennen, man holt sie also ein. Wunden heilen in etwa 4 min.
 - Erlegt spielt das Tier seinen Sterbe-Ablauf und bleibt liegen (Tiere ohne Ablauf kippen auf die Seite), 10 min lang.
-- **F** auf ein erlegtes Tier **zerlegt** es: das **Fell** kommt ins Inventar (Größe je Art, `hide` in m²: Reh 0,8,
+- **F** auf ein erlegtes Tier **zerlegt** es: **Fleisch** (Stücke zu etwa 1,5 kg, zum Essen mit **V**, [25](25-Leben.md#hunger)) und das **Fell** kommen ins Inventar (Größe je Art, `hide` in m²: Reh 0,8,
   Wolf 0,9, Wisent 4; ein Reh-Fell wiegt etwa 3,3 kg). Kleine Tiere (Schlange, Spinne, Frosch, Krabbe) haben keins.
 - Aus Fell wird ein **Verband** ([22](22-Herstellen.md), [25](25-Leben.md)).
 - Vögel am Himmel lassen sich nicht treffen. Mitspieler können jagen, aber noch nicht zerlegen (kein Inventar).
+- **Teile treffen Tiere:** Ein fallender Baum, ein geworfener Stein oder ein herabstürzender Block verletzt jedes Tier
+  am Boden, dessen Trefferbox er durchfliegt (ab 2 m/s). Der Schaden folgt der Wucht ½·m·v²: ab etwa 20 J, 400 J mehr
+  entsprechen einer ganzen Lebenskraft (Zähigkeit 1). Ein 1-kg-Stein mit 15 m/s nimmt etwa 20 %, ein kräftiger Wurf
+  mit 30 m/s gut die Hälfte, ein fallender Stamm erschlägt. Danach gilt dasselbe wie beim Schlag (zucken, fliehen oder
+  angreifen, sterben); erschlagene Tiere melden sich oben („Reh von Fichte erschlagen“). Dasselbe Tier wird höchstens
+  alle 0,5 s getroffen. Das Tempo kommt aus der Bewegung des Teils und der Physik (versetzte Teile zählen nicht).
+- `animals spawn` nennt den Ort des ersten Tiers (cm), etwa um etwas darauf fallen zu lassen.
 
 ## Arten je Biom
 
@@ -171,3 +178,17 @@ Nach einer Änderung übernimmt `animals reload` die Datei sofort.
 Die Haut der Tiere wird auf der CPU verformt (2000–4000 Dreiecke je Tier). Nahe Tiere jedes Bild, weiter entfernte
 seltener (bis 5-mal je Sekunde), was kleiner als ein Pixel ist oder außerhalb des Bilds liegt, gar nicht. Höchstens
 160 Tiere gleichzeitig (`spawn.max_animals`). Im LAN sieht jeder Spieler seine eigenen Tiere.
+
+## Reiten
+
+Pferde (**Wildpferd** in Ebenen und Hügeln, **Przewalski-Pferd** in der Steppe; in `animals.json` `"ride": true`) lassen
+sich reiten. Man findet sie frei in der Wildnis; sie sind scheu, also leise heranschleichen (Strg).
+
+- **F** auf ein lebendes Pferd (bis 3 m): aufsteigen. Man sitzt im Sattel (Kamera und Figur höher), das Pferd läuft
+  unter der Figur mit: **Trab 7 m/s**, mit **Shift Galopp 15 m/s** (zu Fuß 4 bzw. 7 m/s). **F** nochmal: absteigen.
+- Ein gerittenes Pferd verlässt seine Herde und ist **zahm**: es bleibt stehen, wo man abgestiegen ist, und
+  verschwindet nicht, auch wenn man weit weggeht. Man kann also zurückkommen und wieder aufsteigen.
+- **Mit Seil ziehen:** Werkzeug 9 (Seil) geht auch im Sattel. An einen gefällten Stamm binden, dann zieht das Pferd mit
+  der vierfachen Kraft (bis 24 000 N) und wird dabei weniger gebremst als man zu Fuß: so kommen auch große Stämme mit.
+- Stirbt das Pferd (Wolf, fallender Baum), fällt man herunter. Mitspieler im LAN können noch nicht reiten.
+- Befehl: `player ride` (auf das nächste Pferd bis 6 m), `player ride off`.

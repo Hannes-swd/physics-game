@@ -175,9 +175,11 @@ double Health::bleeding() const {
 
 void Health::update(double dt, double now, bool warm) {
     if (dead_ || dt <= 0) return;
+    food_ = std::max(0.0, food_ - dt / (kFoodHours * 3600.0));
+    starve_ = food_ <= 0 ? starve_ + dt : 0;
     const double loss = bleeding();
     if (loss > 0) blood_ -= loss * dt;
-    else blood_ = std::min(1.0, blood_ + 0.0015 * dt);
+    else if (food_ > 0) blood_ = std::min(1.0, blood_ + 0.0015 * dt);  // hungrig erholt sich das Blut nicht
     for (Part& q : parts_) {
         q.burnDose = std::max(0.0, q.burnDose - 0.08 * dt);
         q.frostDose = std::max(0.0, q.frostDose - (warm ? 0.05 : 0.01) * dt);
@@ -240,6 +242,8 @@ bool Health::pressWound(double now, BodyPart* which) {
 void Health::healAll() {
     parts_ = {};
     blood_ = 1.0;
+    food_ = 1.0;  // nach dem Neustart satt
+    starve_ = 0;
     dead_ = false;
     deathCause_.clear();
 }
@@ -251,6 +255,11 @@ void Health::checkDeath() {
     if (blood_ <= kBloodDeath) {
         dead_ = true;
         deathCause_ = "verblutet";
+        return;
+    }
+    if (starve_ >= kStarveSeconds) {
+        dead_ = true;
+        deathCause_ = "verhungert";
         return;
     }
     int severe = 0;
@@ -293,13 +302,14 @@ double Health::moveFactor() const {
     }
     // wenig Blut: schwach
     f *= 0.7 + 0.3 * std::clamp((blood_ - kBloodDeath) / (1.0 - kBloodDeath), 0.0, 1.0);
+    if (food_ <= 0) f *= 0.8;  // ausgehungert: langsamer
     return f;
 }
 
 bool Health::canRun() const {
     for (int i = 0; i < kBodyParts; ++i)
         if (isLeg(i) && parts_[i].sev >= 2) return false;
-    return blood_ > 0.65;
+    return blood_ > 0.65 && food_ > 0.08;
 }
 
 bool Health::canJump() const {
@@ -313,7 +323,7 @@ bool Health::canJump() const {
 std::string Health::save() const {
     std::ostringstream s;
     char buf[64];
-    std::snprintf(buf, sizeof buf, "1;%.4f", blood_);
+    std::snprintf(buf, sizeof buf, "1;%.4f;food,%.4f", blood_, food_);
     s << buf;
     for (int i = 0; i < kBodyParts; ++i) {
         const Part& q = parts_[i];
@@ -345,6 +355,10 @@ void Health::load(const std::string& text, bool exact) {
         std::stringstream ss(items[k]);
         std::string v;
         while (std::getline(ss, v, ',')) f.push_back(v);
+        if (f.size() == 2 && f[0] == "food") {  // Hunger (fehlt in älteren Ständen: satt)
+            food_ = std::clamp(std::atof(f[1].c_str()), exact ? 0.0 : 0.05, 1.0);
+            continue;
+        }
         if (f.size() < 7) continue;
         BodyPart p;
         if (!parseBodyPart(f[0], p)) continue;

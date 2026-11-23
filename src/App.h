@@ -242,7 +242,7 @@ private:
     // Tragen/Werfen/Drehen einer Spielfigur (eigene oder Mitspieler)
     void handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in);
     // Spiel-Modus: Werkzeug in der Hand (Axt, Laser, Erdbohrer, Planierer, Traktorstrahl)
-    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor, Pickaxe, Lighter };
+    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor, Pickaxe, Lighter, Rope };
     // Werkzeuge in der Hand (AppTools.cpp): Auswahl, Wirkung auf Ziel
     void selectHandTool(HandTool t);
     void handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown, bool rmbPressed);
@@ -413,6 +413,8 @@ private:
     float hudHealthAlpha_ = 0;
     struct ImFont* hudBold_ = nullptr;
     struct ImFont* hudSmall_ = nullptr;
+    struct ImFont* loadTitle_ = nullptr;  // Ladebildschirm: Weltname
+    struct ImFont* loadLight_ = nullptr;  // Ladebildschirm: Prozent
 
     // AppUI.cpp
     void setupStyle();
@@ -664,6 +666,7 @@ private:
         std::vector<glm::vec3> colors;    // je Teil des Modells
     };
     std::unique_ptr<AnimalWorld> animals_;
+    std::unordered_map<uint32_t, glm::dvec3> partCenters_;  // Teilmitten im letzten Bild (Tempo für Treffer auf Tiere)
     std::map<std::string, std::unique_ptr<AvatarModel>> animalModels_;
     std::vector<AnimalLook> animalLooks_;
     bool showAnimals_ = true;
@@ -725,6 +728,20 @@ private:
     void drawDebugOverlay();
     std::string planModeText();     // Bauplan- / Herstell-Modus: Zeile unten in der Mitte (leer: nicht in dem Modus)
     float statusBarHeight() const;  // Statusleiste unten (nur Bau-Modus), sonst 0
+    std::string eatFood();
+    // Seil (Werkzeug 9, AppRope.cpp): an ein Teil binden und es hinter sich herziehen
+    uint32_t rideId_ = 0;           // reitet dieses Tier (0: zu Fuß), AppAnimals.cpp
+    float rideLift_ = 0;            // so viel höher sitzt man (m, gleitet beim Auf- und Absteigen)
+    bool rideToggle(const glm::dvec3& eye, const glm::dvec3& fwd);  // F: aufsteigen / absteigen
+    void updateRide(float dt);
+    uint32_t ropeObj_ = 0;          // festgebunden an (0: nichts)
+    glm::dvec3 ropeLocal_{0};       // Stelle am Teil (lokal)
+    double ropeLen_ = 2.0;          // Seillänge (m)
+    float ropeDrag_ = 0;            // wie stark das Seil gerade zieht (0..1): bremst die Figur
+    bool hasRope() const;           // ein Seil im Inventar
+    void ropeAction(bool lmbPressed, bool rmbPressed);
+    void updateRope(float dt);
+    void addRope(FrameDesc& fd);          // Fleisch aus dem Inventar essen (Taste V, "health eat")
     uint32_t inspectTarget_ = 0;
     // Material-Editor
     bool showMaterials_ = false, materialsDirty_ = false;

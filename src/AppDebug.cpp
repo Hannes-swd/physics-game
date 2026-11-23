@@ -147,6 +147,7 @@ void App::drawDebugOverlay() {
         if (sneaking_) state += ", schleicht";
         row("Tempo", num(glm::length(glm::dvec2(v.x, v.z)), 1) + " m/s, " + state);
     }
+    if (play_) row("Satt", num(me_.health.food() * 100, 0) + " %", me_.health.hungry() ? cWarn : 0);
     if (const Terrain* tr = world_->terrain()) {
         const WorldGen& gen = tr->gen();
         double sc[kMaxBiomes];
