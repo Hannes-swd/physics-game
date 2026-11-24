@@ -242,7 +242,7 @@ private:
     // Tragen/Werfen/Drehen einer Spielfigur (eigene oder Mitspieler)
     void handActions(Hand& hand, const glm::dvec3& eye, const glm::dvec3& fwd, double yaw, const HandInput& in);
     // Spiel-Modus: Werkzeug in der Hand (Axt, Laser, Erdbohrer, Planierer, Traktorstrahl)
-    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor, Pickaxe, Lighter, Rope };
+    enum class HandTool { None, Axe, Laser, Drill, Terra, Tractor, Pickaxe, Lighter };
     // Werkzeuge in der Hand (AppTools.cpp): Auswahl, Wirkung auf Ziel
     void selectHandTool(HandTool t);
     void handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbDown, bool lmbPressed, bool rmbDown, bool rmbPressed);
@@ -501,8 +501,10 @@ private:
     void addAnimals(FrameDesc& fd, const std::function<bool(const glm::dvec3&, const glm::dvec3&)>& visible);
     void loadAnimalLooks();
     std::string animalsCommand(const std::vector<std::string>& t);
+    // sit: 1 = sitzt im Sattel (Reiten): Beine angewinkelt und gespreizt, kein Schritt; die Hüfte liegt dann bei
+    // feet + Beinlänge, die Füße hängen seitlich herab
     void addFigure(FrameDesc& fd, uint32_t key, const glm::dvec3& feet, double yaw, double pitch, bool onGround, const glm::vec3* tint,
-                   float dt);
+                   float dt, float sit = 0);
     // Blickrichtung vom Kopf aus zum Greifen und Werfen; von hinten gesehen zielt sie auf das, was mitten im Bild liegt
     glm::dvec3 aimForward() const { return play_ && thirdPerson_ ? aim_ : playerForward(); }
     void updateThirdPersonEye();
@@ -728,20 +730,32 @@ private:
     void drawDebugOverlay();
     std::string planModeText();     // Bauplan- / Herstell-Modus: Zeile unten in der Mitte (leer: nicht in dem Modus)
     float statusBarHeight() const;  // Statusleiste unten (nur Bau-Modus), sonst 0
-    std::string eatFood();
-    // Seil (Werkzeug 9, AppRope.cpp): an ein Teil binden und es hinter sich herziehen
-    uint32_t rideId_ = 0;           // reitet dieses Tier (0: zu Fuß), AppAnimals.cpp
+    std::string eatFood();          // Fleisch aus dem Inventar essen (Taste V, "health eat")
+    // Reiten (AppAnimals.cpp)
+    uint32_t rideId_ = 0;           // reitet dieses Tier (0: zu Fuß)
     float rideLift_ = 0;            // so viel höher sitzt man (m, gleitet beim Auf- und Absteigen)
     bool rideToggle(const glm::dvec3& eye, const glm::dvec3& fwd);  // F: aufsteigen / absteigen
     void updateRide(float dt);
-    uint32_t ropeObj_ = 0;          // festgebunden an (0: nichts)
-    glm::dvec3 ropeLocal_{0};       // Stelle am Teil (lokal)
-    double ropeLen_ = 2.0;          // Seillänge (m)
-    float ropeDrag_ = 0;            // wie stark das Seil gerade zieht (0..1): bremst die Figur
-    bool hasRope() const;           // ein Seil im Inventar
-    void ropeAction(bool lmbPressed, bool rmbPressed);
+    // Seile (AppRope.cpp, aus dem Inventar): mit leerer Hand ein schweres Teil anbinden, das Ende halten (zieht beim
+    // Laufen) oder mit einem zweiten Klick an ein Pferd oder ein anderes Teil binden
+    struct Rope {
+        uint32_t obj = 0;
+        glm::dvec3 local{0};      // Stelle am angebundenen Teil (lokal)
+        enum class End { Hand, Animal, Part } end = End::Hand;
+        uint32_t endId = 0;       // Tier bzw. Teil am anderen Ende
+        glm::dvec3 endLocal{0};   // Teil: Stelle (lokal)
+        double len = 2.0;         // Länge (m)
+    };
+    std::vector<Rope> ropes_;
+    float ropeDrag_ = 0;            // wie stark ein gehaltenes Seil gerade zieht (0..1): bremst die Figur
+    bool ropeSwallow_ = false;      // der Mausklick gehörte dem Seil: bis zum Loslassen nicht tragen
+    int ropeItems() const;          // Seile im Inventar
+    int heldRope() const;           // Seil, dessen Ende man hält (-1: keins)
+    bool ropeEnds(const Rope& r, glm::dvec3& atPart, glm::dvec3& atEnd) const;
+    bool ropeClick(bool lmbPressed, bool rmbPressed);  // true: der Klick gehörte dem Seil
+    std::string ropeHint() const;   // Hinweis am Fadenkreuz
     void updateRope(float dt);
-    void addRope(FrameDesc& fd);          // Fleisch aus dem Inventar essen (Taste V, "health eat")
+    void addRope(FrameDesc& fd);
     uint32_t inspectTarget_ = 0;
     // Material-Editor
     bool showMaterials_ = false, materialsDirty_ = false;

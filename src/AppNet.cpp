@@ -432,7 +432,7 @@ void App::netPeerMessage(Peer& p, net::Msg type, const std::string& payload) {
         p.sneak = sneak;
         in.throwPower = throwPower >= 0 ? std::min(throwPower, 1.0f) : -1.0f;
         p.bandageKeys += bandageKeys;
-        p.tool = std::clamp(tool, 0, (int)HandTool::Rope);
+        p.tool = std::clamp(tool, 0, (int)HandTool::Lighter);
         p.camEye = camEye;
         p.spawnRef = spawnRef;
         if (play && (spawn || !physics_.hasCharacter((int)p.id))) {  // Figur absetzen, immer auf der Oberfläche

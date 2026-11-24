@@ -348,24 +348,37 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
             }
         return "Error: no horse within 6 m ('animals spawn wild_horse 1 3')";
     }
-    if (sub == "rope") {  // Seil (Werkzeug 9) an ein Teil binden bzw. lösen: player rope <id> | off (ohne Seil im Inventar)
+    if (sub == "rope") {  // Seil: player rope <id> (Ende in die Hand) | player rope horse (gehaltenes Ende ans nächste Pferd) | off
         const std::string w = t.size() > 2 ? t[2] : "";
         if (w.empty() || w == "off") {
-            ropeObj_ = 0;
-            return "rope released";
+            ropes_.clear();
+            return "ropes released";
+        }
+        if (w == "horse") {
+            const int held = heldRope();
+            if (held < 0 || !animals_) return "Error: no rope in hand ('player rope <id>' first)";
+            const glm::dvec3 feet = physics_.characterPosition();
+            for (const Animal& a : animals_->animals())
+                if (!a.dead && animals_->config().species[(size_t)a.species].rideable && glm::length(a.pos - feet) < 8.0) {
+                    ropes_[(size_t)held].end = Rope::End::Animal;
+                    ropes_[(size_t)held].endId = a.id;
+                    return "rope tied to " + animals_->config().species[(size_t)a.species].label;
+                }
+            return "Error: no horse within 8 m";
         }
         Object* o = world_->find((uint32_t)std::strtoul(w.c_str(), nullptr, 10));
-        if (!o || o->fixed) return "Error: player rope <id of a loose part> | off";
-        handTool_ = HandTool::Rope;
-        ropeObj_ = o->id;
-        ropeLocal_ = glm::dvec3(0);
-        ropeLen_ = std::max(1.5, glm::length(o->pos - physics_.characterPosition()) - 0.5);
-        return "rope tied to #" + std::to_string(o->id) + " " + o->name + " (" + fmtNum(o->mass, 0) + " kg), length " + fmtNum(ropeLen_, 1) + " m";
+        if (!o || o->fixed) return "Error: player rope <id of a loose part> | horse | off";
+        handTool_ = HandTool::None;
+        Rope r;
+        r.obj = o->id;
+        r.len = std::max(1.5, glm::length(o->pos - physics_.characterPosition()) - 0.5);
+        ropes_.push_back(r);
+        return "rope tied to #" + std::to_string(o->id) + " " + o->name + " (" + fmtNum(o->mass, 0) + " kg), end in hand, length " + fmtNum(r.len, 1) + " m";
     }
     if (sub == "tool") {  // Werkzeug der Leiste unten rechts wählen (wie 1 … 8)
-        static const char* const names[] = {"hand", "axe", "laser", "drill", "terra", "tractor", "pickaxe", "lighter", "rope"};
+        static const char* const names[] = {"hand", "axe", "laser", "drill", "terra", "tractor", "pickaxe", "lighter"};
         const std::string w = t.size() > 2 ? t[2] : "";
-        for (int k = 0; k < 9; ++k)
+        for (int k = 0; k < 8; ++k)
             if (w == names[k] || w == std::to_string(k + 1)) {
                 selectHandTool((HandTool)k);
                 return std::string("Tool in hand: ") + names[k];

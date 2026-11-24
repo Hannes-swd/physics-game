@@ -11,6 +11,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "Animals.h"
 #include "Materials.h"
 
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -1217,6 +1218,15 @@ void App::drawPlayHud() {
         if (heatActive_) info += "  [" + std::string(heatTools()[heatUsed_].label) + "]";
     }
     if (const std::string pl = planHudText(); !pl.empty()) info = info.empty() ? pl : info + "\n" + pl;
+    if (const std::string rh = ropeHint(); !rh.empty()) info = info.empty() ? "[" + rh + "]" : info + "\n[" + rh + "]";
+    // Reittier im Blick: Taste zum Aufsteigen; im Sattel: zum Absteigen
+    if (rideId_) {
+        if (info.empty()) info = "[" + keys::label(keys::Act::Use) + ": absteigen]";
+    } else if (animals_ && hand_.grabbed == 0) {
+        if (const uint32_t h = animals_->pickRideable(playerEye(), aimForward(), 3.0))
+            if (const Animal* a = animals_->find(h))
+                info = animals_->config().species[(size_t)a->species].label + "  [" + keys::label(keys::Act::Use) + ": aufsteigen]";
+    }
     // Bauplan / Herstellen: was gewählt ist und wie es geht, frei unten in der Mitte (ohne Kasten)
     if (const std::string pm = planModeText(); !pm.empty()) {
         const float k = std::clamp(io.DisplaySize.y / 1080.0f, 0.75f, 2.0f), size = 16.0f * k;

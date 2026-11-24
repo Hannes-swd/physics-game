@@ -87,12 +87,12 @@ void App::addAvatars(FrameDesc& fd) {
         if (netClient())  // die eigene Figur läuft beim Gastgeber
             for (const NetPlayer& p : netPlayers_)
                 if (p.id == netSelfId_) onGround = p.onGround;
-        addFigure(fd, lan ? netSelfId_ : 0, feet, playYaw_, playPitch_, onGround, lan ? &col : nullptr, dt);
+        addFigure(fd, lan ? netSelfId_ : 0, feet, playYaw_, playPitch_, onGround, lan ? &col : nullptr, dt, rideId_ ? 1.0f : 0.0f);
     }
 }
 
 void App::addFigure(FrameDesc& fd, uint32_t key, const glm::dvec3& feet, double yaw, double pitch, bool onGround, const glm::vec3* tint,
-                    float dt) {
+                    float dt, float sit) {
     const glm::mat4 I(1.0f);
     FigureAnim& a = figureAnim_[key];
     if (!a.init || glm::length(feet - a.feet) > 3.0) {  // neu oder versetzt
@@ -108,7 +108,8 @@ void App::addFigure(FrameDesc& fd, uint32_t key, const glm::dvec3& feet, double 
         a.vy += (float(feet.y - a.feet.y) / dt - a.vy) * (1.0f - std::exp(-dt / 0.05f));
     }
     a.feet = feet;
-    const float speed = glm::length(a.vel);
+    const float speed = sit > 0.5f ? 0.0f : glm::length(a.vel);  // im Sattel: keine Schritte (das Pferd läuft)
+    if (sit > 0.5f) onGround = true;
     const glm::vec3 at = glm::vec3(feet - renderOrigin_);
 
     if (!avatar_.valid()) {  // Ersatz ohne Modell: Säule mit Kopf
@@ -216,6 +217,21 @@ void App::addFigure(FrameDesc& fd, uint32_t key, const glm::dvec3& feet, double 
         bends.push_back({rig_.foot[k], {1, 0, 0}, crouch});  // Sohle bleibt flach
         bends.push_back({rig_.arm[k], {0, 0, 1}, rig_.armSide[k] * (a.air * (0.85f - 0.4f * up) + 0.25f * a.land)});
         bends.push_back({rig_.arm[k], {1, 0, 0}, a.air * 0.6f * up + 0.4f * a.land});
+    }
+    // Reiten: Oberschenkel nach vorn und zur Seite (um den Pferderücken), Unterschenkel hängen, Oberkörper leicht vor,
+    // die Hände vorn am Zügel; dazu ein leichtes Wippen im Takt des Pferdes
+    if (sit > 0) {
+        const float bob = 0.04f * std::sin(a.idleTime * 9.0f) * std::clamp(glm::length(a.vel) / 8.0f, 0.0f, 1.0f);
+        bends.push_back({rig_.torso, {1, 0, 0}, sit * (0.18f + bob)});
+        for (int k = 0; k < 2; ++k) {
+            const float side = avatar_.restPosition(rig_.thigh[k]).x < 0 ? -1.0f : 1.0f;
+            bends.push_back({rig_.thigh[k], {1, 0, 0}, sit * 1.35f});
+            bends.push_back({rig_.thigh[k], {0, 0, 1}, sit * side * 0.5f});
+            bends.push_back({rig_.shin[k], {1, 0, 0}, -sit * 1.45f});
+            bends.push_back({rig_.foot[k], {1, 0, 0}, sit * 0.2f});
+            bends.push_back({rig_.arm[k], {1, 0, 0}, sit * 0.75f});
+            bends.push_back({rig_.arm[k], {0, 0, 1}, -sit * rig_.armSide[k] * 0.15f});
+        }
     }
     const float drop = rig_.legLength * (1.0f - std::cos(crouch));
 

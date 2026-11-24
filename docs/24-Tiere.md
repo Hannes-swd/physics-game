@@ -188,7 +188,9 @@ sich reiten. Man findet sie frei in der Wildnis; sie sind scheu, also leise hera
   unter der Figur mit: **Trab 7 m/s**, mit **Shift Galopp 15 m/s** (zu Fuß 4 bzw. 7 m/s). **F** nochmal: absteigen.
 - Ein gerittenes Pferd verlässt seine Herde und ist **zahm**: es bleibt stehen, wo man abgestiegen ist, und
   verschwindet nicht, auch wenn man weit weggeht. Man kann also zurückkommen und wieder aufsteigen.
-- **Mit Seil ziehen:** Werkzeug 9 (Seil) geht auch im Sattel. An einen gefällten Stamm binden, dann zieht das Pferd mit
-  der vierfachen Kraft (bis 24 000 N) und wird dabei weniger gebremst als man zu Fuß: so kommen auch große Stämme mit.
+- Schaut man ein Pferd an, steht am Fadenkreuz „**F: aufsteigen**“ (im Sattel: „F: absteigen“).
+- **Mit Seil ziehen:** mit leerer Hand links auf einen gefällten Stamm (das Seil hängt daran, das Ende hält man), dann
+  links auf das Pferd: das Seil ist dort festgemacht. Aufsteigen und losreiten zieht den Stamm mit der vierfachen Kraft
+  (bis 24 000 N, ein 440-kg-Stamm kommt im Trab mit). Das geht auch im Sattel: Stamm anklicken, das Pferd zieht.
 - Stirbt das Pferd (Wolf, fallender Baum), fällt man herunter. Mitspieler im LAN können noch nicht reiten.
-- Befehl: `player ride` (auf das nächste Pferd bis 6 m), `player ride off`.
+- Befehle: `player ride` (auf das nächste Pferd bis 6 m), `player ride off`; `player rope <id>`, `player rope horse`.

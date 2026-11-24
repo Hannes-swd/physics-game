@@ -615,9 +615,9 @@ void App::playInput(float dt) {
     // Werkzeuge: 1 Hand, 2 Axt, 3 Laser, 4 Erdbohrer, 5 Planierer, 6 Traktorstrahl, 7 Spitzhacke (Leiste unten rechts).
     // X ist zusätzlich der Schalter für die Axt. Mit einem Werkzeug in der Hand wirkt die linke Maustaste das Werkzeug.
     if (!io.WantTextInput && !planMode_) {  // in der Bauvorlagen-Auswahl zählen 1-0 für die Vorlagen
-        const HandTool slots[9] = {HandTool::None,  HandTool::Axe,     HandTool::Laser,   HandTool::Drill,
-                                   HandTool::Terra, HandTool::Tractor, HandTool::Pickaxe, HandTool::Lighter, HandTool::Rope};
-        for (int k = 0; k < 9; ++k)
+        const HandTool slots[8] = {HandTool::None,  HandTool::Axe,     HandTool::Laser,   HandTool::Drill,
+                                   HandTool::Terra, HandTool::Tractor, HandTool::Pickaxe, HandTool::Lighter};
+        for (int k = 0; k < 8; ++k)
             if (keys::pressed((keys::Act)((int)keys::Act::Tool1 + k))) selectHandTool(slots[k]);
         if (keys::pressed(keys::Act::Axe)) selectHandTool(handTool_ == HandTool::Axe ? HandTool::None : HandTool::Axe);
     }
@@ -643,7 +643,14 @@ void App::playInput(float dt) {
     }
     // Bauvorlagen: B Vorlage setzen (dann setzt die linke Maustaste, rechts beendet), Q halten baut ab
     planInput(dt, eye, fwd, lmbDown && !prevLmb_, rmbDown && !prevRmb_);
-    const bool lmbPressed = lmbDown && !prevLmb_, rmbPressed = rmbDown && !prevRmb_;
+    bool lmbPressed = lmbDown && !prevLmb_, rmbPressed = rmbDown && !prevRmb_;
+    // Seil (AppRope.cpp): mit leerer Hand ein schweres Teil anbinden, das Ende festmachen, lösen. Der Klick gehört dann
+    // dem Seil (nicht tragen, nicht werfen, kein Schlag), bis die Maustaste wieder los ist
+    if ((lmbPressed || rmbPressed) && handTool_ == HandTool::None && !hand_.grabbed && !planMode_ && !netClient() &&
+        ropeClick(lmbPressed, rmbPressed))
+        ropeSwallow_ = true;
+    if (!lmbDown && !rmbDown) ropeSwallow_ = false;
+    if (ropeSwallow_) lmbPressed = rmbPressed = false;
     // Wurf aufladen: trägt man etwas (mit leeren Händen sonst), lädt eine gehaltene Maustaste den Wurf auf (Streifen
     // unter dem Fadenkreuz), loslassen wirft – je länger, desto fester. Links für mit E Aufgehobenes (ein kurzer Klick legt
     // es wie bisher ab), rechts für alles (auch was man mit gehaltener linker Taste trägt)
@@ -667,7 +674,7 @@ void App::playInput(float dt) {
     }
     // Schlag (linke Maustaste): ein Tier im Blick wird getroffen (Werkzeug: fester, weiter), sonst lassen Tiere direkt vor
     // der Figur ab und fliehen
-    if (lmbPressed && !carrying && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_ && handTool_ != HandTool::Lighter && handTool_ != HandTool::Rope) {
+    if (lmbPressed && !carrying && animals_ && !planMode_ && !netClient() && time_ >= strikeReady_ && handTool_ != HandTool::Lighter) {
         strikeReady_ = time_ + 0.4;
         if (!animalStrike(eye, fwd, handTool_)) {
             const glm::dvec3 hit = playerEye() + glm::normalize(glm::dvec3(fwd.x, 0, fwd.z) + glm::dvec3(1e-9)) * 1.2 - glm::dvec3(0, 1.0, 0);
@@ -677,7 +684,7 @@ void App::playInput(float dt) {
     handToolAction(eye, fwd, lmbDown, lmbPressed, rmbDown, rmbDown && !prevRmb_);
     const bool inHand = handTool_ != HandTool::None;
     HandInput in;
-    in.lmbDown = lmbDown && !inHand;
+    in.lmbDown = lmbDown && !inHand && !ropeSwallow_;
     in.lmbPresses = lmbClick && !inHand;
     in.rmbPresses = rmbClick;
     in.throwPower = throwPower;

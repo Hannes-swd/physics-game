@@ -33,7 +33,7 @@ void App::selectHandTool(HandTool t) {
     if (t != HandTool::None) planMode_ = false;  // Bauvorlagen und Werkzeug schließen sich aus
     switch (t) {
     case HandTool::None:
-        toast("Hand: Maus links nimmt Teile auf, rechts wirft sie (" + keys::label1(keys::Act::Tool1) + "-" + keys::label1(keys::Act::Tool9) +
+        toast("Hand: Maus links nimmt Teile auf, rechts wirft sie (" + keys::label1(keys::Act::Tool1) + "-" + keys::label1(keys::Act::Tool8) +
               " wählt ein Werkzeug)");
         break;
     case HandTool::Axe:
@@ -46,11 +46,6 @@ void App::selectHandTool(HandTool t) {
     case HandTool::Tractor: toast("Traktorstrahl: Linksklick zieht Steine, Stöcke und Stämme bis 10 m ins Inventar"); break;
     case HandTool::Pickaxe: toast("Spitzhacke: Linksklick auf Stein oder Erz schlägt einen Brocken ab (er kommt ins Inventar)"); break;
     case HandTool::Lighter: toast("Feuerzeug: Maus links halten hält die Flamme an das Teil, das du anschaust (bis 3 m)"); break;
-    case HandTool::Rope:
-        toast(hasRope() ? "Seil: Maus links auf einen Stamm oder ein Teil bindet es an, dann laufen zieht es; nochmal links / rechts löst"
-                        : "Seil: erst eins herstellen (" + keys::label(keys::Act::Craft) + ", Rezept Seil, aus Fell)",
-              hasRope());
-        break;
     }
 }
 
@@ -97,7 +92,6 @@ void App::handToolAction(const glm::dvec3& eye, const glm::dvec3& fwd, bool lmbD
     const bool hitPart = hitAny && h.obj;  // sonst trifft der Strahl das Gelände (h.obj == nullptr)
     const bool ready = time_ >= toolReady_;
     switch (handTool_) {
-    case HandTool::Rope: ropeAction(lmbPressed, rmbPressed); break;
     case HandTool::Axe:
         if (lmbPressed && ready && hitPart && h.t < kAxeReach) {
             toolReady_ = time_ + 0.4;  // ein Hieb braucht etwas Zeit
@@ -209,8 +203,7 @@ void App::drawHandToolBar() {
                                  {HandTool::Terra, icons::Id::Shovel, "Planierer", keys::Act::Tool5},
                                  {HandTool::Tractor, icons::Id::Tractor, "Traktorstrahl", keys::Act::Tool6},
                                  {HandTool::Pickaxe, icons::Id::Pickaxe, "Spitzhacke", keys::Act::Tool7},
-                                 {HandTool::Lighter, icons::Id::Lighter, "Feuerzeug", keys::Act::Tool8},
-                                 {HandTool::Rope, icons::Id::Rope, "Seil", keys::Act::Tool9}};
+                                 {HandTool::Lighter, icons::Id::Lighter, "Feuerzeug", keys::Act::Tool8}};
     const int n = (int)(sizeof(slots) / sizeof(slots[0]));
     const float r = 28, gap = 9;
     ImGuiIO& io = ImGui::GetIO();

@@ -507,8 +507,7 @@ bool App::animalStrike(const glm::dvec3& eye, const glm::dvec3& fwd, HandTool to
     case HandTool::Drill: damage = 0.3f, reach = 2.2; break;
     case HandTool::Terra: damage = 0.15f, reach = 2.2; break;
     case HandTool::Tractor:
-    case HandTool::Lighter:
-    case HandTool::Rope: return false;  // kein Schlag
+    case HandTool::Lighter: return false;  // kein Schlag
     default: break;
     }
     bool killed = false;
@@ -551,7 +550,7 @@ bool App::rideToggle(const glm::dvec3& eye, const glm::dvec3& fwd) {
     if (!a || !physics_.hasCharacter()) return false;
     animals_->setRidden(id, true);
     rideId_ = id;
-    handTool_ = handTool_ == HandTool::Rope ? HandTool::Rope : HandTool::None;
+    handTool_ = HandTool::None;  // im Sattel mit leerer Hand (Seil geht weiter)
     physics_.setCharacterPosition(a->pos + glm::dvec3(0, 0.05, 0));
     playYaw_ = a->yaw;
     toast("Aufgestiegen: " + animals_->config().species[(size_t)a->species].label + " - " + keys::moveLabel() + " reiten, " +
@@ -569,7 +568,7 @@ void App::updateRide(float dt) {
             if (a && a->dead) toast("Das Pferd ist tot", false);
         } else {
             const AnimalSpecies& s = animals_->config().species[(size_t)a->species];
-            target = 0.55f * s.height;  // Sattelhöhe
+            target = std::max(0.2f, 0.72f * s.height - rig_.legLength);  // Hüfte auf dem Rücken (Sattel bei ~72 % der Höhe)
             const glm::dvec3 v = physics_.characterVelocity();
             animals_->steer(rideId_, physics_.characterPosition(), (float)playYaw_, (float)glm::length(glm::dvec2(v.x, v.z)));
         }

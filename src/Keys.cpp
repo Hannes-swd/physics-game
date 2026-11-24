@@ -36,7 +36,6 @@ const ActInfo kActs_[kActs] = {
     {"tool6", "Traktorstrahl", "Werkzeuge", Ctx::Play, "6"},
     {"tool7", "Spitzhacke", "Werkzeuge", Ctx::Play, "7"},
     {"tool8", "Feuerzeug", "Werkzeuge", Ctx::Play, "8"},
-    {"tool9", "Seil (zum Ziehen)", "Werkzeuge", Ctx::Play, "9"},
     {"buildSelect", "Auswählen / Bewegen", "Bau-Modus", Ctx::Build, "V Q"},
     {"buildSaw", "Säge", "Bau-Modus", Ctx::Build, "S"},
     {"buildDrill", "Bohrer", "Bau-Modus", Ctx::Build, "B"},
