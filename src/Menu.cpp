@@ -993,6 +993,10 @@ public:
             m["group"] = qs(e.group);
             m["kg"] = e.kg;
             m["color"] = qs(e.color);
+            m["color2"] = qs(e.color2);
+            m["pattern"] = qs(e.pattern);
+            m["roughness"] = e.roughness;
+            m["metallic"] = e.metallic;
             m["polys"] = polyList(e.polys);
             giveList_.push_back(m);
         }

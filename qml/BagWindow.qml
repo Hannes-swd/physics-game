@@ -422,18 +422,78 @@ ApplicationWindow {
                                                 }
                                                 return
                                             }
-                                            const c = entry.modelData.color || "#999999"
-                                            const r = width * 0.4, cx = width / 2, cy = height / 2
-                                            const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r)
-                                            g.addColorStop(0, String(Qt.lighter(c, 1.6)))
-                                            g.addColorStop(0.45, c)
-                                            g.addColorStop(1, String(Qt.darker(c, 2.2)))
-                                            ctx.fillStyle = g
+                                            // Kugel mit dem Muster des Materials (wie im Spiel): erst die Fläche mit Muster,
+                                            // dann Licht (heller Fleck oben links) und Schatten zum Rand darüber
+                                            const d = entry.modelData
+                                            const c = d.color || "#999999", c2 = d.color2 || c, pat = d.pattern || "plain"
+                                            const r = width * 0.42, cx = width / 2, cy = height / 2
+                                            let seed = 7
+                                            for (let i = 0; i < d.id.length; ++i) seed = (seed * 31 + d.id.charCodeAt(i)) % 2147483647
+                                            const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
+                                            ctx.save()
                                             ctx.beginPath()
                                             ctx.arc(cx, cy, r, 0, 2 * Math.PI)
-                                            ctx.fill()
+                                            ctx.clip()
+                                            ctx.fillStyle = c
+                                            ctx.fillRect(0, 0, width, height)
+                                            if (pat === "wood") {  // Maserung: geschwungene Jahresringe quer über die Kugel
+                                                ctx.strokeStyle = c2
+                                                for (let i = -6; i <= 6; ++i) {
+                                                    ctx.lineWidth = 0.8 + rnd() * 1.6
+                                                    ctx.globalAlpha = 0.45 + rnd() * 0.4
+                                                    const y0 = cy + i * r * 0.17
+                                                    ctx.beginPath()
+                                                    ctx.moveTo(cx - r, y0)
+                                                    ctx.bezierCurveTo(cx - r * 0.3, y0 - r * (0.18 + rnd() * 0.2), cx + r * 0.3, y0 + r * (0.12 + rnd() * 0.2), cx + r, y0 - r * 0.05)
+                                                    ctx.stroke()
+                                                }
+                                            } else if (pat === "brick") {  // Ziegel: versetzte Reihen, helle Fugen
+                                                ctx.strokeStyle = c2
+                                                ctx.lineWidth = 1.4
+                                                const rowH = r * 0.42
+                                                for (let row = 0; row < 6; ++row) {
+                                                    const y = cy - r + row * rowH
+                                                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke()
+                                                    for (let x = (row % 2) * r * 0.45 - r; x < width; x += r * 0.9) {
+                                                        ctx.beginPath(); ctx.moveTo(cx + x, y); ctx.lineTo(cx + x, y + rowH); ctx.stroke()
+                                                    }
+                                                }
+                                            } else if (pat === "metal") {  // Metall: feine gebürstete Linien
+                                                ctx.lineWidth = 0.6
+                                                for (let i = 0; i < 40; ++i) {
+                                                    ctx.strokeStyle = rnd() < 0.5 ? c2 : String(Qt.lighter(c, 1.25))
+                                                    ctx.globalAlpha = 0.25 + rnd() * 0.3
+                                                    const y = cy - r + rnd() * 2 * r
+                                                    ctx.beginPath(); ctx.moveTo(cx - r, y); ctx.lineTo(cx + r, y + (rnd() - 0.5) * 1.5); ctx.stroke()
+                                                }
+                                            } else if (pat === "stone" || pat === "concrete" || pat === "ground") {
+                                                // Stein: grobe Sprenkel in beiden Farben; Beton und Boden: feine Körnung
+                                                const n = pat === "stone" ? 70 : 160, big = pat === "stone" ? 2.6 : 1.1
+                                                for (let i = 0; i < n; ++i) {
+                                                    const t = rnd()
+                                                    ctx.fillStyle = t < 0.45 ? c2 : t < 0.75 ? String(Qt.darker(c, 1.35)) : String(Qt.lighter(c, 1.3))
+                                                    ctx.globalAlpha = 0.5 + rnd() * 0.45
+                                                    const a = rnd() * 2 * Math.PI, dd = Math.sqrt(rnd()) * r
+                                                    ctx.beginPath()
+                                                    ctx.arc(cx + Math.cos(a) * dd, cy + Math.sin(a) * dd, 0.5 + rnd() * big, 0, 2 * Math.PI)
+                                                    ctx.fill()
+                                                }
+                                            }
+                                            ctx.globalAlpha = 1
+                                            // Licht und Schatten: Kugel-Form
+                                            const metal = pat === "metal" || d.metallic > 0.5, gloss = pat === "plastic" || metal
+                                            const shade = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.05, cx, cy, r * 1.02)
+                                            shade.addColorStop(0, "rgba(255, 255, 255, " + (gloss ? 0.75 : 0.35) + ")")
+                                            shade.addColorStop(gloss ? 0.18 : 0.35, "rgba(255, 255, 255, 0)")
+                                            shade.addColorStop(0.7, "rgba(0, 0, 0, 0.12)")
+                                            shade.addColorStop(1, "rgba(0, 0, 0, " + (metal ? 0.65 : 0.55) + ")")
+                                            ctx.fillStyle = shade
+                                            ctx.fillRect(0, 0, width, height)
+                                            ctx.restore()
                                             ctx.strokeStyle = "rgba(20, 10, 4, 0.7)"
                                             ctx.lineWidth = 1
+                                            ctx.beginPath()
+                                            ctx.arc(cx, cy, r, 0, 2 * Math.PI)
                                             ctx.stroke()
                                         }
                                         Connections {

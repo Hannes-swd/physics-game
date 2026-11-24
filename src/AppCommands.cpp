@@ -1217,7 +1217,9 @@ std::vector<InventoryUi::GiveEntry> App::giveList() const {
         for (const PlanPieceDef& d : r.pieces)
             kgs += 8.0 * d.half.x * d.half.y * d.half.z *
                    materials()[(size_t)std::max(0, materialIndex(byKind[std::clamp((int)d.mat, 0, kPlanMats - 1)]))].density;
-        list.push_back({r.id, r.label, "Hergestellt", kgs, "", planPicture(r)});
+        InventoryUi::GiveEntry e{r.id, r.label, "Hergestellt", kgs};
+        e.polys = planPicture(r);  // Zeichnung des Dings
+        list.push_back(std::move(e));
     }
     // Farbe fürs Bild (Kugel): Materialfarbe, für den Bildschirm aufgehellt (linear -> sRGB)
     auto hex = [](const glm::vec3& lin) {
@@ -1226,15 +1228,33 @@ std::vector<InventoryUi::GiveEntry> App::giveList() const {
         std::snprintf(b, sizeof(b), "#%02x%02x%02x", (int)c.r, (int)c.g, (int)c.b);
         return std::string(b);
     };
+    // Muster der Kugel wie die Oberfläche im Spiel (Shading): Maserung, Sprenkel, Fugen, Glanz
+    auto entry = [&](const Material& m, const char* group, double kgs) {
+        InventoryUi::GiveEntry e{m.name, m.label, group, kgs, hex(m.color)};
+        e.color2 = hex(m.color2);
+        switch (m.shading) {
+        case Shading::Wood: e.pattern = "wood"; break;
+        case Shading::Brick: e.pattern = "brick"; break;
+        case Shading::Metal: e.pattern = "metal"; break;
+        case Shading::Stone: e.pattern = "stone"; break;
+        case Shading::Rubber: e.pattern = "rubber"; break;
+        case Shading::Concrete: e.pattern = "concrete"; break;
+        case Shading::Plastic: e.pattern = "plastic"; break;
+        case Shading::Ground: e.pattern = "ground"; break;
+        default: e.pattern = "plain"; break;
+        }
+        e.roughness = m.roughness;
+        e.metallic = m.metallic;
+        return e;
+    };
     static const char* const foods[] = {"apple", "carrot", "berries", "cactus_fruit", "meat"};
     static const double foodKg[] = {0.3, 0.15, 0.1, 0.5, 1.5};
     for (int i = 0; i < 5; ++i)
-        if (const int m = findMaterialIndex(foods[i]); m >= 0)
-            list.push_back({foods[i], materials()[(size_t)m].label, "Essen", foodKg[i], hex(materials()[(size_t)m].color), {}});
+        if (const int m = findMaterialIndex(foods[i]); m >= 0) list.push_back(entry(materials()[(size_t)m], "Essen", foodKg[i]));
     for (const Material& m : materials()) {
         bool food = false;
         for (const char* f : foods) food |= std::strcmp(m.name, f) == 0;
-        if (!food) list.push_back({m.name, m.label, "Material", 1.0, hex(m.color), {}});
+        if (!food) list.push_back(entry(m, "Material", 1.0));
     }
     return list;
 }

@@ -32,6 +32,9 @@ public:
         std::string id, label, group;  // group: "Hergestellt", "Essen", "Material"
         double kg = 1;                 // übliches Gewicht
         std::string color;             // "#rrggbb": Materialien und Essen als Kugel in dieser Farbe
+        std::string color2;            // zweite Farbe (Maserung, Sprenkel, Fugen)
+        std::string pattern;           // Muster der Kugel: wood, stone, brick, concrete, metal, rubber, plastic, plain, ground
+        float roughness = 0.5f, metallic = 0;
         std::vector<CatalogUi::Poly> polys;  // Hergestelltes: Zeichnung des Dings (sonst leer)
     };
     virtual void setGiveList(bool cheats, const std::vector<GiveEntry>& list) = 0;
