@@ -118,9 +118,10 @@ Man muss nicht jagen: In der Natur liegt **Essbares am Boden**, mit **F** aufheb
 | Fund | wo | satt je Stück |
 |---|---|---|
 | **Apfel** (rot) | Wald, Kirschhain, Dschungel, Hügel | 8 % |
+| **Kaktusfeige** (pink, oben auf Kakteen) | Wüste, Canyon (überall, wo Kakteen wachsen: auf gut der Hälfte 1–3 Früchte) | 7 % |
 | **Karotte** (orange) | Ebene, Wiese, Steppe, Hügel | 6 % |
 | **Beeren** (dunkle Traube) | Wiese, Wald, Sumpf, Taiga, Tundra | 5 % |
 
-V isst zuerst Gefundenes, dann Fleisch. Wie viel wo liegt, steht in `assets/biomes.json` unter `"food"` (`per_ha`,
+Gesammelt wird wie bei Steinen: **F** steckt es direkt ins Inventar, mit gehaltener linker Maustaste trägt man es. **V** isst, was man gerade **in der Hand** hält (getragen oder aus dem Inventar genommen), sonst aus dem Inventar zuerst Gefundenes, dann Fleisch. Wie viel wo liegt, steht in `assets/biomes.json` unter `"food"` (`per_ha`,
 `size`, `material`: `apple`, `carrot`, `berries`). Aufgehobenes wächst nicht nach (die Welt merkt es sich wie bei
 Steinen und Stöcken). Befehle: `food` (Essbares im Umkreis von 40 m), `food take` (das nächste aufheben), `tp food`.

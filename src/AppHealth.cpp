@@ -650,7 +650,7 @@ void App::drawHealthHud() {
 
 // ============================================================================ Befehl
 
-// Essen (Taste V): zuerst Gefundenes (Apfel 8 %, Karotte 6 %, Beeren 5 % satt je Stück), sonst das leichteste Stück
+// Essen (Taste V): was man in der Hand hält, sonst aus dem Inventar zuerst Gefundenes (Apfel 8 %, Karotte 6 %, Beeren 5 % satt je Stück), sonst das leichteste Stück
 // Fleisch (1 kg = 20 %, ein Stück von ~1,5 kg eine Mahlzeit)
 std::string App::eatFood() {
     if (netClient()) return "Error: als Mitspieler im LAN noch nicht möglich (kein Inventar)";
@@ -659,7 +659,18 @@ std::string App::eatFood() {
         const char* material;
         double perPiece, perKg;
     };
-    static const Food foods[] = {{"apple", 0.08, 0}, {"carrot", 0.06, 0}, {"berries", 0.05, 0}, {"meat", 0, 0.2}};
+    static const Food foods[] = {{"apple", 0.08, 0}, {"cactus_fruit", 0.07, 0}, {"carrot", 0.06, 0}, {"berries", 0.05, 0}, {"meat", 0, 0.2}};
+    // in der Hand (getragen oder mit E aufgehoben): genau das essen
+    if (Object* held = world_->find(hand_.grabbed))
+        for (const Food& f : foods)
+            if (held->material == materialIndex(f.material)) {
+                const std::string name = held->name;
+                const double gain = f.perPiece + f.perKg * held->mass;
+                hand_.grabbed = 0;
+                world_->remove(held->id);
+                me_.health.eat(gain);
+                return "gegessen: " + name + ", satt " + fmtNum(me_.health.food() * 100, 0) + " %";
+            }
     int best = -1;
     double gain = 0;
     for (const Food& f : foods) {

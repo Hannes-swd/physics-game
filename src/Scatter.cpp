@@ -251,6 +251,7 @@ ScatterField::ScatterField(std::shared_ptr<const WorldGen> gen, const Terrain* t
             maxDensity_[k] = std::max(maxDensity_[k], s.perHa / 10000.0);
             any_ |= s.perHa > 0;
         }
+    fruitMat_ = findMaterialIndex("cactus_fruit");
     if (!any_) return;
     for (int k = 0; k < kScatterKinds; ++k)
         for (int i = 0; i < kVariants[k]; ++i) {
@@ -327,6 +328,7 @@ void ScatterField::compute(int64_t tx, int64_t tz, Tile& t) {
     for (int kind = 0; kind < kScatterKinds; ++kind) {
         if (maxDensity_[kind] <= 0) continue;
         const uint64_t kindSeed = noise::mix64(tileSeed + 0xC0FFEEull * (uint64_t)(kind + 1));
+        std::vector<ScatterSpot> fruitSpots;  // Kaktusfeigen des eben gesetzten Kaktus
         Rng r{kindSeed};
         const double expect = maxDensity_[kind] * kTile * kTile;
         const int n = std::min(255, (int)expect + (r.next() < expect - std::floor(expect) ? 1 : 0));
@@ -419,6 +421,27 @@ void ScatterField::compute(int64_t tx, int64_t tz, Tile& t) {
                 s.rot = glm::angleAxis(yaw, up) * glm::angleAxis(0.04 * tilt, dvec3(std::cos(tiltAxis), 0, std::sin(tiltAxis)));
                 s.pos = dvec3(x, ground - std::min(0.08, 0.04 * size) - shapes_[(size_t)s.shape].bottom * size, z);
                 if (!clearOfTrees(s.pos, s.pos, thick)) continue;
+                // Kaktusfeigen: auf gut der Hälfte der Kakteen ein bis drei rote Früchte oben am Rand (eigene Stücke der Art Essen)
+                if (fruitMat_ >= 0 && kindShapes_[kScatterFood].size() > 0 && q.next() < 0.6) {
+                    const int fruits = 1 + (int)(q.next() * 3);
+                    // Höhe der Kaktus-Oberfläche: Vorlage 0..1 hoch, ab y = 0,9 rundet sie sich zur Spitze. Die Früchte sitzen
+                    // knapp unter der Rundung am Rand, gut zur Hälfte in der Haut
+                    const double rad = 0.5 * thick, at = 0.9;
+                    const double topY = s.pos.y + (at + shapes_[(size_t)s.shape].bottom) * size;
+                    for (int f = 0; f < fruits; ++f) {
+                        const double ang = yaw + f * 2.1 + q.next() * 0.6, fs = q.range(0.11, 0.15);
+                        ScatterSpot fr;
+                        fr.kind = kScatterFood;
+                        // Art Essen, Nummer der Frucht (1..3) in den freien Bits 60/61: nie gleich einem Stück am Boden
+                        fr.key = (s.key & ~(0xFull << 56)) | ((uint64_t)kScatterFood << 56) | ((uint64_t)(f + 1) << 60);
+                        fr.material = fruitMat_;
+                        fr.shape = kindShapes_[kScatterFood][0];
+                        fr.size = fs;
+                        fr.rot = glm::angleAxis(ang, up);
+                        fr.pos = dvec3(x + std::cos(ang) * rad * 0.92, topY + fs * 0.1, z + std::sin(ang) * rad * 0.92);
+                        fruitSpots.push_back(fr);
+                    }
+                }
             } else {
                 // Stumpf: steht, Höhe / Breite wie gewürfelt
                 s.shape = pickShape(kind, size / std::max(thick, 0.05), shapeR);
@@ -428,6 +451,8 @@ void ScatterField::compute(int64_t tx, int64_t tz, Tile& t) {
                 if (!clearOfTrees(s.pos, s.pos, thick * 0.65)) continue;
             }
             t.spots.push_back(s);
+            for (const ScatterSpot& fr : fruitSpots) t.spots.push_back(fr);
+            fruitSpots.clear();
         }
     }
 }

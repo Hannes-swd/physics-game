@@ -105,7 +105,8 @@ private:
     std::vector<int> kindShapes_[kScatterKinds];                     // Vorlagen je Art
     std::vector<GenConfig::Biome::Scatter> biomes_[kScatterKinds];  // je Art und Biom (fehlt es in der Welt: eingebaute Werte)
     std::vector<std::vector<int>> materials_[kScatterKinds];        // je Art und Biom: Materialien
-    double maxDensity_[kScatterKinds] = {};                          // je m², das dichteste Biom
+    double maxDensity_[kScatterKinds] = {};
+    int fruitMat_ = -1;  // Kaktusfeige (wächst auf Kakteen), -1: Material fehlt                          // je m², das dichteste Biom
     uint64_t seed_ = 0;
     bool any_ = false;
     std::unordered_map<uint64_t, Tile> tiles_;
