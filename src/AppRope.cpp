@@ -6,6 +6,8 @@
 //  - Hält man ein Ende: Linksklick auf ein Pferd oder ein anderes Teil (Baum, Pfosten, noch ein Stamm) macht es dort fest.
 //    Reitet man das Pferd, an dem es festgemacht ist, zieht das Pferd den Stamm.
 //  - Rechtsklick: das gehaltene Ende loslassen, sonst alle Seile am angeschauten Teil lösen.
+//  - Linksklick auf ein Tier (am Boden, auch ein Pferd): angeleint, es läuft einem hinterher (bleibt zahm, flieht nicht
+//    mehr). Mehrere Tiere: je ein Seil. Das Ende lässt sich wie oben an ein Pferd, einen Baum oder ein Teil binden.
 // Zu weit gezerrt (Teil hängt fest) rutscht ein Seil ab. Der Gastgeber rechnet (Mitspieler: noch nicht, kein Inventar).
 #include "App.h"
 
@@ -17,6 +19,7 @@
 
 #include "Animals.h"
 #include "Materials.h"
+#include "Terrain.h"
 
 namespace {
 constexpr double kRopeReach = 3.5;      // so weit weg kann man anbinden (m)
@@ -42,10 +45,21 @@ int App::heldRope() const {
 }
 
 // Wo ein Ende gerade ist (Welt). false: das Ende gibt es nicht mehr
+glm::dvec3 App::animalRopePoint(const Animal& an) const {
+    const AnimalSpecies& s = animals_->config().species[(size_t)an.species];
+    return an.pos + glm::dvec3(-std::sin(an.yaw), 0, -std::cos(an.yaw)) * (0.25 * s.height) + glm::dvec3(0, 0.7 * s.height, 0);
+}
+
 bool App::ropeEnds(const Rope& r, glm::dvec3& a, glm::dvec3& b) const {
-    const Object* o = world_->find(r.obj);
-    if (!o) return false;
-    a = o->pos + o->rot * r.local;
+    if (r.animal) {  // angeleintes Tier: Seil am Hals
+        const Animal* an = animals_ ? animals_->find(r.animal) : nullptr;
+        if (!an || an->dead) return false;
+        a = animalRopePoint(*an);
+    } else {
+        const Object* o = world_->find(r.obj);
+        if (!o) return false;
+        a = o->pos + o->rot * r.local;
+    }
     switch (r.end) {
     case Rope::End::Hand:
         if (!physics_.hasCharacter()) return false;
@@ -54,7 +68,7 @@ bool App::ropeEnds(const Rope& r, glm::dvec3& a, glm::dvec3& b) const {
     case Rope::End::Animal: {
         const Animal* an = animals_ ? animals_->find(r.endId) : nullptr;
         if (!an || an->dead) return false;
-        b = an->pos + glm::dvec3(0, 0.6 * animals_->config().species[(size_t)an->species].height, 0);
+        b = animalRopePoint(*an);
         return true;
     }
     case Rope::End::Part: {
@@ -72,7 +86,7 @@ bool App::ropeClick(bool lmb, bool rmb) {
     Object* o = world_->find(lookAt_);
     const bool inReach = o && lookHit_.obj == o && lookDist_ <= kRopeReach;
     const glm::dvec3 eye = playerEye(), fwd = aimForward();
-    const uint32_t horse = animals_ ? animals_->pickRideable(eye, fwd, kRopeReach) : 0;
+    const uint32_t horse = animals_ ? animals_->pickAlive(eye, fwd, kRopeReach) : 0;  // ein Tier im Blick
     if (rmb) {  // lösen
         if (held >= 0) {
             ropes_.erase(ropes_.begin() + held);
@@ -81,8 +95,8 @@ bool App::ropeClick(bool lmb, bool rmb) {
         }
         const size_t before = ropes_.size();
         ropes_.erase(std::remove_if(ropes_.begin(), ropes_.end(), [&](const Rope& r) {
-                         return (inReach && (r.obj == o->id || (r.end == Rope::End::Part && r.endId == o->id))) ||
-                                (horse && r.end == Rope::End::Animal && r.endId == horse);
+                         return (inReach && !horse && (r.obj == o->id || (r.end == Rope::End::Part && r.endId == o->id))) ||
+                                (horse && (r.animal == horse || (r.end == Rope::End::Animal && r.endId == horse)));
                      }),
                      ropes_.end());
         if (ropes_.size() == before) return false;
@@ -94,13 +108,15 @@ bool App::ropeClick(bool lmb, bool rmb) {
         Rope& r = ropes_[(size_t)held];
         glm::dvec3 a, b;
         if (!ropeEnds(r, a, b)) return false;
-        if (horse) {
+        if (horse && horse != r.animal) {
             const Animal* an = animals_->find(horse);
             r.end = Rope::End::Animal;
             r.endId = horse;
             r.len = std::max(1.5, glm::length(an->pos - a) + 0.3);
-            toast("Seil am " + animals_->config().species[(size_t)an->species].label + " festgemacht - aufsteigen (" +
-                  keys::label(keys::Act::Use) + ") und reiten zieht es");
+            toast(animals_->config().species[(size_t)an->species].rideable
+                      ? "Seil am " + animals_->config().species[(size_t)an->species].label + " festgemacht - aufsteigen (" +
+                            keys::label(keys::Act::Use) + ") und reiten zieht es"
+                      : "Seil am " + animals_->config().species[(size_t)an->species].label + " festgemacht");
             return true;
         }
         if (inReach && o->id != r.obj) {
@@ -113,8 +129,26 @@ bool App::ropeClick(bool lmb, bool rmb) {
         }
         return false;  // ins Leere: weiter halten (rechts lässt los)
     }
-    if (!inReach || o->fixed || o->mass * 9.81 <= kLiftForce) return false;  // leicht: wie immer tragen
     const int items = ropeItems();
+    if (horse && items > 0) {  // ein Tier anleinen
+        bool tied = false;
+        for (const Rope& r : ropes_) tied |= r.animal == horse;
+        const Animal* an = animals_->find(horse);
+        if (tied || !an) return false;
+        if ((int)ropes_.size() >= items) {
+            toast("Alle Seile sind schon angebunden (rechts auf ein Tier oder Teil löst eins)", false);
+            return true;
+        }
+        animals_->leash(horse);
+        Rope r;
+        r.animal = horse;
+        r.len = 2.5;
+        ropes_.push_back(r);
+        toast(animals_->config().species[(size_t)an->species].label + " angeleint - es läuft dir nach; links auf ein Pferd, einen Baum "
+              "oder ein Teil macht das Seil dort fest, rechts lässt los");
+        return true;
+    }
+    if (!inReach || o->fixed || o->mass * 9.81 <= kLiftForce) return false;  // leicht: wie immer tragen
     if (items == 0) return false;  // kein Seil: wie bisher schieben
     if ((int)ropes_.size() >= items) {
         toast("Alle Seile sind schon angebunden (rechts auf ein Teil löst eins)", false);
@@ -132,6 +166,12 @@ bool App::ropeClick(bool lmb, bool rmb) {
 std::string App::ropeHint() const {
     if (heldRope() >= 0) return "Seil in der Hand: links auf Pferd / Teil = festmachen, rechts = loslassen";
     if (handTool_ != HandTool::None || hand_.grabbed) return "";
+    if (animals_ && !rideId_)
+        if (const uint32_t an = animals_->pickAlive(playerEye(), aimForward(), kRopeReach)) {
+            for (const Rope& r : ropes_)
+                if (r.animal == an || (r.end == Rope::End::Animal && r.endId == an)) return "rechts: Seil lösen";
+            if ((int)ropes_.size() < ropeItems()) return "links: Seil anlegen";
+        }
     const Object* o = world_->find(lookAt_);
     if (!o || lookDist_ > kRopeReach) return "";
     for (const Rope& r : ropes_)
@@ -147,10 +187,39 @@ void App::updateRope(float dt) {
         ropes_.clear();
         return;
     }
+    int leashed = 0;  // angeleinte Tiere am selben Ende gehen nebeneinander statt aufeinander
     for (size_t i = 0; i < ropes_.size();) {
         Rope& r = ropes_[i];
-        Object* o = world_->find(r.obj);
         glm::dvec3 p, e;
+        if (r.animal) {
+            const int slot = leashed++;  // angeleintes Tier: es geht hinterher, sobald das Seil gespannt ist
+            const Animal* an = animals_ ? animals_->find(r.animal) : nullptr;
+            const Terrain* tr = world_->terrain();
+            if (!an || !ropeEnds(r, p, e) || !tr) {
+                ropes_.erase(ropes_.begin() + (long)i);
+                continue;
+            }
+            ++i;
+            if (an->ridden) continue;
+            glm::dvec2 to(e.x - an->pos.x, e.z - an->pos.z);
+            const double flat = glm::length(to);
+            float speed = 0;
+            glm::dvec3 feet = an->pos;
+            float yaw = an->yaw;
+            if (flat > r.len && dt > 0) {
+                to /= flat;
+                // Platz hinter dem Ziehenden: abwechselnd links und rechts, weiter hinten
+                const glm::dvec2 side(-to.y, to.x);
+                const double off = (slot % 2 ? 1.0 : -1.0) * 0.9 * ((slot + 1) / 2);
+                const glm::dvec2 goal = glm::dvec2(e.x, e.z) - to * (r.len + 0.6 * (slot / 2)) + side * off;
+                feet = glm::dvec3(goal.x, tr->surfaceHeight(goal.x, goal.y), goal.y);
+                speed = (float)(glm::length(glm::dvec2(feet.x - an->pos.x, feet.z - an->pos.z)) / dt);
+                yaw = (float)std::atan2(-to.x, -to.y);  // Blick (-sin, -cos) zum Ziehenden
+            }
+            animals_->steer(r.animal, feet, yaw, speed);
+            continue;
+        }
+        Object* o = world_->find(r.obj);
         if (!o || o->body == kNoBody || !ropeEnds(r, p, e)) {
             ropes_.erase(ropes_.begin() + (long)i);
             continue;

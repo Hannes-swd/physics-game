@@ -194,3 +194,17 @@ sich reiten. Man findet sie frei in der Wildnis; sie sind scheu, also leise hera
   (bis 24 000 N, ein 440-kg-Stamm kommt im Trab mit). Das geht auch im Sattel: Stamm anklicken, das Pferd zieht.
 - Stirbt das Pferd (Wolf, fallender Baum), fällt man herunter. Mitspieler im LAN können noch nicht reiten.
 - Befehle: `player ride` (auf das nächste Pferd bis 6 m), `player ride off`; `player rope <id>`, `player rope horse`.
+
+## Tiere anleinen
+
+Mit einem **Seil** im Inventar (Rezept *Seil*, aus Fell) und **leerer Hand**: **Linksklick auf ein Tier** am Boden
+(Reh, Lama, Wildschwein, Pferd …, bis 3,5 m) legt ihm das Seil an. Das Tier verlässt seine Herde, flieht nicht mehr und
+**läuft einem hinterher**, sobald das Seil gespannt ist (2,5 m).
+
+- **Mehrere Tiere:** je ein Seil, so viele wie im Inventar liegen. Sie gehen nebeneinander, abwechselnd links und rechts.
+- Das Seilende lässt sich wie beim Stamm **festmachen**: mit links auf ein **Pferd** (reitet man es, laufen die Tiere
+  dem Pferd nach), einen **Baum**, einen Pfosten oder ein anderes Teil (dann bleibt das Tier dort angebunden) oder ein
+  anderes Tier.
+- **Rechtsklick** auf das Tier: Seil ab. Es bleibt dann zahm stehen, wo man es lässt.
+- Am Fadenkreuz steht „links: Seil anlegen“ bzw. „rechts: Seil lösen“.
+- Befehl: `player rope animal` (das nächste freie Tier bis 10 m).

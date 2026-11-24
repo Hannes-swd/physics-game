@@ -53,3 +53,12 @@ sondern steht fest in der Mitte über dem leicht grau abgedunkelten Spiel. Jedes
 Teils (schräg von oben, in Materialfarbe), darunter den Namen; Material und Gewicht im Tooltip. Die Tasten folgen der
 Belegung ([Einstellungen → Steuerung](15-Hauptmenue-und-Welten.md#steuerung-tastenbelegung)).
 Ohne Hauptmenü (`--world`, `--script`) erscheint ein einfaches Fenster im Spiel.
+
+## Mit Cheats: kein Limit und „Alles“
+
+In Welten mit Cheats gibt es **kein Gewichtslimit** (die Anzeige oben sagt „Cheats: kein Limit“; große Teile belegen
+höchstens so viele Felder wie 3 kg). Links kommt eine vierte Holzmarke dazu: **Alles**. Dort steht jedes Ding, das es
+gibt, jedes mit Bild: alles Herstellbare (die Zeichnung des Dings, wie fertig gemacht), alles Essbare und jedes Material (als Kugel in seiner Farbe). Oben sucht man (Name, id oder
+Gruppe), ein Klick wählt, darunter stellt man **Gewicht** (kg, das Teil wird darauf skaliert), bei Materialien die **Form** (Würfel, Kugel, Brett, Stab; ohne Wahl ein Würfel) und die **Anzahl** ein, dann
+**Ins Inventar**. Doppelklick nimmt gleich eins in der üblichen Größe. Dasselbe per Befehl: `give <was> [Anzahl] [kg]`
+([02](02-Befehle.md)), `inventory all` öffnet den Bereich.

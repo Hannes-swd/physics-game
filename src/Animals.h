@@ -180,6 +180,9 @@ public:
     uint32_t strike(const glm::dvec3& eye, const glm::dvec3& dir, double reach, float damage, bool* killed = nullptr);
     uint32_t pickDead(const glm::dvec3& eye, const glm::dvec3& dir, double reach) const;  // totes Tier im Blick
     uint32_t pickRideable(const glm::dvec3& eye, const glm::dvec3& dir, double reach) const;  // lebendes Reittier im Blick
+    uint32_t pickAlive(const glm::dvec3& eye, const glm::dvec3& dir, double reach) const;     // lebendes Tier am Boden im Blick
+    // Am Seil: das Tier verlässt die Herde, bleibt (zahm) und bewegt sich nur noch, wie das Spiel es führt (steer)
+    bool leash(uint32_t id);
     // Reiten: aufsteigen (on) bzw. absteigen; beim Reiten setzt das Spiel Lage, Blick und Tempo jedes Bild
     bool setRidden(uint32_t id, bool on);
     void steer(uint32_t id, const glm::dvec3& feet, float yaw, float speed);

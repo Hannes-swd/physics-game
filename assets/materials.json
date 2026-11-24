@@ -983,7 +983,7 @@
     {
       "name":               "apple",
       "label":              "Apfel",
-      "aliases":            ["fleisch", "apple"],
+      "aliases":            ["apfel", "apple"],
       "class":              "rubber",
       "texture":            "rubber",
       "color":              [0.78, 0.12, 0.08],
@@ -1022,7 +1022,7 @@
     {
       "name":               "cactus_fruit",
       "label":              "Kaktusfeige",
-      "aliases":            ["fleisch", "cactus_fruit"],
+      "aliases":            ["kaktusfeige", "kaktusfrucht", "cactus_fruit"],
       "class":              "rubber",
       "texture":            "rubber",
       "color":              [0.80, 0.10, 0.32],
@@ -1061,7 +1061,7 @@
     {
       "name":               "carrot",
       "label":              "Karotte",
-      "aliases":            ["fleisch", "carrot"],
+      "aliases":            ["karotte", "möhre", "carrot"],
       "class":              "rubber",
       "texture":            "rubber",
       "color":              [0.95, 0.45, 0.08],
@@ -1100,7 +1100,7 @@
     {
       "name":               "berries",
       "label":              "Beeren",
-      "aliases":            ["fleisch", "berries"],
+      "aliases":            ["beeren", "berries"],
       "class":              "rubber",
       "texture":            "rubber",
       "color":              [0.32, 0.12, 0.45],

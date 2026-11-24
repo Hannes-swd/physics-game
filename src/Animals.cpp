@@ -860,6 +860,32 @@ uint32_t AnimalWorld::pickRideable(const glm::dvec3& eye, const glm::dvec3& dirI
     return best;
 }
 
+uint32_t AnimalWorld::pickAlive(const glm::dvec3& eye, const glm::dvec3& dirIn, double reach) const {
+    const glm::dvec3 dir = glm::normalize(dirIn);
+    uint32_t best = 0;
+    double bestT = 1e30, t;
+    for (const Animal& a : animals_) {
+        const AnimalSpecies& s = cfg_->species[(size_t)a.species];
+        if (a.dead || a.ridden || a.airborne || s.model == "bird" || s.motion != AnimalMotion::Ground) continue;
+        if (hitTest(a, eye, dir, reach, t) && t < bestT) best = a.id, bestT = t;
+    }
+    return best;
+}
+
+bool AnimalWorld::leash(uint32_t id) {
+    for (Animal& a : animals_)
+        if (a.id == id && !a.dead) {
+            a.tame = true;
+            a.leader = false;
+            a.group = 0;  // ohne Gruppe denkt es nicht mehr selbst: das Spiel führt es
+            a.attackAnim = -1;
+            a.state = Animal::Idle;
+            a.speed = a.wantSpeed = 0;
+            return true;
+        }
+    return false;
+}
+
 bool AnimalWorld::setRidden(uint32_t id, bool on) {
     for (Animal& a : animals_)
         if (a.id == id && !a.dead) {

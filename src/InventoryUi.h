@@ -19,10 +19,23 @@ public:
         std::vector<CatalogUi::Poly> polys;  // Zeichnung des Teils im Kästchen (0 … 1, von hinten nach vorne)
     };
     struct Event {
-        enum Kind { None, Close, TakeOut, Switch } kind = None;
+        enum Kind { None, Close, TakeOut, Switch, Give } kind = None;
         uint32_t key = 0;  // TakeOut: welches Teil
         int tab = 0;       // Switch: anderer Bereich des Fensters (1 Herstellen, 2 Bauen)
+        std::string id;    // Give (Bereich "Alles", nur mit Cheats): was
+        double kg = 0;     // Give: so schwer (0: übliche Größe)
+        int count = 1;     // Give: so viele
+        std::string shape; // Give, Material: "cube", "sphere", "plank", "rod" (leer: Würfel)
     };
+    // Bereich "Alles" (nur mit Cheats): jedes Ding, das man sich geben kann
+    struct GiveEntry {
+        std::string id, label, group;  // group: "Hergestellt", "Essen", "Material"
+        double kg = 1;                 // übliches Gewicht
+        std::string color;             // "#rrggbb": Materialien und Essen als Kugel in dieser Farbe
+        std::vector<CatalogUi::Poly> polys;  // Hergestelltes: Zeichnung des Dings (sonst leer)
+    };
+    virtual void setGiveList(bool cheats, const std::vector<GiveEntry>& list) = 0;
+    virtual void showArea(int tab) = 0;  // 0 Inventar, 3 Alles (nur mit Cheats)
     virtual ~InventoryUi() = default;
 
     // gameWindow: HWND des Spielfensters (das Inventar steht mittig davor). Ist das Fenster schon mit Herstellen oder

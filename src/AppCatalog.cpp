@@ -125,6 +125,9 @@ std::string planNeeds(const PlanTemplate& tp) {
 
 } // namespace
 
+// Vorlage / Rezept als Zeichnung (Inventar -> Alles)
+std::vector<CatalogUi::Poly> App::planPicture(const PlanTemplate& tp) { return picture(tp); }
+
 // Ein Teil (Inventar) als Zeichnung: seine Flächen in Materialfarbe, längste Seite quer (wie es im Kasten liegt)
 std::vector<CatalogUi::Poly> App::objectPicture(const ObjectState& s, double aspect) {
     if (s.kind != ObjKind::Solid || s.solid.pieces.empty()) return {};
@@ -211,7 +214,10 @@ void App::updateCatalog() {
         if (e.kind == CatalogUi::Event::None) break;
         if (e.kind == CatalogUi::Event::Close) catalogOpen(false);
         else if (e.kind == CatalogUi::Event::Choose) catalogChoose(e.index);
-        else if (e.kind == CatalogUi::Event::Switch && e.tab == 0) invOpen(true);
+        else if (e.kind == CatalogUi::Event::Switch && (e.tab == 0 || e.tab == 3)) {  // Inventar bzw. Alles (Cheats)
+            invOpen(true);
+            if (e.tab == 3 && opt_.inventoryUi) opt_.inventoryUi->showArea(3);
+        }
         else if (e.kind == CatalogUi::Event::Switch) catalogOpen(true, e.tab == 1);  // Herstellen <-> Bauen
     }
 }

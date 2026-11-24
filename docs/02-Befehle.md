@@ -564,6 +564,14 @@ Das Pausenfenster des Spiel-Modus (wie Esc): ohne Wert auf bzw. zu, `settings` z
 `pause shot <bild.png>` (Bild des Pausenfensters). Siehe [15](15-Hauptmenue-und-Welten.md#pausenfenster-im-spiel).
 `pause settings|graphics|controls` öffnet die Einstellungen auf diesem Reiter.
 
+### `give <was> [Anzahl] [kg] [cube|sphere|plank|rod]` (nur mit Cheats)
+Legt Dinge direkt ins Inventar (bis 50 auf einmal; was nicht mehr hineinpasst, liegt vor der Figur). Ohne Cheats gibt es
+eine Fehlermeldung. `give` allein zeigt, was geht.
+
+- **Rezepte** wie fertig hergestellt, per id oder Name: `give rope 3`, `give Verband`, `give axe`, `give crate` …
+- **Essen**: `give apple 5`, `give karotte`, `give berries`, `give cactus_fruit`, `give fleisch`
+- **Material** (ein Würfel von 10 cm, oder die Form am Ende: Kugel, Brett, Stab), per Name oder deutsch: `give hide 4` (Fell), `give oak`, `give granite`, `give steel` …
+
 ### `debug [on|off]`
 Debug-Ansicht wie **F3** (Ort, FPS, was geladen ist, Rechenzeit je Abschnitt), siehe [01](01-Steuerung.md#überall).
 Ohne Wert umschalten.

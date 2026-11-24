@@ -404,6 +404,7 @@ std::string commandHelp() {
         "  pause set <key> <value> | pause shot <f.png>  setting like 'menu set' (applies at once) | picture of the pause window\n"
         "  pause settings|graphics|controls          pause window on that settings tab\n"
         "  keys [reset] | keys <action> <key> [key2] | keys <action> none   key bindings (Settings -> Controls), apply at once\n"
+        "  give <what> [count]                       cheats only: recipe (rope, axe ...), food (apple, meat ...) or material block into the inventory\n"
         "  debug [on|off]                            debug view (F3): position, FPS, what is loaded, time per section\n"
         "  camera x y z [distance] | select <id ...|all> | screenshot <file.png>\n"
         "  drawing [id ...] [file.svg]               three-view drawing (no id: selection)\n"

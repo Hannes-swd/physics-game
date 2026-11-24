@@ -34,8 +34,10 @@ std::string kg(double m) {
     return buf;
 }
 
-// Fläche im Raster: so viele Zellen, wie das Teil wiegt, Seitenverhältnis wie längste zu zweitlängster Seite
-void footprint(double mass, glm::dvec2 ext, int& w, int& h) {
+// Fläche im Raster: so viele Zellen, wie das Teil wiegt, Seitenverhältnis wie längste zu zweitlängster Seite.
+// Mit Cheats (kein Gewichtslimit) zählt höchstens 3 kg, damit auch Schweres Platz hat
+void footprint(double mass, glm::dvec2 ext, int& w, int& h, bool cheats) {
+    if (cheats) mass = std::min(mass, 3.0);
     const int cells = std::clamp((int)std::ceil(mass / kCellKg - 1e-6), 1, kInvCols * kInvRows);
     const double r = std::clamp(ext.y > 1e-6 ? ext.x / ext.y : 1.0, 1.0, (double)kInvCols);
     h = std::clamp((int)std::lround(std::sqrt(cells / r)), 1, kInvRows);
@@ -77,7 +79,7 @@ bool App::invPack(std::vector<InvItem>& items, bool keepPlaced) const {
         std::stable_sort(todo.begin(), todo.end(), [](const InvItem* a, const InvItem* b) { return a->w * a->h > b->w * b->h; });
     for (InvItem* it : todo) {
         int w, h;
-        footprint(it->mass, it->ext, w, h);
+        footprint(it->mass, it->ext, w, h, cheats_);
         bool placed = false;
         for (int y = 0; y < kInvRows && !placed; ++y)
             for (int x = 0; x < kInvCols && !placed; ++x)
@@ -101,7 +103,7 @@ bool App::invStore(uint32_t id, bool quiet) {
     Object* o = world_->find(id);
     if (!o || o->fixed || o->body == kNoBody || o->rooted) return false;
     const double m = o->mass;
-    if (invMass() + m > kInvCapacity + 1e-9) {
+    if (!cheats_ && invMass() + m > kInvCapacity + 1e-9) {  // mit Cheats: kein Gewichtslimit
         if (!quiet) toast(o->name + " ist zu schwer fürs Inventar (" + kg(m) + ", frei " + kg(std::max(0.0, kInvCapacity - invMass())) + ")", false);
         return false;
     }
@@ -128,7 +130,7 @@ bool App::invStore(uint32_t id, bool quiet) {
     if (inspectTarget_ == id) inspectTarget_ = 0;
     const std::string name = o->name;
     world_->remove(id);
-    if (!quiet) toast(name + " im Inventar (" + kg(invMass()) + " / " + kg(kInvCapacity) + ")");
+    if (!quiet) toast(name + " im Inventar (" + kg(invMass()) + (cheats_ ? ")" : " / " + kg(kInvCapacity) + ")"));
     invPushContents();
     return true;
 }
@@ -179,7 +181,10 @@ void App::invOpen(bool on) {
         invOpen_ = true;
         setCursorCaptured(false);
         invPushContents();
-        if (opt_.inventoryUi) opt_.inventoryUi->open(glfwGetWin32Window(window_));
+        if (opt_.inventoryUi) {
+            opt_.inventoryUi->setGiveList(cheats_, cheats_ ? giveList() : std::vector<InventoryUi::GiveEntry>{});  // Bereich "Alles"
+            opt_.inventoryUi->open(glfwGetWin32Window(window_));
+        }
     } else {
         invOpen_ = false;
         if (opt_.inventoryUi) opt_.inventoryUi->close();
@@ -210,7 +215,8 @@ void App::invPushContents() {
     }
     const double m = invMass();
     char buf[96];
-    std::snprintf(buf, sizeof(buf), "%.1f / %.0f kg (%.0f %%)", m, kInvCapacity, 100.0 * m / kInvCapacity);
+    if (cheats_) std::snprintf(buf, sizeof(buf), "%.1f kg (Cheats: kein Limit)", m);
+    else std::snprintf(buf, sizeof(buf), "%.1f / %.0f kg (%.0f %%)", m, kInvCapacity, 100.0 * m / kInvCapacity);
     opt_.inventoryUi->setContents(kInvCols, kInvRows, items, buf);
 }
 
@@ -221,7 +227,11 @@ void App::updateInventory() {
         if (e.kind == InventoryUi::Event::None) break;
         if (e.kind == InventoryUi::Event::Close) invOpen(false);
         else if (e.kind == InventoryUi::Event::TakeOut) invTakeOut(e.key);
-        else if (e.kind == InventoryUi::Event::Switch && e.tab > 0) catalogOpen(true, e.tab == 1);  // Herstellen / Bauen
+        else if (e.kind == InventoryUi::Event::Switch && (e.tab == 1 || e.tab == 2)) catalogOpen(true, e.tab == 1);  // Herstellen / Bauen
+        else if (e.kind == InventoryUi::Event::Give && cheats_) {  // Bereich "Alles": ins Inventar
+            const std::string r = giveItems(e.id, e.count, e.kg, e.shape);
+            toast(r.rfind("Error: ", 0) == 0 ? r.substr(7) : r, r.rfind("Error", 0) != 0);
+        }
         if (!invOpen_) break;
     }
 }

@@ -4,12 +4,14 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
 #include "Materials.h"
 #include "Terrain.h"
+#include "Blueprints.h"
 #include "Scatter.h"
 #include "Trees.h"
 #include "WorldGen.h"
@@ -353,6 +355,26 @@ std::string App::playerCommand(const std::vector<std::string>& t) {
         if (w.empty() || w == "off") {
             ropes_.clear();
             return "ropes released";
+        }
+        if (w == "animal") {  // das nächste Tier am Boden (bis 10 m) anleinen
+            if (!animals_) return "Error: no animals";
+            const glm::dvec3 feet = physics_.characterPosition();
+            const Animal* best = nullptr;
+            for (const Animal& a : animals_->animals()) {
+                const AnimalSpecies& sp = animals_->config().species[(size_t)a.species];
+                if (a.dead || a.ridden || a.airborne || sp.motion != AnimalMotion::Ground || glm::length(a.pos - feet) > 10.0) continue;
+                bool tied = false;
+                for (const Rope& r : ropes_) tied |= r.animal == a.id;
+                if (!tied && (!best || glm::length(a.pos - feet) < glm::length(best->pos - feet))) best = &a;
+            }
+            if (!best) return "Error: no free animal within 10 m";
+            const std::string label = animals_->config().species[(size_t)best->species].label;
+            Rope r;
+            r.animal = best->id;
+            r.len = 2.5;
+            animals_->leash(best->id);
+            ropes_.push_back(r);
+            return label + " on the rope";
         }
         if (w == "horse") {
             const int held = heldRope();
@@ -775,6 +797,10 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         return true;
     }
     if (cmd == "terrain" && terrainAppCommand(t, out)) return true;  // borders, goto, reload (der Rest: Commands.cpp)
+    if (cmd == "give" || cmd == "gib") {  // nur mit Cheats: Dinge ins Inventar (Rezepte, Essen, Material), siehe Hilfe
+        out = giveCommand(t);
+        return true;
+    }
     if (cmd == "food" || cmd == "essen") {  // Essbares am Boden in der Nähe: food (Liste) | food take (das nächste aufheben)
         ScatterField* sf = world_->scatter();
         if (!play_ || !sf || !physics_.hasCharacter()) {
@@ -925,6 +951,13 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         }
         if (v == "open" || v == "close") {
             invOpen(v == "open");
+        } else if (v == "all") {  // Bereich "Alles" (nur mit Cheats und Hauptmenü)
+            if (!cheats_ || !opt_.inventoryUi) {
+                out = "Error: 'Alles' needs cheats and the main menu";
+                return true;
+            }
+            invOpen(true);
+            opt_.inventoryUi->showArea(3);
         } else if (v == "store" && t.size() > 2) {
             const uint32_t id = (uint32_t)std::strtoul(t[2].c_str(), nullptr, 10);
             if (!invStore(id, true)) {
@@ -1174,3 +1207,124 @@ bool App::queryValue(const std::string& n, double& num, std::string& str) {
 }
 
 std::string App::wait(double) { return "wait works in command sequences, e.g.: mode play ; wait 2 ; print 17.y"; }
+
+// Was man sich mit Cheats geben kann (give, Inventar -> "Alles"): Rezepte, Essbares, jedes Material als Block
+std::vector<InventoryUi::GiveEntry> App::giveList() const {
+    std::vector<InventoryUi::GiveEntry> list;
+    static const char* const byKind[kPlanMats] = {"oak", "fieldstone", "oak", "steel", "hide"};
+    for (const PlanTemplate& r : craftRecipes()) {
+        double kgs = 0;
+        for (const PlanPieceDef& d : r.pieces)
+            kgs += 8.0 * d.half.x * d.half.y * d.half.z *
+                   materials()[(size_t)std::max(0, materialIndex(byKind[std::clamp((int)d.mat, 0, kPlanMats - 1)]))].density;
+        list.push_back({r.id, r.label, "Hergestellt", kgs, "", planPicture(r)});
+    }
+    // Farbe fürs Bild (Kugel): Materialfarbe, für den Bildschirm aufgehellt (linear -> sRGB)
+    auto hex = [](const glm::vec3& lin) {
+        const glm::vec3 c = glm::clamp(glm::pow(lin, glm::vec3(1.0f / 2.2f)), 0.0f, 1.0f) * 255.0f;
+        char b[8];
+        std::snprintf(b, sizeof(b), "#%02x%02x%02x", (int)c.r, (int)c.g, (int)c.b);
+        return std::string(b);
+    };
+    static const char* const foods[] = {"apple", "carrot", "berries", "cactus_fruit", "meat"};
+    static const double foodKg[] = {0.3, 0.15, 0.1, 0.5, 1.5};
+    for (int i = 0; i < 5; ++i)
+        if (const int m = findMaterialIndex(foods[i]); m >= 0)
+            list.push_back({foods[i], materials()[(size_t)m].label, "Essen", foodKg[i], hex(materials()[(size_t)m].color), {}});
+    for (const Material& m : materials()) {
+        bool food = false;
+        for (const char* f : foods) food |= std::strcmp(m.name, f) == 0;
+        if (!food) list.push_back({m.name, m.label, "Material", 1.0, hex(m.color), {}});
+    }
+    return list;
+}
+
+// Ein Teil zum Geben: Rezept wie fertig hergestellt, Essbares in seiner Form, sonst ein Block des Materials
+// (2 : 1 : 1). kg > 0: auf dieses Gewicht skaliert, sonst die übliche Größe. err: warum nicht
+Object* App::makeGiveObject(const std::string& whatIn, double kg, const glm::dvec3& at, std::string& err, const std::string& form) {
+    std::string what = whatIn;
+    for (char& c : what) c = (char)std::tolower((unsigned char)c);
+    solid::Solid s;
+    int mat = -1;
+    std::string name, shape = "give";
+    const PlanTemplate* recipe = nullptr;
+    for (const PlanTemplate& r : craftRecipes()) {
+        std::string id = r.id, label = r.label;
+        for (char& c : id) c = (char)std::tolower((unsigned char)c);
+        for (char& c : label) c = (char)std::tolower((unsigned char)c);
+        if (id == what || label == what) recipe = &r;
+    }
+    if (recipe) {  // wie fertig hergestellt: die Bauteile als ein Teil, Material je Art
+        static const char* const byKind[kPlanMats] = {"oak", "fieldstone", "oak", "steel", "hide"};
+        int main = recipe->mainPiece;
+        const auto vol = [&](size_t i) { return recipe->pieces[i].half.x * recipe->pieces[i].half.y * recipe->pieces[i].half.z; };
+        for (size_t k = 0; k < recipe->pieces.size(); ++k) {
+            const PlanPieceDef& d = recipe->pieces[k];
+            const glm::dquat r = d.rot * glm::angleAxis(glm::radians(d.pitchDeg), glm::dvec3(1, 0, 0));
+            solid::Piece box = solid::makeBox(d.half);
+            solid::transform(box, glm::translate(glm::dmat4(1.0), d.center) * glm::mat4_cast(r));
+            s.pieces.push_back(std::move(box));
+            if (main < 0 || (recipe->mainPiece < 0 && vol(k) > vol((size_t)main))) main = (int)k;
+        }
+        solid::classifyInternalFaces(s);
+        mat = std::max(0, materialIndex(byKind[std::clamp((int)recipe->pieces[(size_t)main].mat, 0, kPlanMats - 1)]));
+        name = recipe->label;
+        shape = "crafted " + recipe->id;
+    } else {
+        mat = findMaterialIndex(what.c_str());  // unbekannt: -1 (nicht wie materialIndex ein Ersatz)
+        if (mat < 0) {
+            err = "'" + whatIn + "' gibt es nicht ('give' zeigt, was geht)";
+            return nullptr;
+        }
+        const std::string m = materials()[(size_t)mat].name;
+        name = materials()[(size_t)mat].label;
+        if (m == "apple" || m == "cactus_fruit" || m == "berries") s = solid::makeSphere(m == "berries" ? 0.035 : 0.045, 2);
+        else if (m == "carrot") s.pieces.push_back(solid::makeBox(glm::dvec3(0.08, 0.0175, 0.0175)));
+        else if (m == "meat") s.pieces.push_back(solid::makeBox(glm::dvec3(0.08, 0.035, 0.065)));
+        // Material: Würfel (10 cm) oder die gewählte Form
+        else if (form == "sphere" || form == "kugel") s = solid::makeSphere(0.062, 2);
+        else if (form == "plank" || form == "brett") s.pieces.push_back(solid::makeBox(glm::dvec3(0.25, 0.01, 0.05)));
+        else if (form == "rod" || form == "stab") s = solid::makeCylinder(0.02, 0.5, 12);
+        else s.pieces.push_back(solid::makeBox(glm::dvec3(0.05)));
+    }
+    if (kg > 0) {  // auf das gewünschte Gewicht bringen (alle Seiten gleich)
+        const double v = solid::volume(s), m = v * materials()[(size_t)mat].density;
+        if (m > 1e-9) solid::transformAffine(s, glm::dmat3(std::cbrt(std::clamp(kg, 0.001, 1e6) / m)));
+    }
+    Object* o = world_->addSolid(std::move(s), mat, at, glm::dquat(1, 0, 0, 0), name, shape);
+    if (!o) err = "could not create '" + whatIn + "'";
+    return o;
+}
+
+// give <was> [Anzahl] [kg]: nur mit Cheats. Was nicht mehr ins Inventar passt, liegt vor der Figur
+std::string App::giveCommand(const std::vector<std::string>& t) {
+    if (!cheats_) return "Error: give geht nur mit Cheats (neue Welt mit Cheats an)";
+    if (!play_ || !physics_.hasCharacter()) return "Error: give works in play mode ('mode play')";
+    if (netClient()) return "Error: as a co-player: no inventory yet";
+    if (t.size() < 2) {
+        std::string list = "give <was> [Anzahl] [kg] [cube|sphere|plank|rod]   Rezepte:";
+        for (const PlanTemplate& r : craftRecipes()) list += " " + r.id;
+        list += "\n  Essen: apple carrot berries cactus_fruit meat"
+                "\n  Material (ein Block): hide oak spruce granite fieldstone steel iron_ore ... (alle aus 'materials')";
+        return list;
+    }
+    const int count = t.size() > 2 ? std::clamp(std::atoi(t[2].c_str()), 1, 50) : 1;
+    const double kgs = t.size() > 3 ? std::atof(t[3].c_str()) : 0.0;
+    return giveItems(t[1], count, kgs, t.size() > 4 ? t[4] : "");
+}
+
+std::string App::giveItems(const std::string& what, int count, double kgs, const std::string& shape) {
+    const glm::dvec3 at = playerEye() + playerForward() * 1.2;
+    int stored = 0, made = 0;
+    std::string name, err;
+    for (int i = 0; i < count; ++i) {
+        Object* o = makeGiveObject(what, kgs, at + glm::dvec3(0, 0.25 * i, 0), err, shape);
+        if (!o) break;
+        name = o->name + " (" + fmtNum(o->mass, o->mass < 10 ? 2 : 1) + " kg)";
+        ++made;
+        stored += invStore(o->id, true) ? 1 : 0;
+    }
+    if (!made) return "Error: " + err;
+    return std::to_string(made) + " x " + name +
+           (stored == made ? " ins Inventar" : " (" + std::to_string(made - stored) + " passen nicht mehr ins Inventar, sie liegen vor dir)");
+}

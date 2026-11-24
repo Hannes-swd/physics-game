@@ -340,6 +340,7 @@ private:
     void updateCatalog();           // Fenster: Ereignisse abholen (jedes Bild)
     // Zeichnung eines Teils für einen Kasten mit Seitenverhältnis aspect (Breite / Höhe), längste Seite quer
     static std::vector<CatalogUi::Poly> objectPicture(const ObjectState& s, double aspect);
+    static std::vector<CatalogUi::Poly> planPicture(const PlanTemplate& tp);
     // AppInventory.cpp: Inventar (E). Teile darin sind nicht mehr in der Welt; begrenzt durch das Gewicht, das die
     // Figur tragen kann. Jedes Teil belegt im Raster so viele Zellen, wie es wiegt (Form etwa wie das Teil)
     struct InvItem {
@@ -730,6 +731,11 @@ private:
     void drawDebugOverlay();
     std::string planModeText();     // Bauplan- / Herstell-Modus: Zeile unten in der Mitte (leer: nicht in dem Modus)
     float statusBarHeight() const;  // Statusleiste unten (nur Bau-Modus), sonst 0
+    std::string giveCommand(const std::vector<std::string>& t);  // give <was> [Anzahl] [kg] (nur mit Cheats)
+    std::string giveItems(const std::string& what, int count, double kg, const std::string& shape = "");  // ins Inventar
+    // shape (nur Material): "cube" (Standard), "sphere", "plank", "rod"
+    Object* makeGiveObject(const std::string& what, double kg, const glm::dvec3& at, std::string& err, const std::string& shape = "");
+    std::vector<InventoryUi::GiveEntry> giveList() const;  // was es zu geben gibt (Inventar -> Alles)
     std::string eatFood();          // Fleisch aus dem Inventar essen (Taste V, "health eat")
     // Reiten (AppAnimals.cpp)
     uint32_t rideId_ = 0;           // reitet dieses Tier (0: zu Fuß)
@@ -739,6 +745,7 @@ private:
     // Seile (AppRope.cpp, aus dem Inventar): mit leerer Hand ein schweres Teil anbinden, das Ende halten (zieht beim
     // Laufen) oder mit einem zweiten Klick an ein Pferd oder ein anderes Teil binden
     struct Rope {
+        uint32_t animal = 0;      // angeleintes Tier (dann ist obj 0): es läuft hinterher
         uint32_t obj = 0;
         glm::dvec3 local{0};      // Stelle am angebundenen Teil (lokal)
         enum class End { Hand, Animal, Part } end = End::Hand;
@@ -756,6 +763,7 @@ private:
     std::string ropeHint() const;   // Hinweis am Fadenkreuz
     void updateRope(float dt);
     void addRope(FrameDesc& fd);
+    glm::dvec3 animalRopePoint(const struct Animal& a) const;  // wo am Tier das Seil sitzt (Hals)
     uint32_t inspectTarget_ = 0;
     // Material-Editor
     bool showMaterials_ = false, materialsDirty_ = false;

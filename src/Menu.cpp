@@ -956,13 +956,20 @@ class BagBackend : public QObject {
     Q_PROPERTY(QString summary READ summary NOTIFY inventoryChanged)
     Q_PROPERTY(QVariantList tiles READ tiles NOTIFY catalogChanged)
     Q_PROPERTY(int current READ current NOTIFY catalogChanged)
+    // Bereich 3 "Alles" (nur mit Cheats): jedes Ding zum Geben (Liste von Maps: id, label, group, kg)
+    Q_PROPERTY(bool cheats READ cheats NOTIFY giveChanged)
+    Q_PROPERTY(QVariantList giveList READ giveList NOTIFY giveChanged)
 
 public:
     struct Ev {
-        enum Kind { Close, Switch, TakeOut, Choose } kind;
+        enum Kind { Close, Switch, TakeOut, Choose, Give } kind;
         int tab = 0;
         uint32_t key = 0;
         int index = -1;
+        std::string id;  // Give
+        double kg = 0;
+        int count = 1;
+        std::string shape;
     };
     std::vector<Ev> events;
 
@@ -974,6 +981,28 @@ public:
     QString summary() const { return summary_; }
     QVariantList tiles() const { return tiles_; }
     int current() const { return current_; }
+    bool cheats() const { return cheats_; }
+    QVariantList giveList() const { return giveList_; }
+    void setGiveList(bool cheats, const std::vector<InventoryUi::GiveEntry>& list) {
+        cheats_ = cheats;
+        giveList_.clear();
+        for (const InventoryUi::GiveEntry& e : list) {
+            QVariantMap m;
+            m["id"] = qs(e.id);
+            m["label"] = qs(e.label);
+            m["group"] = qs(e.group);
+            m["kg"] = e.kg;
+            m["color"] = qs(e.color);
+            m["polys"] = polyList(e.polys);
+            giveList_.push_back(m);
+        }
+        Q_EMIT giveChanged();
+    }
+    // nur im Fenster umschalten (Inventar <-> Alles gehören beide zum Inventar)
+    void showLocal(int t) {
+        tab_ = t;
+        Q_EMIT tabChanged();
+    }
 
     void setTab(int t) {
         // Tasten der drei Bereiche neu lesen (man kann sie im Pausenfenster ändern)
@@ -1021,7 +1050,17 @@ public:
 
     Q_INVOKABLE void close() { events.push_back({Ev::Close}); }
     Q_INVOKABLE void switchTo(int t) {
-        if (t != tab_ && t >= 0 && t < 3) events.push_back({Ev::Switch, t});
+        if (t == tab_ || t < 0 || t > 3 || (t == 3 && !cheats_)) return;
+        if ((tab_ == 0 || tab_ == 3) && (t == 0 || t == 3)) showLocal(t);  // Inventar <-> Alles: das Spiel merkt nichts
+        else events.push_back({Ev::Switch, t});
+    }
+    Q_INVOKABLE void give(const QString& id, double kg, int count, const QString& shape) {
+        Ev e{Ev::Give};
+        e.id = ss(id);
+        e.shape = ss(shape);
+        e.kg = kg;
+        e.count = std::clamp(count, 1, 50);
+        events.push_back(e);
     }
     Q_INVOKABLE void takeOut(double key) { events.push_back({Ev::TakeOut, 0, (uint32_t)key}); }
     Q_INVOKABLE void choose(int index) { events.push_back({Ev::Choose, 0, 0, index}); }
@@ -1038,6 +1077,7 @@ Q_SIGNALS:
     void tabChanged();
     void inventoryChanged();
     void catalogChanged();
+    void giveChanged();
 
 private:
     int tab_ = 0;
@@ -1048,6 +1088,8 @@ private:
     QString summary_;
     QVariantList tiles_;
     int current_ = -1;
+    bool cheats_ = false;
+    QVariantList giveList_;
 };
 
 // Das gemeinsame Fenster: wie das Pausenfenster rahmenlos über dem Spielfenster, nach dem ersten Öffnen nur versteckt.
@@ -1062,6 +1104,7 @@ public:
             engine_ = std::make_unique<QQmlApplicationEngine>();
             engine_->rootContext()->setContextProperty("bag", backend_.get());
             backend_->setInventory(cols_, rows_, items_, summary_);
+            backend_->setGiveList(cheats_, give_);
             engine_->addImportPath(QStringLiteral("qrc:/menu"));  // der Stil "Wald"
             engine_->load(QUrl(QStringLiteral("qrc:/menu/BagWindow.qml")));
             if (engine_->rootObjects().isEmpty()) {  // QML-Fehler (stehen in der Konsole)
@@ -1105,6 +1148,14 @@ public:
     void setCatalog(const std::vector<CatalogUi::Item>& items, int current) {
         if (backend_) backend_->setCatalog(items, current);
     }
+    void setGiveList(bool cheats, const std::vector<InventoryUi::GiveEntry>& list) {
+        cheats_ = cheats;
+        give_ = list;
+        if (backend_) backend_->setGiveList(cheats, list);
+    }
+    void showArea(int tab) {
+        if (backend_ && open_) backend_->showLocal(tab);
+    }
     bool next(BagBackend::Ev& e) {
         if (!open_ || !backend_) return false;
         QCoreApplication::processEvents();
@@ -1135,6 +1186,8 @@ private:
     int cols_ = 1, rows_ = 1;
     std::vector<InventoryUi::Item> items_;
     std::string summary_;
+    bool cheats_ = false;
+    std::vector<InventoryUi::GiveEntry> give_;
 };
 
 // Inventar (InventoryUi.h): Bereich 0 des gemeinsamen Fensters
@@ -1145,7 +1198,7 @@ public:
     void close() override {
         if (isOpen()) bag_.hide();
     }
-    bool isOpen() const override { return bag_.open() && bag_.tab() == 0; }
+    bool isOpen() const override { return bag_.open() && (bag_.tab() == 0 || bag_.tab() == 3); }
     void setContents(int cols, int rows, const std::vector<Item>& items, const std::string& summary) override {
         bag_.setInventory(cols, rows, items, summary);
     }
@@ -1156,10 +1209,20 @@ public:
         case BagBackend::Ev::Close: return {Event::Close};
         case BagBackend::Ev::TakeOut: return {Event::TakeOut, e.key};
         case BagBackend::Ev::Switch: return {Event::Switch, 0, e.tab};
+        case BagBackend::Ev::Give: {
+            Event g{Event::Give};
+            g.id = e.id;
+            g.kg = e.kg;
+            g.count = e.count;
+            g.shape = e.shape;
+            return g;
+        }
         default: return {};
         }
     }
     bool grab(const std::string& file) override { return bag_.grab(file); }
+    void setGiveList(bool cheats, const std::vector<GiveEntry>& list) override { bag_.setGiveList(cheats, list); }
+    void showArea(int tab) override { bag_.showArea(tab); }
 
 private:
     QtBag& bag_;
@@ -1176,7 +1239,7 @@ public:
     void close() override {
         if (isOpen()) bag_.hide();
     }
-    bool isOpen() const override { return bag_.open() && bag_.tab() > 0; }
+    bool isOpen() const override { return bag_.open() && (bag_.tab() == 1 || bag_.tab() == 2); }
     Event poll() override {
         BagBackend::Ev e{};
         if (!isOpen() || !bag_.next(e)) return {};
