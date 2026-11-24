@@ -25,11 +25,12 @@ constexpr int kClimateCount = 4;
 enum ClimateParam { kTemperature = 0, kHumidity = 1, kContinentalness = 2, kErosion = 3 };
 extern const char* const kClimateNames[kClimateCount];  // "temperature", "humidity", "continentalness", "erosion"
 constexpr int kMaxBiomes = 32;
-// Zeug am Boden (Scatter.h): Steine, Stöcke, umgefallene Stämme, Baumstümpfe, Erzbrocken, Kakteen
+// Zeug am Boden (Scatter.h): Steine, Stöcke, umgefallene Stämme, Baumstümpfe, Erzbrocken, Kakteen, Essbares
 enum ScatterKind {
-    kScatterStone = 0, kScatterStick = 1, kScatterLog = 2, kScatterStump = 3, kScatterOre = 4, kScatterCactus = 5, kScatterKinds = 6
+    kScatterStone = 0, kScatterStick = 1, kScatterLog = 2, kScatterStump = 3, kScatterOre = 4, kScatterCactus = 5, kScatterFood = 6,
+    kScatterKinds = 7
 };
-// Schlüssel in biomes.json: "stones", "sticks", "logs", "stumps", "ores", "cacti"
+// Schlüssel in biomes.json: "stones", "sticks", "logs", "stumps", "ores", "cacti", "food"
 extern const char* const kScatterNames[kScatterKinds];
 
 struct GenConfig {

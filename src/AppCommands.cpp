@@ -592,12 +592,13 @@ std::string App::teleportCommand(const std::vector<std::string>& t) {
     }
 
     // Zeug am Boden: neben das nächste Stück dieser Art (Stein, Stock, Stamm, Stumpf, Erz, Kaktus), Blick darauf
-    static const char* const kSingular[kScatterKinds] = {"stone", "stick", "log", "stump", "ore", "cactus"};
+    static const char* const kSingular[kScatterKinds] = {"stone", "stick", "log", "stump", "ore", "cactus", "food"};
     int scatterKind = -1;
     for (int k = 0; k < kScatterKinds; ++k)
         if (w == kScatterNames[k] || w == kSingular[k]) scatterKind = k;
     if (w == "erz") scatterKind = kScatterOre;
     if (w == "kaktus") scatterKind = kScatterCactus;
+    if (w == "essen" || w == "apple" || w == "berries" || w == "carrot") scatterKind = kScatterFood;
     if (scatterKind >= 0) {
         ScatterField* f = world_->scatter();
         if (!f || !f->any()) return "Error: this world has nothing lying on the ground (flat world, or made before)";
@@ -774,6 +775,34 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         return true;
     }
     if (cmd == "terrain" && terrainAppCommand(t, out)) return true;  // borders, goto, reload (der Rest: Commands.cpp)
+    if (cmd == "food" || cmd == "essen") {  // Essbares am Boden in der Nähe: food (Liste) | food take (das nächste aufheben)
+        ScatterField* sf = world_->scatter();
+        if (!play_ || !sf || !physics_.hasCharacter()) {
+            out = "Error: food works in play mode in a generated world";
+            return true;
+        }
+        const glm::dvec3 feet = physics_.characterPosition();
+        std::vector<ScatterSpot> spots;
+        sf->around(glm::dvec2(feet.x, feet.z), 40.0, spots);
+        std::vector<ScatterSpot> food;
+        for (const ScatterSpot& sp : spots)
+            if (sp.kind == kScatterFood && !world_->scatterHidden(sp.key)) food.push_back(sp);
+        std::sort(food.begin(), food.end(), [&](const ScatterSpot& a, const ScatterSpot& b) { return glm::length(a.pos - feet) < glm::length(b.pos - feet); });
+        if (t.size() > 1 && t[1] == "take") {
+            if (food.empty()) {
+                out = "Error: nothing edible within 40 m";
+                return true;
+            }
+            Object* o = world_->takeScatter(food.front());
+            const std::string what = o ? o->name + " (" + fmtNum(o->mass, 2) + " kg)" : "";
+            out = o && invStore(o->id, true) ? "taken: " + what + " into the inventory" : "Error: could not take it";
+            return true;
+        }
+        out = std::to_string(food.size()) + " edible thing(s) within 40 m";
+        for (size_t i = 0; i < food.size() && i < 12; ++i)
+            out += "\n  " + std::string(materials()[(size_t)food[i].material].label) + "  " + fmtNum(glm::length(food[i].pos - feet), 1) + " m";
+        return true;
+    }
     if (cmd == "debug") {  // Debug-Ansicht (F3): debug [on|off]
         const std::string v = t.size() > 1 ? t[1] : "";
         showDebug_ = v == "on" ? true : v == "off" ? false : !showDebug_;

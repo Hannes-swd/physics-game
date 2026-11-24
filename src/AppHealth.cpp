@@ -650,20 +650,35 @@ void App::drawHealthHud() {
 
 // ============================================================================ Befehl
 
-// Essen (Taste V): das leichteste Stück Fleisch aus dem Inventar. 1,5 kg (ein Stück) machen 30 % satt, ein Reh ~2 Mägen
+// Essen (Taste V): zuerst Gefundenes (Apfel 8 %, Karotte 6 %, Beeren 5 % satt je Stück), sonst das leichteste Stück
+// Fleisch (1 kg = 20 %, ein Stück von ~1,5 kg eine Mahlzeit)
 std::string App::eatFood() {
     if (netClient()) return "Error: als Mitspieler im LAN noch nicht möglich (kein Inventar)";
     if (me_.health.food() > 0.97) return "satt";
-    const int meat = materialIndex("meat");
+    struct Food {
+        const char* material;
+        double perPiece, perKg;
+    };
+    static const Food foods[] = {{"apple", 0.08, 0}, {"carrot", 0.06, 0}, {"berries", 0.05, 0}, {"meat", 0, 0.2}};
     int best = -1;
-    for (size_t i = 0; i < inv_.size(); ++i)
-        if (inv_[i].state.material == meat && (best < 0 || inv_[i].mass < inv_[(size_t)best].mass)) best = (int)i;
-    if (best < 0) return "Error: kein Fleisch im Inventar (ein erlegtes Tier mit " + keys::label(keys::Act::Use) + " zerlegen)";
-    const double kg = inv_[(size_t)best].mass;
+    double gain = 0;
+    for (const Food& f : foods) {
+        const int mat = materialIndex(f.material);
+        for (size_t i = 0; i < inv_.size(); ++i)
+            if (inv_[i].state.material == mat && (best < 0 || inv_[i].mass < inv_[(size_t)best].mass)) {
+                best = (int)i;
+                gain = f.perPiece + f.perKg * inv_[i].mass;
+            }
+        if (best >= 0) break;
+    }
+    if (best < 0)
+        return "Error: nichts zu essen im Inventar (Äpfel, Karotten, Beeren am Boden mit " + keys::label(keys::Act::Use) +
+               " aufheben, oder ein erlegtes Tier zerlegen)";
+    const std::string name = inv_[(size_t)best].state.name;
     inv_.erase(inv_.begin() + best);
     invPushContents();
-    me_.health.eat(kg * 0.2);
-    return "gegessen: " + fmtNum(kg, 1) + " kg Fleisch, satt " + fmtNum(me_.health.food() * 100, 0) + " %";
+    me_.health.eat(gain);
+    return "gegessen: " + name + ", satt " + fmtNum(me_.health.food() * 100, 0) + " %";
 }
 
 std::string App::healthCommand(const std::vector<std::string>& t) {

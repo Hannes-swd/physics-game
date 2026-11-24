@@ -14,7 +14,7 @@
 #include "Noise.h"
 
 const char* const kClimateNames[kClimateCount] = {"temperature", "humidity", "continentalness", "erosion"};
-const char* const kScatterNames[kScatterKinds] = {"stones", "sticks", "logs", "stumps", "ores", "cacti"};
+const char* const kScatterNames[kScatterKinds] = {"stones", "sticks", "logs", "stumps", "ores", "cacti", "food"};
 
 namespace {
 
@@ -305,7 +305,7 @@ bool parseGenConfig(const std::string& text, GenConfig& out, std::string* errOut
             const std::string ws = w + "." + kScatterNames[k];
             GenConfig::Biome::Scatter& st = d.scatter[k];
             st.given = true;
-            const char* sizeKey = k == kScatterStone || k == kScatterOre ? "size" : k == kScatterStump || k == kScatterCactus ? "height" : "length";
+            const char* sizeKey = k == kScatterStone || k == kScatterOre || k == kScatterFood ? "size" : k == kScatterStump || k == kScatterCactus ? "height" : "length";
             if (!num(g, "per_ha", st.perHa, err, ws) || !numRange(g, sizeKey, st.sizeMin, st.sizeMax, err, ws) ||
                 !numRange(g, "thickness", st.thickMin, st.thickMax, err, ws) || !num(g, "skew", st.skew, err, ws))
                 return fail(err);

@@ -110,3 +110,17 @@ stehen nach 4 s am Startpunkt. Mitspieler haben noch kein Inventar: bei ihnen ve
 - Der Hunger wird mit der Welt gespeichert und im LAN wie das Leben vom Gastgeber gerechnet (essen geht als Mitspieler
   noch nicht, es fehlt das Inventar).
 - Befehle: `health` zeigt auch „satt … %“, `health eat` isst wie V, `health food <0–1>` setzt den Hunger (Test).
+
+### Essen finden
+
+Man muss nicht jagen: In der Natur liegt **Essbares am Boden**, mit **F** aufheben (kommt ins Inventar), mit **V** essen.
+
+| Fund | wo | satt je Stück |
+|---|---|---|
+| **Apfel** (rot) | Wald, Kirschhain, Dschungel, Hügel | 8 % |
+| **Karotte** (orange) | Ebene, Wiese, Steppe, Hügel | 6 % |
+| **Beeren** (dunkle Traube) | Wiese, Wald, Sumpf, Taiga, Tundra | 5 % |
+
+V isst zuerst Gefundenes, dann Fleisch. Wie viel wo liegt, steht in `assets/biomes.json` unter `"food"` (`per_ha`,
+`size`, `material`: `apple`, `carrot`, `berries`). Aufgehobenes wächst nicht nach (die Welt merkt es sich wie bei
+Steinen und Stöcken). Befehle: `food` (Essbares im Umkreis von 40 m), `food take` (das nächste aufheben), `tp food`.

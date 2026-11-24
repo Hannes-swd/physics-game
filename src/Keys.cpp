@@ -26,7 +26,7 @@ const ActInfo kActs_[kActs] = {
     {"dismantle", "Abbauen (halten)", "Handeln", Ctx::Play, "Q"},
     {"planFixed", "Bauvorlage fest / lose", "Handeln", Ctx::Play, "G"},
     {"bandage", "Wunde verbinden", "Handeln", Ctx::Play, "H"},
-    {"eat", "Essen (Fleisch aus dem Inventar)", "Handeln", Ctx::Play, "V"},
+    {"eat", "Essen (aus dem Inventar)", "Handeln", Ctx::Play, "V"},
     {"axe", "Axt nehmen / weglegen", "Handeln", Ctx::Play, "X"},
     {"tool1", "Hand", "Werkzeuge", Ctx::Play, "1"},
     {"tool2", "Axt", "Werkzeuge", Ctx::Play, "2"},

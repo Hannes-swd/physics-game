@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "Materials.h"
+#include <cstring>
 #include "Noise.h"
 #include "Profile.h"
 #include "Terrain.h"
@@ -15,9 +16,9 @@ namespace {
 using glm::dvec3;
 
 constexpr double kPi = 3.14159265358979323846;
-constexpr int kVariants[kScatterKinds] = {16, 12, 10, 8, 10, 12};  // Vorlagen je Art
+constexpr int kVariants[kScatterKinds] = {16, 12, 10, 8, 10, 12, 3};  // Vorlagen je Art (Essen: Apfel, Karotte, Beeren)
 // Schlankheit der Vorlagen (Stöcke, Stämme: Dicke / Länge; Stümpfe: Höhe / Breite; Kakteen: Dicke / Höhe), von .. bis
-constexpr double kAspectLo[kScatterKinds] = {0, 0.012, 0.03, 0.35, 0, 0.06}, kAspectHi[kScatterKinds] = {0, 0.07, 0.16, 1.1, 0, 1.0};
+constexpr double kAspectLo[kScatterKinds] = {0, 0.012, 0.03, 0.35, 0, 0.06, 0}, kAspectHi[kScatterKinds] = {0, 0.07, 0.16, 1.1, 0, 1.0, 1};
 
 struct Rng {
     uint64_t s;
@@ -134,6 +135,32 @@ ScatterShape oreShape(Rng& r) {
     return sh;
 }
 
+// Rundlicher Klumpen (Hülle von Punkten auf einer Kugel), Mittelpunkt c, Radius rad
+solid::Piece blob(Rng& r, const dvec3& c, double rad, int n) {
+    std::vector<dvec3> pts;
+    for (int i = 0; i < n; ++i) {
+        const double z = r.range(-1.0, 1.0), a = r.next() * 2.0 * kPi, s = std::sqrt(1.0 - z * z);
+        pts.push_back(c + dvec3(s * std::cos(a), z, s * std::sin(a)) * rad * r.range(0.94, 1.03));
+    }
+    return solid::hullPiece(pts);
+}
+
+// Essbares, 1 m groß (wird auf die echte Größe skaliert): 0 Apfel (rund, oben leicht eingedellt), 1 Karotte (liegender,
+// spitzer Kegel), 2 Beeren (eine Traube aus kleinen Kugeln). Die Farbe kommt vom Material
+ScatterShape foodShape(Rng& r, int variant) {
+    ScatterShape sh;
+    if (variant == 0) {
+        sh.solid.pieces.push_back(blob(r, dvec3(0), 0.5, 40));
+    } else if (variant == 1) {
+        sh.solid.pieces.push_back(barkFrustum(dvec3(-0.5, 0, 0), 0.11, dvec3(0.5, 0, 0), 0.015, dvec3(1, 0, 0), 8));
+    } else {
+        for (int i = 0; i < 7; ++i)
+            sh.solid.pieces.push_back(blob(r, dvec3(r.range(-0.3, 0.3), r.range(-0.2, 0.2), r.range(-0.3, 0.3)), 0.17, 14));
+    }
+    finish(sh);
+    return sh;
+}
+
 // Kaktus: 1 m hoch, steht auf y = 0. aspect = Dicke / Höhe: schlank = Säulenkaktus (ab und zu mit Armen), dick = Kugel-
 // kaktus. Kanten statt Rinde (die Flächen bleiben eckig: Rippen)
 ScatterShape cactusShape(Rng& r, double aspect) {
@@ -206,7 +233,8 @@ ScatterField::ScatterField(std::shared_ptr<const WorldGen> gen, const Terrain* t
     // Biome ohne Angaben (Welten von vor diesem Zeug): die Werte der eingebauten biomes.json mit gleicher id
     const GenConfig& builtin = builtinGenConfig();
     static const char* const fallback[kScatterKinds][2] = {{"fieldstone", "granite"}, {"spruce", "oak"}, {"spruce", "oak"},
-                                                           {"spruce", "oak"},         {"iron_ore", "granite"}, {"cactus", "oak"}};
+                                                           {"spruce", "oak"},         {"iron_ore", "granite"}, {"cactus", "oak"},
+                                                           {"berries", "apple"}};
     for (const GenConfig::Biome& b : gen_->config().biomes)
         for (int k = 0; k < kScatterKinds; ++k) {
             GenConfig::Biome::Scatter s = b.scatter[k];
@@ -233,6 +261,7 @@ ScatterField::ScatterField(std::shared_ptr<const WorldGen> gen, const Terrain* t
                               : k == kScatterLog    ? logShape(r, aspect)
                               : k == kScatterStump  ? stumpShape(r, aspect)
                               : k == kScatterOre    ? oreShape(r)
+                              : k == kScatterFood   ? foodShape(r, i)
                                                     : cactusShape(r, aspect);
             sh.kind = k;
             if (renderer_) {
@@ -375,6 +404,14 @@ void ScatterField::compute(int64_t tx, int64_t tz, Tile& t) {
                 s.rot = glm::angleAxis(yaw, up) * glm::angleAxis(0.25 * tilt, dvec3(std::cos(tiltAxis), 0, std::sin(tiltAxis)));
                 s.pos = dvec3(x, ground - shapes_[(size_t)s.shape].bottom * size * 0.45, z);
                 if (!clearOfTrees(s.pos, s.pos, size * 0.5)) continue;
+            } else if (kind == kScatterFood) {
+                // Essbares liegt auf dem Boden: Apfel, Karotte oder Beeren, je nach Material
+                const char* mn = materials()[(size_t)s.material].name;
+                const int variant = std::strstr(mn, "apple") ? 0 : std::strstr(mn, "carrot") ? 1 : 2;
+                s.shape = kindShapes_[kind][(size_t)variant];
+                s.size = size;
+                s.rot = glm::angleAxis(yaw, up);
+                s.pos = dvec3(x, ground - shapes_[(size_t)s.shape].bottom * size * 0.9, z);
             } else if (kind == kScatterCactus) {
                 // Kaktus: steht senkrecht, Dicke / Höhe wie gewürfelt, ein paar cm im Boden
                 s.shape = pickShape(kind, thick / size, shapeR);
