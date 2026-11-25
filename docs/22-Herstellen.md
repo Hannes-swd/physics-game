@@ -89,3 +89,14 @@ Gesetzte Rezepte werden wie Bauvorlagen mit der Welt gespeichert (Typ `craft:<id
 | `src/Blueprints.*` | Rezepte lesen (`craftRecipes`, `planTemplateFor`), `World::fillPlan`: bei Rezepten werden Bauteile nur voll, am Ende ein Teil aus allen Quadern |
 | `src/AppPlans.cpp` | C-Modus (dieselbe Bedienung wie B), orange Hologramme, Q halten gibt Material zurück |
 | `src/AppCraft.cpp` | aus dem Inventar füllen, Ergebnis ins Inventar, Bedarf in der Statuszeile |
+
+## Dynamit
+
+Rezept **Dynamit** (`dynamite`): ein Stab aus beliebigem Material (z. B. Holzkohle) mit einer kleinen Fell-Hülle. Fertig ist es eine **runde rote Stange** (20 cm, Material „Dynamit“, rotes Papier) mit einer **Zündschnur** an einem Ende.
+
+- **Zünden:** mit dem **Feuerzeug** (Werkzeug 8, links halten) daraufhalten zündet sofort; sonst, wenn es heiß wird (Feuer daneben, über 120 °C) oder brennt. Dann sprühen **an der Zündschnur** 3 Sekunden Funken, danach knallt es.
+- **Explosion:** ein **Krater** im Boden (bis 1 m tief, 2,2 m Radius); Teile bis 4,5 m **fliegen weg** (je näher, desto
+  schneller); feste Dinge bis 1,8 m (Bäume, Felsen, Stümpfe) werden **losgerissen**. Spieler bis 5 m bekommen
+  Verbrennungen und Prellungen (nah: schwer, starker Blutverlust), Tiere Schaden bis zum Tod. Funkenblitz und Rauchwolke.
+- **Kettenreaktion:** anderes Dynamit bis 4 m zündet nach 0,15–0,4 s mit – eine Reihe knallt nacheinander.
+- Befehle (Cheats): `give dynamite 5`, `dynamite place <Anzahl>` (nebeneinander 3 m vor die Figur), `dynamite ignite`.

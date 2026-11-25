@@ -588,6 +588,12 @@ private:
         int kind = 1;                      // 1 Rauch, 2 Funke, 3 Kältenebel, 5 Dampf, 6 Wassertropfen
     };
     std::vector<FxParticle> fx_;
+    // Dynamit (AppExplosive.cpp): brennende Lunten (Teil -> Sekunden bis zum Knall)
+    std::unordered_map<uint32_t, double> fuses_;
+    void updateExplosives(float dt);
+    void explode(uint32_t id);
+    static bool isDynamite(const Object& o);
+    void igniteDynamite(uint32_t id);  // Lunte an (Feuerzeug, Hitze)
     double fxSmokeAccum_ = 0;
     RayHit lookHit_;                       // Spiel-Modus: was vor der Figur liegt
 

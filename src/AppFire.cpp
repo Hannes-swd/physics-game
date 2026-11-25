@@ -53,6 +53,8 @@ void App::heatToolInput(float) {
         hit = &lookHit_;  // Spiel-Modus: Feuerzeug in der Hand (Werkzeug 8), linke Maustaste halten
     }
     if (!hit) return;
+    // Dynamit: die Flamme zündet die Lunte sofort (nicht erst, wenn das Papier heiß ist)
+    if (isDynamite(*hit->obj) && (play_ || heatTools()[std::clamp(heatTool_, 0, (int)heatTools().size() - 1)].flame)) igniteDynamite(hit->obj->id);
     heatTool_ = std::clamp(heatTool_, 0, (int)heatTools().size() - 1);
     heatUsed_ = play_ ? std::max(0, findHeatTool("lighter")) : heatTool_;
     world_->addHeatSource(hit->obj->id, hit->localPoint, heatUsed_, 0.15);
@@ -70,6 +72,7 @@ void App::updateFx(float dt) {
     updateWaterFx(dt);  // Spritzer, Dampf
     updateSnow(dt);     // Spuren im Schnee
     updateAnimals(dt);  // Tiere erscheinen, ziehen umher, fliehen (AppAnimals.cpp)
+    updateExplosives(dt);  // Dynamit: Lunten, Explosionen, Kettenreaktion (AppExplosive.cpp)
     const glm::vec3 wind = glm::vec3(world_->wind());
     // Rauch und Funken aus den Feuern
     for (const Fire& F : world_->fires()) {

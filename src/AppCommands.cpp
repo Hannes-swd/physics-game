@@ -797,6 +797,25 @@ bool App::appCommand(const std::string& cmd, const std::vector<std::string>& t, 
         return true;
     }
     if (cmd == "terrain" && terrainAppCommand(t, out)) return true;  // borders, goto, reload (der Rest: Commands.cpp)
+    if (cmd == "dynamite" || cmd == "dynamit") {  // dynamite place [Anzahl] (Cheats: vor die Figur, nebeneinander) | dynamite ignite
+        const std::string v = t.size() > 1 ? t[1] : "";
+        if (v == "ignite") {
+            int n = 0;
+            for (const auto& o : world_->objects())
+                if (o->name.rfind("Dynamit", 0) == 0 && !fuses_.count(o->id) && n++ == 0) fuses_[o->id] = 3.0;
+            out = n ? "fuse lit (3 s)" : "Error: no dynamite in the world";
+        } else if (v == "place" && cheats_ && play_) {
+            const int n = t.size() > 2 ? std::clamp(std::atoi(t[2].c_str()), 1, 20) : 1;
+            const glm::dvec3 f = glm::normalize(glm::dvec3(playerForward().x, 0, playerForward().z) + glm::dvec3(1e-9));
+            const glm::dvec3 side(-f.z, 0, f.x);
+            std::string err;
+            for (int i = 0; i < n; ++i) makeGiveObject("dynamite", 0, physics_.characterPosition() + f * 3.0 + side * (0.6 * i) + glm::dvec3(0, 0.3, 0), err);
+            out = err.empty() ? std::to_string(n) + " dynamite placed 3 m ahead" : "Error: " + err;
+        } else {
+            out = "Error: dynamite place [count] (cheats) | dynamite ignite";
+        }
+        return true;
+    }
     if (cmd == "give" || cmd == "gib") {  // nur mit Cheats: Dinge ins Inventar (Rezepte, Essen, Material), siehe Hilfe
         out = giveCommand(t);
         return true;
@@ -1288,6 +1307,10 @@ Object* App::makeGiveObject(const std::string& whatIn, double kg, const glm::dve
         }
         solid::classifyInternalFaces(s);
         mat = std::max(0, materialIndex(byKind[std::clamp((int)recipe->pieces[(size_t)main].mat, 0, kPlanMats - 1)]));
+        if (recipe->id == "dynamite") {  // runde Stange mit Zündschnur, eigenes Material
+            s = dynamiteSolid();
+            if (const int dm = findMaterialIndex("dynamite"); dm >= 0) mat = dm;
+        }
         name = recipe->label;
         shape = "crafted " + recipe->id;
     } else {

@@ -466,7 +466,11 @@ bool World::fillPlan(uint32_t planId, int pieceIdx, uint32_t objId, std::string&
             if (!mainGiven && (main < 0 || p.volume() > bp->pieces[(size_t)main].volume())) main = (int)i;
         }
         solid::classifyInternalFaces(s);
-        const int mat = bp->pieces[(size_t)main].material;
+        int mat = bp->pieces[(size_t)main].material;
+        if (tp && tp->id == "dynamite") {  // Dynamit: runde Stange mit Zündschnur, eigenes Material
+            s = dynamiteSolid();
+            if (const int dm = findMaterialIndex("dynamite"); dm >= 0) mat = dm;
+        }
         Object* n = addSolid(std::move(s), mat, bp->pos, bp->rot(), label, "crafted " + (tp ? tp->id : bp->type));
         if (!n) {
             text = "could not create " + label;
@@ -579,4 +583,15 @@ bool planMatFits(PlanMat m, int material) { return fitsMat(m, material); }
 bool planPieceFits(const PlanPiece& p, int material) {
     if (p.material >= 0) return materialClass(material) == materialClass(p.material);
     return fitsMat((PlanMat)p.mat, material);
+}
+
+solid::Solid dynamiteSolid() {
+    const glm::dmat3 alongX = glm::mat3_cast(glm::angleAxis(glm::radians(90.0), glm::dvec3(0, 0, 1)));
+    solid::Solid s = solid::makeCylinder(0.016, 0.2, 20);
+    solid::transformAffine(s, alongX);
+    solid::Solid fuse = solid::makeCylinder(0.0025, 0.035, 8);
+    solid::transformAffine(fuse, alongX);
+    solid::translate(fuse, glm::dvec3(-0.1175, 0, 0));
+    for (solid::Piece& p : fuse.pieces) s.pieces.push_back(std::move(p));
+    return s;
 }

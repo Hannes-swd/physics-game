@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "Solid.h"
+
 class World;
 
 // Welches Material ein Bauteil annimmt
@@ -33,6 +35,11 @@ struct PlanTemplate {
     bool craft = false;
     int mainPiece = -1;          // aus dem Material dieses Bauteils ist das Ergebnis ("main": true; -1 = das größte)
 };
+
+// Dynamit (Rezept "dynamite"): runde Stange 20 cm lang, 3,2 cm dick, entlang x, an einem Ende (−x) die Zündschnur.
+// Das Ergebnis des Rezepts bekommt diese Form und das Material "dynamite" statt der Quader der Vorlage
+solid::Solid dynamiteSolid();
+constexpr double kDynamiteFuseX = -0.13;  // Ende der Zündschnur (lokal, x)
 
 // eingebaute und eigene Vorlagen (eigene werden beim ersten Aufruf aus der Datei gelesen)
 const std::vector<PlanTemplate>& planTemplates();
